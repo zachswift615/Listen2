@@ -102,7 +102,350 @@ Expected: Xcode opens with project, builds successfully (⌘B)
 
 ---
 
-## Task 2: Create Project Structure & Models
+## Task 2: Establish Design System
+
+**Goal:** Create a cohesive, thoughtful design language that makes the app feel polished and professional.
+
+**Files:**
+- Create: `Listen2/Design/DesignSystem.swift`
+- Create: `Listen2/Design/ViewModifiers.swift`
+
+**Step 1: Create Design group**
+
+1. In Xcode Project Navigator, right-click `Listen2` folder
+2. New Group → Name it "Design"
+
+**Step 2: Create DesignSystem.swift**
+
+Create: `Listen2/Design/DesignSystem.swift`
+
+```swift
+//
+//  DesignSystem.swift
+//  Listen2
+//
+//  Design tokens and constants for consistent styling throughout the app
+//
+
+import SwiftUI
+
+enum DesignSystem {
+
+    // MARK: - Colors
+
+    enum Colors {
+        // Primary brand color - calm blue for reading focus
+        static let primary = Color(red: 0.0, green: 0.48, blue: 0.80) // #007ACC
+        static let primaryLight = Color(red: 0.20, green: 0.60, blue: 0.90)
+
+        // Accent colors
+        static let accent = Color(red: 0.40, green: 0.65, blue: 1.0) // Lighter blue
+        static let success = Color(red: 0.20, green: 0.78, blue: 0.35)
+        static let warning = Color(red: 1.0, green: 0.58, blue: 0.0)
+        static let error = Color(red: 0.96, green: 0.26, blue: 0.21)
+
+        // Reading highlights
+        static let highlightWord = Color.yellow.opacity(0.5)
+        static let highlightParagraph = Color.blue.opacity(0.08)
+        static let highlightSentence = Color.blue.opacity(0.05)
+
+        // Neutrals (adapt to light/dark mode)
+        static let textPrimary = Color.primary
+        static let textSecondary = Color.secondary
+        static let textTertiary = Color(UIColor.tertiaryLabel)
+
+        static let background = Color(UIColor.systemBackground)
+        static let secondaryBackground = Color(UIColor.secondarySystemBackground)
+        static let tertiaryBackground = Color(UIColor.tertiarySystemBackground)
+
+        static let separator = Color(UIColor.separator)
+    }
+
+    // MARK: - Typography
+
+    enum Typography {
+        // Title sizes
+        static let largeTitle = Font.largeTitle.weight(.bold)
+        static let title = Font.title.weight(.semibold)
+        static let title2 = Font.title2.weight(.semibold)
+        static let title3 = Font.title3.weight(.medium)
+
+        // Body text (reading content)
+        static let bodyLarge = Font.system(size: 18, weight: .regular)
+        static let body = Font.body
+        static let bodySmall = Font.system(size: 15, weight: .regular)
+
+        // UI text
+        static let headline = Font.headline
+        static let subheadline = Font.subheadline
+        static let caption = Font.caption
+        static let caption2 = Font.caption2
+
+        // Specialized
+        static let mono = Font.system(.body, design: .monospaced)
+        static let monoSmall = Font.system(.caption, design: .monospaced)
+    }
+
+    // MARK: - Spacing
+
+    enum Spacing {
+        static let xxxs: CGFloat = 2
+        static let xxs: CGFloat = 4
+        static let xs: CGFloat = 8
+        static let sm: CGFloat = 12
+        static let md: CGFloat = 16
+        static let lg: CGFloat = 24
+        static let xl: CGFloat = 32
+        static let xxl: CGFloat = 48
+        static let xxxl: CGFloat = 64
+    }
+
+    // MARK: - Corner Radius
+
+    enum CornerRadius {
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 8
+        static let lg: CGFloat = 12
+        static let xl: CGFloat = 16
+        static let xxl: CGFloat = 24
+        static let round: CGFloat = 999 // Fully rounded
+    }
+
+    // MARK: - Shadows
+
+    enum Shadow {
+        static let small = (color: Color.black.opacity(0.1), radius: CGFloat(4), x: CGFloat(0), y: CGFloat(2))
+        static let medium = (color: Color.black.opacity(0.15), radius: CGFloat(8), x: CGFloat(0), y: CGFloat(4))
+        static let large = (color: Color.black.opacity(0.20), radius: CGFloat(16), x: CGFloat(0), y: CGFloat(8))
+    }
+
+    // MARK: - Animation
+
+    enum Animation {
+        static let fast = SwiftUI.Animation.easeInOut(duration: 0.2)
+        static let standard = SwiftUI.Animation.easeInOut(duration: 0.3)
+        static let slow = SwiftUI.Animation.easeInOut(duration: 0.5)
+        static let spring = SwiftUI.Animation.spring(response: 0.3, dampingFraction: 0.7)
+    }
+
+    // MARK: - Icon Sizes
+
+    enum IconSize {
+        static let small: CGFloat = 16
+        static let medium: CGFloat = 20
+        static let large: CGFloat = 24
+        static let xlarge: CGFloat = 32
+    }
+}
+```
+
+**Step 3: Create custom view modifiers**
+
+Create: `Listen2/Design/ViewModifiers.swift`
+
+```swift
+//
+//  ViewModifiers.swift
+//  Listen2
+//
+//  Reusable view modifiers for consistent styling
+//
+
+import SwiftUI
+
+// MARK: - Card Style
+
+struct CardStyle: ViewModifier {
+    var cornerRadius: CGFloat = DesignSystem.CornerRadius.md
+    var padding: CGFloat = DesignSystem.Spacing.md
+
+    func body(content: Content) -> some View {
+        content
+            .padding(padding)
+            .background(DesignSystem.Colors.secondaryBackground)
+            .cornerRadius(cornerRadius)
+            .shadow(
+                color: DesignSystem.Shadow.small.color,
+                radius: DesignSystem.Shadow.small.radius,
+                x: DesignSystem.Shadow.small.x,
+                y: DesignSystem.Shadow.small.y
+            )
+    }
+}
+
+extension View {
+    func cardStyle(cornerRadius: CGFloat = DesignSystem.CornerRadius.md, padding: CGFloat = DesignSystem.Spacing.md) -> some View {
+        modifier(CardStyle(cornerRadius: cornerRadius, padding: padding))
+    }
+}
+
+// MARK: - Primary Button Style
+
+struct PrimaryButtonStyle: ButtonStyle {
+    var isDestructive: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DesignSystem.Typography.headline)
+            .foregroundColor(.white)
+            .padding(.horizontal, DesignSystem.Spacing.lg)
+            .padding(.vertical, DesignSystem.Spacing.sm)
+            .background(isDestructive ? DesignSystem.Colors.error : DesignSystem.Colors.primary)
+            .cornerRadius(DesignSystem.CornerRadius.md)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(DesignSystem.Animation.fast, value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == PrimaryButtonStyle {
+    static var primary: PrimaryButtonStyle { PrimaryButtonStyle() }
+    static var destructive: PrimaryButtonStyle { PrimaryButtonStyle(isDestructive: true) }
+}
+
+// MARK: - Secondary Button Style
+
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(DesignSystem.Typography.subheadline)
+            .foregroundColor(DesignSystem.Colors.primary)
+            .padding(.horizontal, DesignSystem.Spacing.md)
+            .padding(.vertical, DesignSystem.Spacing.xs)
+            .background(DesignSystem.Colors.primary.opacity(0.1))
+            .cornerRadius(DesignSystem.CornerRadius.sm)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
+            .animation(DesignSystem.Animation.fast, value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == SecondaryButtonStyle {
+    static var secondary: SecondaryButtonStyle { SecondaryButtonStyle() }
+}
+
+// MARK: - Icon Button Style
+
+struct IconButtonStyle: ButtonStyle {
+    var size: CGFloat = DesignSystem.IconSize.large
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: size))
+            .foregroundColor(DesignSystem.Colors.primary)
+            .frame(width: size + DesignSystem.Spacing.md, height: size + DesignSystem.Spacing.md)
+            .background(
+                Circle()
+                    .fill(DesignSystem.Colors.primary.opacity(configuration.isPressed ? 0.2 : 0.1))
+            )
+            .scaleEffect(configuration.isPressed ? 0.92 : 1.0)
+            .animation(DesignSystem.Animation.spring, value: configuration.isPressed)
+    }
+}
+
+extension ButtonStyle where Self == IconButtonStyle {
+    static var icon: IconButtonStyle { IconButtonStyle() }
+    static func icon(size: CGFloat) -> IconButtonStyle { IconButtonStyle(size: size) }
+}
+
+// MARK: - Empty State Style
+
+struct EmptyStateView: View {
+    let icon: String
+    let title: String
+    let message: String
+
+    var body: some View {
+        VStack(spacing: DesignSystem.Spacing.lg) {
+            Image(systemName: icon)
+                .font(.system(size: 64))
+                .foregroundStyle(DesignSystem.Colors.textTertiary)
+
+            VStack(spacing: DesignSystem.Spacing.xs) {
+                Text(title)
+                    .font(DesignSystem.Typography.title2)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
+
+                Text(message)
+                    .font(DesignSystem.Typography.body)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .padding(DesignSystem.Spacing.xl)
+    }
+}
+
+// MARK: - Loading Overlay
+
+struct LoadingOverlay: ViewModifier {
+    let isLoading: Bool
+    let message: String
+
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+
+            if isLoading {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+
+                VStack(spacing: DesignSystem.Spacing.md) {
+                    ProgressView()
+                        .scaleEffect(1.5)
+                        .tint(.white)
+
+                    Text(message)
+                        .font(DesignSystem.Typography.headline)
+                        .foregroundColor(.white)
+                }
+                .padding(DesignSystem.Spacing.xl)
+                .background(.ultraThinMaterial)
+                .cornerRadius(DesignSystem.CornerRadius.xl)
+            }
+        }
+        .animation(DesignSystem.Animation.standard, value: isLoading)
+    }
+}
+
+extension View {
+    func loadingOverlay(isLoading: Bool, message: String = "Loading...") -> some View {
+        modifier(LoadingOverlay(isLoading: isLoading, message: message))
+    }
+}
+```
+
+**Step 4: Build project**
+
+Press ⌘B (Build)
+
+Expected: "Build Succeeded"
+
+**Step 5: Commit**
+
+```bash
+git add Listen2/Design/
+git commit -m "feat: add design system with tokens and modifiers"
+```
+
+**Design Philosophy:**
+
+- **Colors**: Calm blue palette ideal for reading apps, excellent contrast, supports light/dark mode
+- **Typography**: Clear hierarchy, larger body text for comfortable reading, monospaced for technical info
+- **Spacing**: 8px base grid system (xs=8, sm=12, md=16, lg=24, xl=32)
+- **Animations**: Fast interactions (200ms), standard transitions (300ms), spring for playful touches
+- **Consistency**: All UI elements will use these tokens, ensuring cohesive feel throughout
+
+**Usage Notes:**
+
+Throughout the remaining tasks, we'll apply these design tokens to make the app feel professional:
+- Document cards use `cardStyle()` modifier
+- Buttons use `.buttonStyle(.primary)` or `.buttonStyle(.secondary)`
+- Colors reference `DesignSystem.Colors.*`
+- Spacing uses `DesignSystem.Spacing.*`
+- Empty states use `EmptyStateView` component
+
+---
+
+## Task 3: Create Project Structure & Models
 
 **Files:**
 - Create: `Listen2/Models/Document.swift`
@@ -350,7 +693,7 @@ git commit -m "feat: add core data models (Document, Voice, ReadingProgress)"
 
 ---
 
-## Task 3: Document Processor Service - PDF Text Extraction
+## Task 4: Document Processor Service - PDF Text Extraction
 
 **Files:**
 - Create: `Listen2/Services/DocumentProcessor.swift`
@@ -623,7 +966,7 @@ git commit -m "feat: add PDF text extraction with hyphenation fixing"
 
 ---
 
-## Task 4: Document Processor - Clipboard & EPUB Support
+## Task 5: Document Processor - Clipboard & EPUB Support
 
 **Files:**
 - Modify: `Listen2/Services/DocumentProcessor.swift`
@@ -735,7 +1078,7 @@ git commit -m "feat: add clipboard text processing, stub EPUB support"
 
 ---
 
-## Task 5: TTS Service - Native Voice Playback
+## Task 6: TTS Service - Native Voice Playback
 
 **Files:**
 - Create: `Listen2/Services/TTSService.swift`
@@ -1074,7 +1417,7 @@ git commit -m "feat: add TTS playback controls with auto-advance"
 
 ---
 
-## Task 6: Library View - UI and ViewModel
+## Task 7: Library View - UI and ViewModel
 
 **Files:**
 - Create: `Listen2/ViewModels/LibraryViewModel.swift`
@@ -1218,30 +1561,31 @@ struct DocumentRowView: View {
     let document: Document
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: DesignSystem.Spacing.sm) {
             // Icon
             Image(systemName: document.sourceType.iconName)
-                .font(.title2)
-                .foregroundStyle(.blue)
+                .font(.system(size: DesignSystem.IconSize.large))
+                .foregroundStyle(DesignSystem.Colors.primary)
                 .frame(width: 40)
 
             // Content
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
                 Text(document.title)
-                    .font(.headline)
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
                     .lineLimit(1)
 
-                HStack {
+                HStack(spacing: DesignSystem.Spacing.xxs) {
                     Text(document.sourceType.rawValue)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
 
                     if document.progressPercentage > 0 {
                         Text("•")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
                         Text("Resume at \(document.progressPercentage)%")
-                            .font(.caption)
-                            .foregroundStyle(.blue)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.primary)
                     }
                 }
             }
@@ -1250,10 +1594,10 @@ struct DocumentRowView: View {
 
             // Metadata
             Text(document.lastRead, style: .relative)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .font(DesignSystem.Typography.caption2)
+                .foregroundStyle(DesignSystem.Colors.textTertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, DesignSystem.Spacing.xxs)
     }
 }
 ```
@@ -1370,38 +1714,16 @@ struct LibraryView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "books.vertical")
-                .font(.system(size: 64))
-                .foregroundStyle(.secondary)
-
-            Text("No Documents")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text("Import a PDF or paste text to get started")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
+        EmptyStateView(
+            icon: "books.vertical",
+            title: "No Documents",
+            message: "Import a PDF or paste text to get started"
+        )
     }
 
     private var processingOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.5)
-                Text("Processing...")
-                    .font(.headline)
-            }
-            .padding(32)
-            .background(.regularMaterial)
-            .cornerRadius(16)
-        }
+        Color.clear
+            .loadingOverlay(isLoading: true, message: "Processing...")
     }
 }
 ```
@@ -1503,7 +1825,7 @@ git commit -m "feat: add library view with document import"
 
 ---
 
-## Task 7: Reader View - Playback UI
+## Task 8: Reader View - Playback UI
 
 **Files:**
 - Modify: `Listen2/Views/ReaderView.swift`
@@ -1691,11 +2013,12 @@ struct ReaderView: View {
         let isCurrentParagraph = index == viewModel.currentParagraphIndex
 
         return Text(attributedText(for: text, isCurrentParagraph: isCurrentParagraph))
-            .padding(12)
+            .font(DesignSystem.Typography.bodyLarge)
+            .padding(DesignSystem.Spacing.sm)
             .background(
-                isCurrentParagraph ? Color.blue.opacity(0.1) : Color.clear
+                isCurrentParagraph ? DesignSystem.Colors.highlightParagraph : Color.clear
             )
-            .cornerRadius(8)
+            .cornerRadius(DesignSystem.CornerRadius.md)
             .onTapGesture {
                 viewModel.ttsService.stop()
                 viewModel.ttsService.startReading(
@@ -1712,8 +2035,8 @@ struct ReaderView: View {
         if isCurrentParagraph,
            let wordRange = viewModel.currentWordRange,
            let range = Range(wordRange, in: AttributedString(text).characters) {
-            attributedString[range].backgroundColor = .yellow
-            attributedString[range].font = .body.bold()
+            attributedString[range].backgroundColor = DesignSystem.Colors.highlightWord
+            attributedString[range].font = Font.body.weight(.semibold)
         }
 
         return attributedString
@@ -1866,7 +2189,7 @@ git commit -m "feat: add reader view with TTS playback controls"
 
 ---
 
-## Task 8: Background Audio Support
+## Task 9: Background Audio Support
 
 **Files:**
 - Modify: `Listen2/Services/TTSService.swift`
@@ -2045,7 +2368,7 @@ git commit -m "feat: add background audio and lock screen controls"
 
 ---
 
-## Task 9: Settings View
+## Task 10: Settings View
 
 **Files:**
 - Create: `Listen2/Views/SettingsView.swift`
@@ -2211,7 +2534,7 @@ git commit -m "feat: add settings view with playback preferences"
 
 ---
 
-## Task 10: Polish & Final Testing
+## Task 11: Polish & Final Testing
 
 **Files:**
 - Modify: `Listen2/Assets.xcassets/` (app icon)
