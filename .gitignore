@@ -1,0 +1,16 @@
+# Xcode
+Listen2/Listen2.xcodeproj/xcuserdata/
+Listen2/Listen2.xcodeproj/project.xcworkspace/xcuserdata/
+Listen2/*.xcworkspace/xcuserdata/
+Listen2/DerivedData/
+Listen2/build/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xcuserstate
+*.xcuserdatad
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
