@@ -89,6 +89,14 @@ final class LibraryViewModel: ObservableObject {
         isProcessing = true
         errorMessage = nil
 
+        // Start accessing security-scoped resource (required for file picker URLs)
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
         do {
             let paragraphs = try await documentProcessor.extractText(from: url, sourceType: sourceType)
 
