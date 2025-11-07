@@ -70,11 +70,24 @@ final class DocumentProcessor {
         // Fix hyphenation issues
         let cleanedText = fixHyphenation(in: fullText)
 
-        // Split into paragraphs
+        // Split into paragraphs and apply basic filtering
         let paragraphs = cleanedText
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+            .filter { paragraph in
+                // Skip empty lines
+                guard !paragraph.isEmpty else { return false }
+
+                // Skip very short lines (likely page numbers, single letters, etc.)
+                // But keep lines that end with punctuation (might be short sentences)
+                if paragraph.count < 15 {
+                    let lastChar = paragraph.last
+                    let hasPunctuation = lastChar == "." || lastChar == "!" || lastChar == "?"
+                    return hasPunctuation
+                }
+
+                return true
+            }
 
         guard !paragraphs.isEmpty else {
             throw DocumentProcessorError.extractionFailed

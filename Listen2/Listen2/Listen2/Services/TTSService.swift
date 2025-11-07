@@ -25,6 +25,8 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Initialization
 
+    private var audioSessionConfigured = false
+
     override init() {
         super.init()
         synthesizer.delegate = self
@@ -33,9 +35,6 @@ final class TTSService: NSObject, ObservableObject {
         currentVoice = AVSpeechSynthesisVoice.speechVoices()
             .first { $0.language.hasPrefix("en") }
 
-        // Configure audio session for background playback
-        configureAudioSession()
-
         // Setup remote command center for lock screen controls
         setupRemoteCommandCenter()
     }
@@ -43,14 +42,17 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Audio Session Configuration
 
     private func configureAudioSession() {
+        guard !audioSessionConfigured else { return }
+
         do {
             let audioSession = AVAudioSession.sharedInstance()
             // .playback category automatically routes to speaker
-            // .defaultToSpeaker only works with .playAndRecord
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetooth])
+            try audioSession.setCategory(.playback, mode: .spokenAudio)
             try audioSession.setActive(true)
+            audioSessionConfigured = true
         } catch {
-            print("Failed to configure audio session: \(error)")
+            // Silently fail - audio will still work with default settings
+            print("Note: Could not configure custom audio session, using defaults")
         }
     }
 
@@ -107,6 +109,9 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Playback Control
 
     func startReading(paragraphs: [String], from index: Int, title: String = "Document") {
+        // Configure audio session on first playback (lazy initialization)
+        configureAudioSession()
+
         currentText = paragraphs
         currentTitle = title
 

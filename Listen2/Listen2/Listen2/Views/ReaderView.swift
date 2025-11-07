@@ -86,9 +86,20 @@ struct ReaderView: View {
         // Highlight current word if this is the active paragraph
         if isCurrentParagraph,
            let wordRange = viewModel.currentWordRange {
+            // Validate that the word range is within the text bounds
+            guard wordRange.lowerBound >= text.startIndex &&
+                  wordRange.upperBound <= text.endIndex else {
+                return attributedString
+            }
+
             // Convert String.Index range to AttributedString range
             let startOffset = text.distance(from: text.startIndex, to: wordRange.lowerBound)
             let endOffset = text.distance(from: text.startIndex, to: wordRange.upperBound)
+
+            // Validate offsets are within bounds
+            guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
+                return attributedString
+            }
 
             let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
             let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
