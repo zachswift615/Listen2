@@ -5,7 +5,6 @@
 
 import Foundation
 import SwiftUI
-import Combine
 
 @MainActor
 final class ReaderCoordinator: ObservableObject {
@@ -19,6 +18,12 @@ final class ReaderCoordinator: ObservableObject {
     // MARK: - Private Properties
 
     private var hideOverlayTask: Task<Void, Never>?
+
+    // MARK: - Lifecycle
+
+    deinit {
+        hideOverlayTask?.cancel()
+    }
 
     // MARK: - Overlay Management
 
