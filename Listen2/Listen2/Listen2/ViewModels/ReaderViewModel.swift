@@ -111,19 +111,46 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func loadTOC() {
+        print("📖 Loading TOC for: \(document.title)")
+        print("📖 Source type: \(document.sourceType)")
+        print("📖 File URL: \(document.fileURL?.path ?? "nil")")
+
         // Try to load TOC from PDF if available
-        if document.sourceType == .pdf,
-           let pdfURL = document.fileURL,
-           let pdfDocument = PDFDocument(url: pdfURL) {
-            let entries = tocService.extractTOCFromMetadata(pdfDocument)
-            if !entries.isEmpty {
-                tocEntries = entries
-                return
+        if document.sourceType == .pdf {
+            print("📖 Document is PDF type")
+            if let pdfURL = document.fileURL {
+                print("📖 PDF URL exists: \(pdfURL)")
+                print("📖 Attempting to load PDFDocument...")
+                if let pdfDocument = PDFDocument(url: pdfURL) {
+                    print("📖 ✅ PDF loaded successfully!")
+                    print("📖 PDF has \(pdfDocument.pageCount) pages")
+                    print("📖 PDF outline root: \(pdfDocument.outlineRoot != nil ? "exists" : "nil")")
+                    let entries = tocService.extractTOCFromMetadata(pdfDocument)
+                    print("📖 Extracted \(entries.count) entries from PDF metadata")
+                    if !entries.isEmpty {
+                        tocEntries = entries
+                        print("📖 Using PDF metadata TOC with \(entries.count) entries")
+                        return
+                    }
+                } else {
+                    print("📖 ❌ Failed to load PDFDocument from URL")
+                }
+            } else {
+                print("📖 ❌ File URL is nil")
             }
         }
 
         // Fallback to heading detection
-        tocEntries = tocService.detectHeadingsFromParagraphs(document.extractedText)
+        print("📖 Falling back to heading detection...")
+        print("📖 Document has \(document.extractedText.count) paragraphs")
+        let detectedEntries = tocService.detectHeadingsFromParagraphs(document.extractedText)
+        print("📖 Detected \(detectedEntries.count) headings")
+        if !detectedEntries.isEmpty {
+            for entry in detectedEntries.prefix(5) {
+                print("📖   - \(entry.title) (para \(entry.paragraphIndex), level \(entry.level))")
+            }
+        }
+        tocEntries = detectedEntries
     }
 
     func cleanup() {

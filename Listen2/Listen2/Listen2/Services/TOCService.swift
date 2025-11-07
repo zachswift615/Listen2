@@ -83,23 +83,23 @@ final class TOCService {
     private func isLikelyHeading(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // Too long to be a heading
-        if trimmed.count > 100 {
+        // Skip empty
+        if trimmed.isEmpty {
             return false
         }
 
-        // Too short to be meaningful
-        if trimmed.count < 3 {
-            return false
-        }
-
-        // Check for common heading patterns
+        // Check for common heading patterns first (highest confidence)
         let headingPatterns = [
             "^Chapter \\d+",
+            "^CHAPTER \\d+",
             "^\\d+\\.",
             "^\\d+\\.\\d+",
             "^[A-Z][A-Za-z\\s]+:$",
             "^[IVX]+\\.", // Roman numerals
+            "^Part \\d+",
+            "^PART \\d+",
+            "^Appendix",
+            "^APPENDIX",
         ]
 
         for pattern in headingPatterns {
@@ -108,17 +108,33 @@ final class TOCService {
             }
         }
 
-        // Check if all caps (common for headings)
-        if trimmed == trimmed.uppercased() && trimmed.count > 3 {
+        // All caps text (common for headings)
+        if trimmed == trimmed.uppercased() && trimmed.count >= 3 && trimmed.count <= 100 {
             return true
         }
 
-        // Short text that starts with a capital letter is likely a heading
-        // (common for simple titles without special formatting)
-        if trimmed.count <= 50 && trimmed.first?.isUppercase == true {
-            // Make sure it doesn't look like a sentence (no lowercase words suggesting body text)
-            let words = trimmed.components(separatedBy: " ")
-            if words.count <= 5 {
+        // If it ends with sentence-ending punctuation, probably not a heading
+        // (unless it's a numbered section)
+        if trimmed.hasSuffix(".") || trimmed.hasSuffix("!") || trimmed.hasSuffix("?") {
+            if trimmed.hasSuffix("...") || trimmed.range(of: "^\\d+(\\.\\d+)*\\.$", options: .regularExpression) != nil {
+                return true // Ellipsis or numbered sections are OK
+            }
+            return false
+        }
+
+        // Word count check - headings are typically short
+        let words = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        let wordCount = words.count
+
+        // Very lenient: 1-10 words starting with capital = likely heading
+        // This captures most chapter titles and section headings
+        if wordCount >= 1 && wordCount <= 10 && trimmed.first?.isUppercase == true {
+            // Additional check: if it contains common prose words, might be body text
+            let proseIndicators = ["the", "and", "with", "from", "that", "this", "these", "those", "which", "where"]
+            let lowercaseText = trimmed.lowercased()
+            let hasMultipleProse = proseIndicators.filter { lowercaseText.contains(" \($0) ") }.count >= 2
+
+            if !hasMultipleProse {
                 return true
             }
         }
