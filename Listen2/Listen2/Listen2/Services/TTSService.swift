@@ -7,8 +7,13 @@ import Foundation
 import AVFoundation
 import Combine
 import MediaPlayer
+import SwiftUI
 
 final class TTSService: NSObject, ObservableObject {
+
+    // MARK: - Settings
+
+    @AppStorage("paragraphPauseDelay") private var paragraphPauseDelay: Double = 0.3
 
     // MARK: - Published Properties
 
@@ -22,6 +27,7 @@ final class TTSService: NSObject, ObservableObject {
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
+    private var shouldAutoAdvance = true // Track whether to auto-advance
 
     // MARK: - Initialization
 
@@ -117,6 +123,10 @@ final class TTSService: NSObject, ObservableObject {
 
         guard index < paragraphs.count else { return }
 
+        // Stop auto-advance temporarily when jumping to specific paragraph
+        // This prevents race condition with didFinish from previous utterance
+        shouldAutoAdvance = false
+
         currentProgress = ReadingProgress(
             paragraphIndex: index,
             wordRange: nil,
@@ -169,9 +179,9 @@ final class TTSService: NSObject, ObservableObject {
         utterance.voice = currentVoice
         utterance.rate = playbackRate * 0.5 // AVSpeechUtterance rate is 0-1 scale
 
-        // Reduce delay between utterances for smoother continuous reading
+        // Configure delays for smooth continuous reading
         utterance.preUtteranceDelay = 0.0
-        utterance.postUtteranceDelay = 0.1 // Very short pause between paragraphs
+        utterance.postUtteranceDelay = paragraphPauseDelay // User-configurable pause
 
         currentProgress = ReadingProgress(
             paragraphIndex: index,
@@ -189,12 +199,16 @@ extension TTSService: AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         isPlaying = true
+        // Re-enable auto-advance once utterance has actually started
+        shouldAutoAdvance = true
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isPlaying = false
 
-        // Auto-advance to next paragraph
+        // Auto-advance to next paragraph (only if not jumping to specific paragraph)
+        guard shouldAutoAdvance else { return }
+
         let nextIndex = currentProgress.paragraphIndex + 1
         if nextIndex < currentText.count {
             speakParagraph(at: nextIndex)

@@ -13,6 +13,7 @@ final class SettingsViewModel: ObservableObject {
 
     @AppStorage("defaultSpeed") var defaultSpeed: Double = 1.0
     @AppStorage("defaultVoiceIdentifier") var defaultVoiceIdentifier: String?
+    @AppStorage("paragraphPauseDelay") var paragraphPauseDelay: Double = 0.3 // Pause between paragraphs in seconds
 
     // MARK: - Available Voices
 

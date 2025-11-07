@@ -15,6 +15,7 @@ struct SettingsView: View {
             Form {
                 // MARK: - Playback Settings
                 Section {
+                    // Playback Speed
                     VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                         HStack {
                             Text("Default Playback Speed")
@@ -33,6 +34,32 @@ struct SettingsView: View {
                         .tint(DesignSystem.Colors.primary)
 
                         Text("Speed range: 0.5x - 2.5x")
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    }
+                    .padding(.vertical, DesignSystem.Spacing.xs)
+
+                    Divider()
+
+                    // Paragraph Pause
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                        HStack {
+                            Text("Pause Between Paragraphs")
+                                .font(DesignSystem.Typography.body)
+                            Spacer()
+                            Text(String(format: "%.1fs", viewModel.paragraphPauseDelay))
+                                .font(DesignSystem.Typography.mono)
+                                .foregroundStyle(DesignSystem.Colors.primary)
+                        }
+
+                        Slider(
+                            value: $viewModel.paragraphPauseDelay,
+                            in: 0.0...1.0,
+                            step: 0.1
+                        )
+                        .tint(DesignSystem.Colors.primary)
+
+                        Text("Pause duration: 0.0s - 1.0s")
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                     }
