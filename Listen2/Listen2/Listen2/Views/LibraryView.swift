@@ -13,6 +13,7 @@ struct LibraryView: View {
     @State private var showingFilePicker = false
     @State private var showingReader = false
     @State private var selectedDocument: Document?
+    @State private var showingSettings = false
 
     init(modelContext: ModelContext) {
         _viewModel = StateObject(wrappedValue: LibraryViewModel(modelContext: modelContext))
@@ -36,6 +37,14 @@ struct LibraryView: View {
             .navigationTitle("Library")
             .searchable(text: $viewModel.searchText, prompt: "Search documents")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+
                 ToolbarItem(placement: .primaryAction) {
                     Menu {
                         Button {
@@ -80,6 +89,9 @@ struct LibraryView: View {
             }
             .sheet(item: $selectedDocument) { document in
                 ReaderView(document: document, modelContext: modelContext)
+            }
+            .sheet(isPresented: $showingSettings) {
+                SettingsView()
             }
         }
     }
