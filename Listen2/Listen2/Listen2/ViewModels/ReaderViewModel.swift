@@ -7,6 +7,7 @@ import Foundation
 import SwiftData
 import Combine
 import SwiftUI
+import PDFKit
 
 @MainActor
 final class ReaderViewModel: ObservableObject {
@@ -16,12 +17,14 @@ final class ReaderViewModel: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var playbackRate: Float = 1.0
     @Published var selectedVoice: Voice?
+    @Published var tocEntries: [TOCEntry] = []
 
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
 
     let document: Document
     let ttsService: TTSService
     private let modelContext: ModelContext
+    private let tocService = TOCService()
     private var cancellables = Set<AnyCancellable>()
 
     init(document: Document, modelContext: ModelContext) {
@@ -95,6 +98,22 @@ final class ReaderViewModel: ObservableObject {
         } catch {
             print("Failed to save position: \(error)")
         }
+    }
+
+    func loadTOC() {
+        // Try to load TOC from PDF if available
+        if document.sourceType == .pdf,
+           let pdfURL = document.fileURL,
+           let pdfDocument = PDFDocument(url: pdfURL) {
+            let entries = tocService.extractTOCFromMetadata(pdfDocument)
+            if !entries.isEmpty {
+                tocEntries = entries
+                return
+            }
+        }
+
+        // Fallback to heading detection
+        tocEntries = tocService.detectHeadingsFromParagraphs(document.extractedText)
     }
 
     func cleanup() {

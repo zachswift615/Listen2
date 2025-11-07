@@ -10,6 +10,7 @@ struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @StateObject private var viewModel: ReaderViewModel
+    @StateObject private var coordinator = ReaderCoordinator()
     @State private var showingVoicePicker = false
 
     init(document: Document, modelContext: ModelContext) {
@@ -29,6 +30,12 @@ struct ReaderView: View {
                             }
                         }
                         .padding()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation {
+                            coordinator.toggleOverlay()
+                        }
                     }
                     .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
                         withAnimation {
@@ -56,6 +63,41 @@ struct ReaderView: View {
             }
             .sheet(isPresented: $showingVoicePicker) {
                 voicePickerSheet
+            }
+            .overlay {
+                if coordinator.isOverlayVisible {
+                    ReaderOverlay(
+                        documentTitle: viewModel.document.title,
+                        onBack: {
+                            coordinator.dismissOverlay()
+                            dismiss()
+                        },
+                        onShowTOC: {
+                            coordinator.showTOC()
+                        },
+                        onShowSettings: {
+                            coordinator.showQuickSettings()
+                        }
+                    )
+                    .transition(.opacity)
+                }
+            }
+            .sheet(isPresented: $coordinator.isShowingTOC) {
+                TOCBottomSheet(
+                    entries: viewModel.tocEntries,
+                    currentParagraphIndex: viewModel.currentParagraphIndex,
+                    onSelectEntry: { entry in
+                        coordinator.navigateToTOCEntry(entry, viewModel: viewModel)
+                    }
+                )
+                .presentationDetents([.medium, .large])
+            }
+            .sheet(isPresented: $coordinator.isShowingQuickSettings) {
+                QuickSettingsSheet(viewModel: viewModel)
+                    .presentationDetents([.medium])
+            }
+            .onAppear {
+                viewModel.loadTOC()
             }
         }
     }
