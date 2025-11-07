@@ -122,19 +122,32 @@ final class TOCService {
             return false
         }
 
+        // Character count - real headings are typically short
+        // Most technical book headings are under 80 characters
+        if trimmed.count > 80 {
+            return false
+        }
+
+        // Reject common body text patterns
+        let bodyTextStarters = ["to see", "to understand", "to implement", "the following", "in this", "here's", "this is", "we'll", "you can", "for example"]
+        let lowercaseText = trimmed.lowercased()
+        for starter in bodyTextStarters {
+            if lowercaseText.hasPrefix(starter) {
+                return false
+            }
+        }
+
         // Word count check - headings are typically short
         let words = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
         let wordCount = words.count
 
-        // Very lenient: 1-10 words starting with capital = likely heading
-        // This captures most chapter titles and section headings
-        if wordCount >= 1 && wordCount <= 10 && trimmed.first?.isUppercase == true {
-            // Additional check: if it contains common prose words, might be body text
-            let proseIndicators = ["the", "and", "with", "from", "that", "this", "these", "those", "which", "where"]
-            let lowercaseText = trimmed.lowercased()
-            let hasMultipleProse = proseIndicators.filter { lowercaseText.contains(" \($0) ") }.count >= 2
+        // More strict: 1-7 words starting with capital
+        if wordCount >= 1 && wordCount <= 7 && trimmed.first?.isUppercase == true {
+            // Reject if it has common prose indicators
+            let proseIndicators = ["the", "and", "with", "from", "that", "this", "these", "those", "which", "where", "will", "can", "has", "have"]
+            let hasAnyProse = proseIndicators.contains { lowercaseText.contains(" \($0) ") }
 
-            if !hasMultipleProse {
+            if !hasAnyProse {
                 return true
             }
         }
