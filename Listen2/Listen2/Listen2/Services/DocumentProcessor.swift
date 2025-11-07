@@ -70,27 +70,53 @@ final class DocumentProcessor {
         // Fix hyphenation issues
         let cleanedText = fixHyphenation(in: fullText)
 
-        // Split into paragraphs and apply basic filtering
-        let paragraphs = cleanedText
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { paragraph in
-                // Skip empty lines
-                guard !paragraph.isEmpty else { return false }
-
-                // Skip very short lines (likely page numbers, single letters, etc.)
-                // But keep lines that end with punctuation (might be short sentences)
-                if paragraph.count < 15 {
-                    let lastChar = paragraph.last
-                    let hasPunctuation = lastChar == "." || lastChar == "!" || lastChar == "?"
-                    return hasPunctuation
-                }
-
-                return true
-            }
+        // Join lines into proper paragraphs
+        // PDF text has hard line breaks within paragraphs - we need to join them
+        let paragraphs = joinLinesIntoParagraphs(cleanedText)
 
         guard !paragraphs.isEmpty else {
             throw DocumentProcessorError.extractionFailed
+        }
+
+        return paragraphs
+    }
+
+    /// Intelligently joins PDF lines into semantic paragraphs
+    private func joinLinesIntoParagraphs(_ text: String) -> [String] {
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        var paragraphs: [String] = []
+        var currentParagraph = ""
+
+        for line in lines {
+            // Skip very short lines (likely page numbers, headers)
+            if line.count < 15 && !line.hasSuffix(".") && !line.hasSuffix("!") && !line.hasSuffix("?") {
+                continue
+            }
+
+            // Check if this line ends a sentence/paragraph
+            let endsWithPunctuation = line.hasSuffix(".") || line.hasSuffix("!") || line.hasSuffix("?")
+
+            if currentParagraph.isEmpty {
+                // Start new paragraph
+                currentParagraph = line
+            } else {
+                // Join with current paragraph (add space)
+                currentParagraph += " " + line
+            }
+
+            // If line ends with sentence punctuation, finalize the paragraph
+            if endsWithPunctuation && currentParagraph.count > 50 {
+                paragraphs.append(currentParagraph)
+                currentParagraph = ""
+            }
+        }
+
+        // Add any remaining text
+        if !currentParagraph.isEmpty {
+            paragraphs.append(currentParagraph)
         }
 
         return paragraphs

@@ -206,17 +206,10 @@ extension TTSService: AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
-        // Update word range for highlighting
-        // Note: This is called very frequently (once per word)
-        // Only update if range is valid to reduce unnecessary UI updates
-        let text = utterance.speechString
-        if let range = Range(characterRange, in: text),
-           range.lowerBound < text.endIndex {
-            currentProgress = ReadingProgress(
-                paragraphIndex: currentProgress.paragraphIndex,
-                wordRange: range,
-                isPlaying: true
-            )
-        }
+        // DISABLED: Word highlighting causes severe performance issues on real devices
+        // This delegate fires 100+ times per paragraph, triggering expensive UI updates
+        // Keeping only paragraph highlighting for smooth performance
+
+        // TODO: Re-enable with throttling/debouncing if needed
     }
 }
