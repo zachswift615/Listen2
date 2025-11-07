@@ -102,8 +102,8 @@ final class ReaderCoordinator: ObservableObject {
             )
         }
 
-        // Update UI
-        viewModel.selectedVoice = newVoice
+        // Update UI and persist
+        viewModel.setVoice(newVoice)  // This now includes persistence
     }
 
     // MARK: - TOC Navigation

@@ -20,6 +20,7 @@ final class ReaderViewModel: ObservableObject {
     @Published var tocEntries: [TOCEntry] = []
 
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
+    @AppStorage("selectedVoiceId") private var selectedVoiceId: String = ""
 
     let document: Document
     let ttsService: TTSService
@@ -37,8 +38,14 @@ final class ReaderViewModel: ObservableObject {
         self.playbackRate = Float(defaultPlaybackRate)
         ttsService.setPlaybackRate(Float(defaultPlaybackRate))
 
-        // Set initial voice
-        self.selectedVoice = ttsService.availableVoices().first { $0.language.hasPrefix("en") }
+        // Set initial voice from saved preference or default to first English voice
+        if !selectedVoiceId.isEmpty,
+           let savedVoice = ttsService.availableVoices().first(where: { $0.id == selectedVoiceId }) {
+            self.selectedVoice = savedVoice
+            ttsService.setVoice(savedVoice)
+        } else {
+            self.selectedVoice = ttsService.availableVoices().first { $0.language.hasPrefix("en") }
+        }
 
         setupBindings()
     }
@@ -88,6 +95,7 @@ final class ReaderViewModel: ObservableObject {
         // Just update the selected voice
         // Coordinator will handle the stop/restart logic
         selectedVoice = voice
+        selectedVoiceId = voice.id  // Persist selection
         ttsService.setVoice(voice)
     }
 
