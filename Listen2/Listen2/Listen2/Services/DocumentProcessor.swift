@@ -83,6 +83,17 @@ final class DocumentProcessor {
         return paragraphs
     }
 
+    // MARK: - Clipboard Processing
+
+    func processClipboardText(_ text: String) -> [String] {
+        let paragraphs = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+
+        return paragraphs
+    }
+
     // MARK: - Private EPUB Extraction (Stub for now)
 
     private func extractEPUBText(from url: URL) async throws -> [String] {

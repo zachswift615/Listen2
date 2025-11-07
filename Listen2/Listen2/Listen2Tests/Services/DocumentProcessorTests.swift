@@ -82,6 +82,54 @@ final class DocumentProcessorTests: XCTestCase {
         try? FileManager.default.removeItem(at: pdfURL)
     }
 
+    func testProcessClipboardText() {
+        // Given
+        let clipboardText = """
+        First paragraph with content.
+
+        Second paragraph after blank line.
+
+        Third paragraph.
+        """
+
+        // When
+        let result = processor.processClipboardText(clipboardText)
+
+        // Then
+        XCTAssertEqual(result.count, 3)
+        XCTAssertEqual(result[0], "First paragraph with content.")
+        XCTAssertEqual(result[1], "Second paragraph after blank line.")
+        XCTAssertEqual(result[2], "Third paragraph.")
+    }
+
+    func testProcessClipboardText_EmptyLines() {
+        // Given
+        let clipboardText = "\n\n  \n\nActual content.\n\n  \n"
+
+        // When
+        let result = processor.processClipboardText(clipboardText)
+
+        // Then
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0], "Actual content.")
+    }
+
+    func testExtractEPUBText_Basic() async throws {
+        // For MVP, we'll test the interface exists
+        // Full EPUB parsing can be enhanced later
+        let testURL = URL(fileURLWithPath: "/tmp/test.epub")
+
+        do {
+            _ = try await processor.extractText(from: testURL, sourceType: .epub)
+            XCTFail("Should throw unsupportedFormat for now")
+        } catch DocumentProcessor.DocumentProcessorError.unsupportedFormat {
+            // Expected for MVP
+            XCTAssertTrue(true)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     // Helper to create test PDF
     private func createTestPDF(withText text: String) throws -> URL {
         let pdfMetaData = [
