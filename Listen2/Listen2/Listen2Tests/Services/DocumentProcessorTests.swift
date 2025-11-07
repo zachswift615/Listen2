@@ -4,6 +4,7 @@
 //
 
 import XCTest
+import UIKit
 @testable import Listen2
 
 final class DocumentProcessorTests: XCTestCase {
@@ -57,5 +58,54 @@ final class DocumentProcessorTests: XCTestCase {
 
         // Then
         XCTAssertEqual(result, "Example with spaces.")
+    }
+
+    func testExtractTextFromPDF_WithHyphenation() async throws {
+        // Given
+        let pdfText = """
+        This is a sam-
+        ple document with hyphen-
+        ated words.
+        """
+        let pdfURL = try createTestPDF(withText: pdfText)
+
+        // When
+        let result = try await processor.extractText(from: pdfURL, sourceType: .pdf)
+
+        // Then
+        let fullText = result.joined(separator: " ")
+        XCTAssertTrue(fullText.contains("sample document"))
+        XCTAssertTrue(fullText.contains("hyphenated words"))
+        XCTAssertFalse(fullText.contains("sam-\n"))
+
+        // Cleanup
+        try? FileManager.default.removeItem(at: pdfURL)
+    }
+
+    // Helper to create test PDF
+    private func createTestPDF(withText text: String) throws -> URL {
+        let pdfMetaData = [
+            kCGPDFContextTitle: "Test PDF"
+        ]
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = pdfMetaData as [String: Any]
+
+        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let renderer = UIGraphicsPDFRenderer(bounds: pageRect, format: format)
+
+        let data = renderer.pdfData { context in
+            context.beginPage()
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: 12)
+            ]
+            text.draw(in: pageRect.insetBy(dx: 50, dy: 50), withAttributes: attributes)
+        }
+
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("pdf")
+        try data.write(to: tempURL)
+
+        return tempURL
     }
 }
