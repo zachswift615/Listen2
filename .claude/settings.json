@@ -1,0 +1,55 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "source": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/workshop-session-start.sh"
+          }
+        ]
+      },
+      {
+        "source": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/workshop-session-start.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "source": "shutdown",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/workshop-session-end.sh ${CLAUDE_TRANSCRIPT_FILE}"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "source": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/workshop-pre-compact.sh"
+          }
+        ]
+      },
+      {
+        "source": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./.claude/workshop-pre-compact.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

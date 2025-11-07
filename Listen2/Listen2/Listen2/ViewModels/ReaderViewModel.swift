@@ -55,7 +55,7 @@ final class ReaderViewModel: ObservableObject {
         } else {
             if ttsService.currentProgress.paragraphIndex == 0 && ttsService.currentProgress.wordRange == nil {
                 // First play
-                ttsService.startReading(paragraphs: document.extractedText, from: currentParagraphIndex)
+                ttsService.startReading(paragraphs: document.extractedText, from: currentParagraphIndex, title: document.title)
             } else {
                 ttsService.resume()
             }

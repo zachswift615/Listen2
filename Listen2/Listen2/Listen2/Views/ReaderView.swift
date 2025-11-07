@@ -74,7 +74,8 @@ struct ReaderView: View {
                 viewModel.ttsService.stop()
                 viewModel.ttsService.startReading(
                     paragraphs: viewModel.document.extractedText,
-                    from: index
+                    from: index,
+                    title: viewModel.document.title
                 )
             }
     }

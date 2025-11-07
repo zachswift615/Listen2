@@ -6,6 +6,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import MediaPlayer
 
 final class TTSService: NSObject, ObservableObject {
 
@@ -20,6 +21,7 @@ final class TTSService: NSObject, ObservableObject {
     private let synthesizer = AVSpeechSynthesizer()
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
+    private var currentTitle: String = "Document"
 
     // MARK: - Initialization
 
@@ -30,6 +32,58 @@ final class TTSService: NSObject, ObservableObject {
         // Set default voice (first English voice)
         currentVoice = AVSpeechSynthesisVoice.speechVoices()
             .first { $0.language.hasPrefix("en") }
+
+        // Configure audio session for background playback
+        configureAudioSession()
+
+        // Setup remote command center for lock screen controls
+        setupRemoteCommandCenter()
+    }
+
+    // MARK: - Audio Session Configuration
+
+    private func configureAudioSession() {
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
+            try audioSession.setActive(true)
+        } catch {
+            print("Failed to configure audio session: \(error)")
+        }
+    }
+
+    private func setupRemoteCommandCenter() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.resume()
+            return .success
+        }
+
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.skipToNext()
+            return .success
+        }
+
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.skipToPrevious()
+            return .success
+        }
+    }
+
+    private func updateNowPlayingInfo(title: String) {
+        var nowPlayingInfo = [String: Any]()
+        nowPlayingInfo[MPMediaItemPropertyTitle] = title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = "Listen2"
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
     }
 
     // MARK: - Public Methods
@@ -50,8 +104,9 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Playback Control
 
-    func startReading(paragraphs: [String], from index: Int) {
+    func startReading(paragraphs: [String], from index: Int, title: String = "Document") {
         currentText = paragraphs
+        currentTitle = title
 
         guard index < paragraphs.count else { return }
 
@@ -61,6 +116,7 @@ final class TTSService: NSObject, ObservableObject {
             isPlaying: false
         )
 
+        updateNowPlayingInfo(title: title)
         speakParagraph(at: index)
     }
 
