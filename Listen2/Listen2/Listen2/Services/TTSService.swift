@@ -45,7 +45,9 @@ final class TTSService: NSObject, ObservableObject {
     private func configureAudioSession() {
         do {
             let audioSession = AVAudioSession.sharedInstance()
-            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth])
+            // .playback category automatically routes to speaker
+            // .defaultToSpeaker only works with .playAndRecord
+            try audioSession.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetooth])
             try audioSession.setActive(true)
         } catch {
             print("Failed to configure audio session: \(error)")
