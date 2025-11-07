@@ -103,8 +103,15 @@ final class DocumentProcessor {
                 // Start new paragraph
                 currentParagraph = line
             } else {
-                // Join with current paragraph (add space)
-                currentParagraph += " " + line
+                // Check if previous line ended with a hyphen (hyphenated word)
+                if currentParagraph.hasSuffix("-") {
+                    // Remove the hyphen and join WITHOUT space (continuation of word)
+                    currentParagraph.removeLast() // Remove the hyphen
+                    currentParagraph += line
+                } else {
+                    // Normal line join (add space)
+                    currentParagraph += " " + line
+                }
             }
 
             // If line ends with sentence punctuation, finalize the paragraph
