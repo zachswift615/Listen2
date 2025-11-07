@@ -112,14 +112,7 @@ struct ReaderView: View {
                 isCurrentParagraph ? DesignSystem.Colors.highlightParagraph : Color.clear
             )
             .cornerRadius(DesignSystem.CornerRadius.md)
-            .onTapGesture {
-                viewModel.ttsService.stop()
-                viewModel.ttsService.startReading(
-                    paragraphs: viewModel.document.extractedText,
-                    from: index,
-                    title: viewModel.document.title
-                )
-            }
+            // Removed tap gesture - overlay tap gesture now works
     }
 
     private func attributedText(for text: String, isCurrentParagraph: Bool) -> AttributedString {
