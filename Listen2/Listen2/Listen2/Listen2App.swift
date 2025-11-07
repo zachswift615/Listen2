@@ -10,9 +10,10 @@ import SwiftData
 
 @main
 struct Listen2App: App {
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Document.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -25,7 +26,7 @@ struct Listen2App: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            LibraryView(modelContext: sharedModelContainer.mainContext)
         }
         .modelContainer(sharedModelContainer)
     }
