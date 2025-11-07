@@ -48,9 +48,71 @@ final class TTSService: NSObject, ObservableObject {
         currentVoice = AVSpeechSynthesisVoice(identifier: voice.id)
     }
 
+    // MARK: - Playback Control
+
+    func startReading(paragraphs: [String], from index: Int) {
+        currentText = paragraphs
+
+        guard index < paragraphs.count else { return }
+
+        currentProgress = ReadingProgress(
+            paragraphIndex: index,
+            wordRange: nil,
+            isPlaying: false
+        )
+
+        speakParagraph(at: index)
+    }
+
+    func pause() {
+        synthesizer.pauseSpeaking(at: .word)
+        isPlaying = false
+    }
+
+    func resume() {
+        synthesizer.continueSpeaking()
+        isPlaying = true
+    }
+
+    func skipToNext() {
+        let nextIndex = currentProgress.paragraphIndex + 1
+        guard nextIndex < currentText.count else {
+            stop()
+            return
+        }
+
+        stop()
+        speakParagraph(at: nextIndex)
+    }
+
+    func skipToPrevious() {
+        let prevIndex = max(0, currentProgress.paragraphIndex - 1)
+        stop()
+        speakParagraph(at: prevIndex)
+    }
+
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
+    }
+
+    // MARK: - Private Methods
+
+    private func speakParagraph(at index: Int) {
+        guard index < currentText.count else { return }
+
+        let text = currentText[index]
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = currentVoice
+        utterance.rate = playbackRate * 0.5 // AVSpeechUtterance rate is 0-1 scale
+
+        currentProgress = ReadingProgress(
+            paragraphIndex: index,
+            wordRange: nil,
+            isPlaying: true
+        )
+
+        synthesizer.speak(utterance)
     }
 }
 
@@ -64,9 +126,27 @@ extension TTSService: AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isPlaying = false
+
+        // Auto-advance to next paragraph
+        let nextIndex = currentProgress.paragraphIndex + 1
+        if nextIndex < currentText.count {
+            speakParagraph(at: nextIndex)
+        }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isPlaying = false
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
+        // Update word range for highlighting
+        if let text = utterance.speechString as? String,
+           let range = Range(characterRange, in: text) {
+            currentProgress = ReadingProgress(
+                paragraphIndex: currentProgress.paragraphIndex,
+                wordRange: range,
+                isPlaying: true
+            )
+        }
     }
 }
