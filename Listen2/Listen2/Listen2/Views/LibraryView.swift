@@ -79,7 +79,7 @@ struct LibraryView: View {
                 }
             }
             .sheet(item: $selectedDocument) { document in
-                ReaderView(document: document)
+                ReaderView(document: document, modelContext: modelContext)
             }
         }
     }
