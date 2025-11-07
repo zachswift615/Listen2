@@ -196,8 +196,8 @@ extension TTSService: AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
         // Update word range for highlighting
-        if let text = utterance.speechString as? String,
-           let range = Range(characterRange, in: text) {
+        let text = utterance.speechString
+        if let range = Range(characterRange, in: text) {
             currentProgress = ReadingProgress(
                 paragraphIndex: currentProgress.paragraphIndex,
                 wordRange: range,

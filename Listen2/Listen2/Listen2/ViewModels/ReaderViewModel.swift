@@ -6,6 +6,7 @@
 import Foundation
 import SwiftData
 import Combine
+import SwiftUI
 
 @MainActor
 final class ReaderViewModel: ObservableObject {
@@ -15,6 +16,8 @@ final class ReaderViewModel: ObservableObject {
     @Published var isPlaying: Bool = false
     @Published var playbackRate: Float = 1.0
     @Published var selectedVoice: Voice?
+
+    @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
 
     let document: Document
     let ttsService: TTSService
@@ -26,6 +29,10 @@ final class ReaderViewModel: ObservableObject {
         self.currentParagraphIndex = document.currentPosition
         self.modelContext = modelContext
         self.ttsService = TTSService()
+
+        // Set initial playback rate from defaults
+        self.playbackRate = Float(defaultPlaybackRate)
+        ttsService.setPlaybackRate(Float(defaultPlaybackRate))
 
         // Set initial voice
         self.selectedVoice = ttsService.availableVoices().first { $0.language.hasPrefix("en") }
