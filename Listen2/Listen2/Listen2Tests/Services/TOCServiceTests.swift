@@ -16,11 +16,12 @@ final class TOCServiceTests: XCTestCase {
 
         // Create a dummy PDF document (will have no outline)
         let pdfData = createMinimalPDFData()
-        let pdfDocument = PDFDocument(data: pdfData)
+        guard let pdfDocument = PDFDocument(data: pdfData) else {
+            XCTFail("Failed to create PDF document")
+            return
+        }
 
-        XCTAssertNotNil(pdfDocument)
-
-        let entries = service.extractTOCFromMetadata(pdfDocument!)
+        let entries = service.extractTOCFromMetadata(pdfDocument)
         XCTAssertNotNil(entries)
         XCTAssertTrue(entries.isEmpty) // No outline in minimal PDF
     }
@@ -56,6 +57,22 @@ final class TOCServiceTests: XCTestCase {
         // Should detect "Short Title" but not the long paragraph
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries.first?.title, "Short Title")
+    }
+
+    func testHeadingLevelDetection() {
+        let service = TOCService()
+        let paragraphs = [
+            "Chapter 1: Title",      // Should be level 0
+            "1.1 Section",           // Should be level 1
+            "1.1.1 Subsection"       // Should be level 2
+        ]
+
+        let entries = service.detectHeadingsFromParagraphs(paragraphs)
+
+        XCTAssertEqual(entries.count, 3)
+        XCTAssertEqual(entries[0].level, 0)
+        XCTAssertEqual(entries[1].level, 1)
+        XCTAssertEqual(entries[2].level, 2)
     }
 
     // Helper to create minimal PDF data

@@ -58,9 +58,13 @@ final class TOCService {
 
             let pageIndex = pdfDocument.index(for: page)
 
-            // Estimate paragraph index (rough approximation)
-            // In real usage, this would need mapping from page to paragraph
-            let estimatedParagraphIndex = pageIndex * 10 // Rough estimate
+            // TODO: CRITICAL - Paragraph index estimation is currently a rough approximation
+            // WARNING: This multiplier (pageIndex * 10) is arbitrary and will be inaccurate
+            // INTEGRATION REQUIREMENT: Before Phase 3 integration with ReaderView:
+            //   - Replace this with actual mapping from PDFPage to paragraph indices
+            //   - Use ParagraphManager to get precise paragraph positions
+            //   - Consider maintaining a page-to-paragraph-range lookup table
+            let estimatedParagraphIndex = pageIndex * 10 // Rough estimate - REPLACE BEFORE INTEGRATION
 
             let entry = TOCEntry(
                 title: label,
