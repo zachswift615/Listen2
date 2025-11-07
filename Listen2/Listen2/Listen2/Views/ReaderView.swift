@@ -83,31 +83,33 @@ struct ReaderView: View {
     private func attributedText(for text: String, isCurrentParagraph: Bool) -> AttributedString {
         var attributedString = AttributedString(text)
 
-        // Highlight current word if this is the active paragraph
-        if isCurrentParagraph,
-           let wordRange = viewModel.currentWordRange {
-            // Validate that the word range is within the text bounds
-            guard wordRange.lowerBound >= text.startIndex &&
-                  wordRange.upperBound <= text.endIndex else {
-                return attributedString
-            }
+        // Only apply word highlighting if this is the currently playing paragraph
+        // This reduces unnecessary computations for inactive paragraphs
+        guard isCurrentParagraph, let wordRange = viewModel.currentWordRange else {
+            return attributedString
+        }
 
-            // Convert String.Index range to AttributedString range
-            let startOffset = text.distance(from: text.startIndex, to: wordRange.lowerBound)
-            let endOffset = text.distance(from: text.startIndex, to: wordRange.upperBound)
+        // Validate that the word range is within the text bounds
+        guard wordRange.lowerBound >= text.startIndex &&
+              wordRange.upperBound <= text.endIndex else {
+            return attributedString
+        }
 
-            // Validate offsets are within bounds
-            guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
-                return attributedString
-            }
+        // Convert String.Index range to AttributedString range
+        let startOffset = text.distance(from: text.startIndex, to: wordRange.lowerBound)
+        let endOffset = text.distance(from: text.startIndex, to: wordRange.upperBound)
 
-            let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
-            let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
+        // Validate offsets are within bounds
+        guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
+            return attributedString
+        }
 
-            if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
-                attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightWord
-                attributedString[attrStartIndex..<attrEndIndex].font = Font.body.weight(.semibold)
-            }
+        let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
+        let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
+
+        if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
+            attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightWord
+            attributedString[attrStartIndex..<attrEndIndex].font = Font.body.weight(.semibold)
         }
 
         return attributedString

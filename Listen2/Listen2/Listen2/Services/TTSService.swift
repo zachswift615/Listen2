@@ -169,6 +169,10 @@ final class TTSService: NSObject, ObservableObject {
         utterance.voice = currentVoice
         utterance.rate = playbackRate * 0.5 // AVSpeechUtterance rate is 0-1 scale
 
+        // Reduce delay between utterances for smoother continuous reading
+        utterance.preUtteranceDelay = 0.0
+        utterance.postUtteranceDelay = 0.1 // Very short pause between paragraphs
+
         currentProgress = ReadingProgress(
             paragraphIndex: index,
             wordRange: nil,
@@ -203,8 +207,11 @@ extension TTSService: AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
         // Update word range for highlighting
+        // Note: This is called very frequently (once per word)
+        // Only update if range is valid to reduce unnecessary UI updates
         let text = utterance.speechString
-        if let range = Range(characterRange, in: text) {
+        if let range = Range(characterRange, in: text),
+           range.lowerBound < text.endIndex {
             currentProgress = ReadingProgress(
                 paragraphIndex: currentProgress.paragraphIndex,
                 wordRange: range,
