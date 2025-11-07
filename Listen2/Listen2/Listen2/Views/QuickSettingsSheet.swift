@@ -9,6 +9,7 @@ import SwiftData
 struct QuickSettingsSheet: View {
 
     @ObservedObject var viewModel: ReaderViewModel
+    var coordinator: ReaderCoordinator? = nil
     @StateObject private var voiceFilterManager = VoiceFilterManager()
     @AppStorage("paragraphPauseDelay") private var pauseDuration: Double = 0.3
     @Environment(\.dismiss) private var dismiss
@@ -35,7 +36,8 @@ struct QuickSettingsSheet: View {
         .sheet(isPresented: $showingVoicePicker) {
             VoicePickerSheet(
                 viewModel: viewModel,
-                filterManager: voiceFilterManager
+                filterManager: voiceFilterManager,
+                coordinator: coordinator
             )
         }
     }
@@ -116,6 +118,7 @@ struct VoicePickerSheet: View {
 
     @ObservedObject var viewModel: ReaderViewModel
     @ObservedObject var filterManager: VoiceFilterManager
+    let coordinator: ReaderCoordinator?
     @Environment(\.dismiss) private var dismiss
 
     @State private var allVoices: [Voice] = []
@@ -131,7 +134,11 @@ struct VoicePickerSheet: View {
 
                 List(filteredVoices) { voice in
                     Button(action: {
-                        viewModel.setVoice(voice)
+                        if let coordinator = coordinator {
+                            coordinator.changeVoice(voice, viewModel: viewModel)
+                        } else {
+                            viewModel.setVoice(voice)
+                        }
                         filterManager.saveFilters()
                         dismiss()
                     }) {

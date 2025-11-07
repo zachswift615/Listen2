@@ -85,6 +85,8 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func setVoice(_ voice: Voice) {
+        // Just update the selected voice
+        // Coordinator will handle the stop/restart logic
         selectedVoice = voice
         ttsService.setVoice(voice)
     }

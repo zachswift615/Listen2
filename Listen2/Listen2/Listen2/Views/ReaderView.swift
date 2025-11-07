@@ -93,7 +93,7 @@ struct ReaderView: View {
                 .presentationDetents([.medium, .large])
             }
             .sheet(isPresented: $coordinator.isShowingQuickSettings) {
-                QuickSettingsSheet(viewModel: viewModel)
+                QuickSettingsSheet(viewModel: viewModel, coordinator: coordinator)
                     .presentationDetents([.medium])
             }
             .onAppear {
