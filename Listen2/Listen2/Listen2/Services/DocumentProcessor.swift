@@ -80,37 +80,42 @@ final class DocumentProcessor {
 
     /// Intelligently joins PDF lines into semantic paragraphs
     private func joinLinesIntoParagraphs(_ text: String) -> [String] {
-        // Split on newlines and clean up each line
-        let lines = text.components(separatedBy: CharacterSet.newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
+        // Split on newlines (DON'T trim yet - need to detect hyphens first)
+        let rawLines = text.components(separatedBy: CharacterSet.newlines)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
 
         var paragraphs: [String] = []
         var currentParagraph = ""
 
-        for line in lines {
+        for rawLine in rawLines {
+            let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
+
             // Skip very short lines (likely page numbers, headers, TOC dots)
-            if line.count < 15 && !line.hasSuffix(".") && !line.hasSuffix("!") && !line.hasSuffix("?") {
+            if trimmedLine.count < 15 && !trimmedLine.hasSuffix(".") && !trimmedLine.hasSuffix("!") && !trimmedLine.hasSuffix("?") {
                 continue
             }
 
             // Check if this line ends a sentence/paragraph
-            let endsWithPunctuation = line.hasSuffix(".") || line.hasSuffix("!") || line.hasSuffix("?")
+            let endsWithPunctuation = trimmedLine.hasSuffix(".") || trimmedLine.hasSuffix("!") || trimmedLine.hasSuffix("?")
 
             if currentParagraph.isEmpty {
                 // Start new paragraph
-                currentParagraph = line
+                currentParagraph = trimmedLine
             } else {
-                // Check if we need to join a hyphenated word
-                // Look for hyphen at end of accumulated paragraph
-                if let lastChar = currentParagraph.last, lastChar == "-" {
+                // Check if PREVIOUS line (before trimming current) ended with hyphen
+                // This handles: "interrupt- " or "interrupt-" or "interrupt‐"
+                let hyphenChars: Set<Character> = ["-", "‐", "‑"]  // ASCII hyphen, Unicode hyphen, non-breaking hyphen
+
+                // Trim trailing whitespace from current paragraph and check last char
+                let trimmedParagraph = currentParagraph.trimmingCharacters(in: .whitespaces)
+                if let lastChar = trimmedParagraph.last, hyphenChars.contains(lastChar) {
                     // Hyphenated word split across lines
                     // Remove hyphen and join directly (no space)
-                    currentParagraph = String(currentParagraph.dropLast())
-                    currentParagraph += line
+                    currentParagraph = String(trimmedParagraph.dropLast())
+                    currentParagraph += trimmedLine
                 } else {
                     // Normal line continuation - add space
-                    currentParagraph += " " + line
+                    currentParagraph += " " + trimmedLine
                 }
             }
 
