@@ -67,12 +67,9 @@ final class DocumentProcessor {
             fullText += pageText + "\n"
         }
 
-        // Fix hyphenation issues
-        let cleanedText = fixHyphenation(in: fullText)
-
-        // Join lines into proper paragraphs
+        // Join lines into proper paragraphs (handles hyphenation during joining)
         // PDF text has hard line breaks within paragraphs - we need to join them
-        let paragraphs = joinLinesIntoParagraphs(cleanedText)
+        let paragraphs = joinLinesIntoParagraphs(fullText)
 
         guard !paragraphs.isEmpty else {
             throw DocumentProcessorError.extractionFailed
@@ -83,7 +80,8 @@ final class DocumentProcessor {
 
     /// Intelligently joins PDF lines into semantic paragraphs
     private func joinLinesIntoParagraphs(_ text: String) -> [String] {
-        let lines = text.components(separatedBy: .newlines)
+        // Split on newlines and clean up each line
+        let lines = text.components(separatedBy: CharacterSet.newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
 
@@ -91,7 +89,7 @@ final class DocumentProcessor {
         var currentParagraph = ""
 
         for line in lines {
-            // Skip very short lines (likely page numbers, headers)
+            // Skip very short lines (likely page numbers, headers, TOC dots)
             if line.count < 15 && !line.hasSuffix(".") && !line.hasSuffix("!") && !line.hasSuffix("?") {
                 continue
             }
@@ -103,18 +101,20 @@ final class DocumentProcessor {
                 // Start new paragraph
                 currentParagraph = line
             } else {
-                // Check if previous line ended with a hyphen (hyphenated word)
-                if currentParagraph.hasSuffix("-") {
-                    // Remove the hyphen and join WITHOUT space (continuation of word)
-                    currentParagraph.removeLast() // Remove the hyphen
+                // Check if we need to join a hyphenated word
+                // Look for hyphen at end of accumulated paragraph
+                if let lastChar = currentParagraph.last, lastChar == "-" {
+                    // Hyphenated word split across lines
+                    // Remove hyphen and join directly (no space)
+                    currentParagraph = String(currentParagraph.dropLast())
                     currentParagraph += line
                 } else {
-                    // Normal line join (add space)
+                    // Normal line continuation - add space
                     currentParagraph += " " + line
                 }
             }
 
-            // If line ends with sentence punctuation, finalize the paragraph
+            // Finalize paragraph if we hit sentence-ending punctuation
             if endsWithPunctuation && currentParagraph.count > 50 {
                 paragraphs.append(currentParagraph)
                 currentParagraph = ""
