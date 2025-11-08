@@ -123,4 +123,21 @@ final class LibraryViewModel: ObservableObject {
 
         isProcessing = false
     }
+
+    func importSampleDocuments() async {
+        isProcessing = true
+        errorMessage = nil
+
+        do {
+            try await SampleContentManager.shared.importSampleDocuments(
+                modelContext: modelContext,
+                documentProcessor: documentProcessor
+            )
+            loadDocuments()
+        } catch {
+            errorMessage = "Failed to import sample documents: \(error.localizedDescription)"
+        }
+
+        isProcessing = false
+    }
 }

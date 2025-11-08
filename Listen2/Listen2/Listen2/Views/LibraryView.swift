@@ -119,11 +119,22 @@ struct LibraryView: View {
     }
 
     private var emptyStateView: some View {
-        EmptyStateView(
-            icon: "books.vertical",
-            title: "No Documents",
-            message: "Import a PDF, EPUB, or paste text to get started"
-        )
+        VStack(spacing: DesignSystem.Spacing.lg) {
+            EmptyStateView(
+                icon: "books.vertical",
+                title: "No Documents",
+                message: "Import a PDF, EPUB, or paste text to get started"
+            )
+
+            Button {
+                Task {
+                    await viewModel.importSampleDocuments()
+                }
+            } label: {
+                Label("Try Sample Content", systemImage: "star.fill")
+            }
+            .buttonStyle(.primary)
+        }
     }
 
     private var processingOverlay: some View {
