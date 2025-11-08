@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel = SettingsViewModel()
     @State private var showingVoicePicker = false
+    @State private var showingVoiceLibrary = false
 
     var body: some View {
         NavigationStack {
@@ -94,6 +95,29 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+
+                    Button {
+                        showingVoiceLibrary = true
+                    } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
+                                Text("Voice Library")
+                                    .font(DesignSystem.Typography.body)
+                                    .foregroundColor(DesignSystem.Colors.textPrimary)
+
+                                Text("Download and manage voices")
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(DesignSystem.Colors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                 } header: {
                     Text("Voice")
                 }
@@ -140,6 +164,9 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showingVoicePicker) {
                 voicePickerView
+            }
+            .sheet(isPresented: $showingVoiceLibrary) {
+                VoiceLibraryView()
             }
         }
     }
