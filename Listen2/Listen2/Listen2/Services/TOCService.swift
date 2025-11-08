@@ -11,13 +11,13 @@ final class TOCService {
     // MARK: - Public Methods
 
     /// Extract TOC from PDF outline metadata (Phase 1)
-    func extractTOCFromMetadata(_ pdfDocument: PDFDocument) -> [TOCEntry] {
+    func extractTOCFromMetadata(_ pdfDocument: PDFDocument, paragraphs: [String]) -> [TOCEntry] {
         guard let outline = pdfDocument.outlineRoot else {
             return []
         }
 
         var entries: [TOCEntry] = []
-        extractOutlineRecursive(outline, level: 0, entries: &entries, pdfDocument: pdfDocument)
+        extractOutlineRecursive(outline, level: 0, entries: &entries, pdfDocument: pdfDocument, paragraphs: paragraphs)
         return entries
     }
 
@@ -46,38 +46,114 @@ final class TOCService {
         _ outline: PDFOutline,
         level: Int,
         entries: inout [TOCEntry],
-        pdfDocument: PDFDocument
+        pdfDocument: PDFDocument,
+        paragraphs: [String]
     ) {
         for i in 0..<outline.numberOfChildren {
             guard let child = outline.child(at: i),
-                  let label = child.label,
-                  let destination = child.destination,
-                  let page = destination.page else {
+                  let label = child.label else {
                 continue
             }
 
-            let pageIndex = pdfDocument.index(for: page)
-
-            // TODO: CRITICAL - Paragraph index estimation is currently a rough approximation
-            // WARNING: This multiplier (pageIndex * 10) is arbitrary and will be inaccurate
-            // INTEGRATION REQUIREMENT: Before Phase 3 integration with ReaderView:
-            //   - Replace this with actual mapping from PDFPage to paragraph indices
-            //   - Use ParagraphManager to get precise paragraph positions
-            //   - Consider maintaining a page-to-paragraph-range lookup table
-            let estimatedParagraphIndex = pageIndex * 10 // Rough estimate - REPLACE BEFORE INTEGRATION
+            // Find the paragraph that contains this heading text
+            let paragraphIndex = findParagraphIndex(for: label, in: paragraphs)
 
             let entry = TOCEntry(
                 title: label,
-                paragraphIndex: estimatedParagraphIndex,
+                paragraphIndex: paragraphIndex,
                 level: level
             )
             entries.append(entry)
 
             // Recurse for children
             if child.numberOfChildren > 0 {
-                extractOutlineRecursive(child, level: level + 1, entries: &entries, pdfDocument: pdfDocument)
+                extractOutlineRecursive(child, level: level + 1, entries: &entries, pdfDocument: pdfDocument, paragraphs: paragraphs)
             }
         }
+    }
+
+    /// Finds the paragraph index that contains or matches the heading text
+    private func findParagraphIndex(for heading: String, in paragraphs: [String]) -> Int {
+        let normalizedHeading = heading.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // Extract core heading text (strip "Chapter X.", "Part X", etc.)
+        let coreHeading = extractCoreHeading(from: normalizedHeading)
+
+        print("🔍 Searching for heading: '\(heading)'")
+        print("🔍 Normalized: '\(normalizedHeading)'")
+        print("🔍 Core: '\(coreHeading)'")
+
+        // First pass: exact match
+        for (index, paragraph) in paragraphs.enumerated() {
+            let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalizedParagraph == normalizedHeading {
+                print("✅ Found exact match at paragraph \(index)")
+                return index
+            }
+        }
+
+        // Second pass: match core heading (without "Chapter X" prefix)
+        if coreHeading != normalizedHeading {
+            for (index, paragraph) in paragraphs.enumerated() {
+                let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let coreParagraph = extractCoreHeading(from: normalizedParagraph)
+
+                if coreParagraph == coreHeading {
+                    print("✅ Found core match at paragraph \(index)")
+                    return index
+                }
+            }
+        }
+
+        // Third pass: paragraph starts with heading
+        for (index, paragraph) in paragraphs.enumerated() {
+            let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalizedParagraph.hasPrefix(normalizedHeading) || normalizedParagraph.hasPrefix(coreHeading) {
+                print("✅ Found prefix match at paragraph \(index)")
+                return index
+            }
+        }
+
+        // Fourth pass: heading text appears in paragraph
+        for (index, paragraph) in paragraphs.enumerated() {
+            let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalizedParagraph.contains(normalizedHeading) || (coreHeading.count > 10 && normalizedParagraph.contains(coreHeading)) {
+                print("✅ Found contains match at paragraph \(index)")
+                return index
+            }
+        }
+
+        // Fallback: return 0 if not found
+        print("❌ No match found, returning 0")
+        return 0
+    }
+
+    /// Extracts core heading text by removing common prefixes like "Chapter 1.", "Part 2", etc.
+    private func extractCoreHeading(from text: String) -> String {
+        var result = text
+
+        // Remove patterns like "chapter 1. " or "chapter 1: "
+        let chapterPattern = "^chapter\\s+\\d+[.:]?\\s*"
+        if let regex = try? NSRegularExpression(pattern: chapterPattern, options: .caseInsensitive) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "")
+        }
+
+        // Remove patterns like "part 1. " or "part 1: "
+        let partPattern = "^part\\s+\\d+[.:]?\\s*"
+        if let regex = try? NSRegularExpression(pattern: partPattern, options: .caseInsensitive) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "")
+        }
+
+        // Remove leading numbers like "1. " or "1.1 "
+        let numberPattern = "^\\d+(\\.\\d+)*[.:]?\\s*"
+        if let regex = try? NSRegularExpression(pattern: numberPattern, options: []) {
+            let range = NSRange(result.startIndex..., in: result)
+            result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: "")
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func isLikelyHeading(_ text: String) -> Bool {

@@ -115,6 +115,19 @@ final class ReaderViewModel: ObservableObject {
         print("📖 Source type: \(document.sourceType)")
         print("📖 File URL: \(document.fileURL?.path ?? "nil")")
 
+        // First, try to load from stored TOC data
+        if let tocData = document.tocEntriesData {
+            print("📖 Found stored TOC data (\(tocData.count) bytes)")
+            let decoder = JSONDecoder()
+            if let entries = try? decoder.decode([TOCEntry].self, from: tocData) {
+                print("📖 ✅ Decoded \(entries.count) TOC entries from stored data")
+                tocEntries = entries
+                return
+            } else {
+                print("📖 ⚠️ Failed to decode stored TOC data")
+            }
+        }
+
         // Try to load TOC from PDF if available
         if document.sourceType == .pdf {
             print("📖 Document is PDF type")
@@ -136,7 +149,7 @@ final class ReaderViewModel: ObservableObject {
                             print("📖 Outline has \(outline.numberOfChildren) top-level entries")
                         }
 
-                        let entries = tocService.extractTOCFromMetadata(pdfDocument)
+                        let entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: document.extractedText)
                         print("📖 Extracted \(entries.count) entries from PDF metadata")
 
                         if !entries.isEmpty {

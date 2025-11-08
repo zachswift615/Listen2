@@ -50,6 +50,29 @@ final class DocumentProcessor {
         }
     }
 
+    /// Extracts and encodes TOC metadata during document import
+    /// Returns nil for non-PDF sources or if extraction fails
+    func extractTOCData(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> Data? {
+        guard sourceType == .pdf else {
+            return nil
+        }
+
+        guard let pdfDocument = PDFDocument(url: url) else {
+            return nil
+        }
+
+        let tocService = TOCService()
+        let entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
+
+        guard !entries.isEmpty else {
+            return nil
+        }
+
+        // Encode to JSON
+        let encoder = JSONEncoder()
+        return try? encoder.encode(entries)
+    }
+
     // MARK: - Private PDF Extraction
 
     private func extractPDFText(from url: URL) async throws -> [String] {
@@ -87,13 +110,58 @@ final class DocumentProcessor {
         var paragraphs: [String] = []
         var currentParagraph = ""
 
+        var lastLineWasHeading = false
+
         for rawLine in rawLines {
             let trimmedLine = rawLine.trimmingCharacters(in: .whitespaces)
 
-            // Skip very short lines (likely page numbers, headers, TOC dots)
-            if trimmedLine.count < 15 && !trimmedLine.hasSuffix(".") && !trimmedLine.hasSuffix("!") && !trimmedLine.hasSuffix("?") {
+            // Check if this is a heading (preserve headings even if short)
+            let isHeading = isLikelyHeading(trimmedLine)
+
+            // Debug logging for lines that look like chapter markers
+            if trimmedLine.uppercased().hasPrefix("CHAPTER") || trimmedLine.uppercased().hasPrefix("TOOL USE") {
+                print("📄 Line: '\(trimmedLine)' | isHeading: \(isHeading) | count: \(trimmedLine.count)")
+            }
+
+            // Skip very short lines UNLESS they're headings or end with sentence punctuation
+            if !isHeading && trimmedLine.count < 15 && !trimmedLine.hasSuffix(".") && !trimmedLine.hasSuffix("!") && !trimmedLine.hasSuffix("?") {
+                if trimmedLine.uppercased().hasPrefix("CHAPTER") {
+                    print("⚠️ SKIPPING chapter line: '\(trimmedLine)'")
+                }
                 continue
             }
+
+            // If we encounter a heading
+            if isHeading {
+                // Only merge if the previous line was a chapter marker (e.g., "CHAPTER 4")
+                // This prevents merging TOC entries or other consecutive headings
+                let isChapterMarker = currentParagraph.range(of: "^CHAPTER \\d+$", options: .regularExpression) != nil
+
+                if lastLineWasHeading && !currentParagraph.isEmpty && isChapterMarker {
+                    // Merge chapter marker with title (e.g., "CHAPTER 4" + "Tool Use")
+                    currentParagraph += " " + trimmedLine
+                    lastLineWasHeading = false // Don't merge more than 2 lines
+                    continue
+                }
+
+                // Otherwise, finalize the current paragraph and start a new heading
+                if !currentParagraph.isEmpty {
+                    paragraphs.append(currentParagraph)
+                    currentParagraph = ""
+                }
+
+                currentParagraph = trimmedLine
+                lastLineWasHeading = true
+                continue
+            }
+
+            // If we were processing a heading and now hit body text, finalize the heading
+            if lastLineWasHeading && !currentParagraph.isEmpty {
+                paragraphs.append(currentParagraph)
+                currentParagraph = ""
+            }
+
+            lastLineWasHeading = false
 
             // Check if this line ends a sentence/paragraph
             let endsWithPunctuation = trimmedLine.hasSuffix(".") || trimmedLine.hasSuffix("!") || trimmedLine.hasSuffix("?")
@@ -134,6 +202,60 @@ final class DocumentProcessor {
         return paragraphs
     }
 
+    /// Detects if a line of text is likely a heading
+    private func isLikelyHeading(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Skip empty
+        if trimmed.isEmpty {
+            return false
+        }
+
+        // Common heading patterns
+        let headingPatterns = [
+            "^Chapter \\d+",
+            "^CHAPTER \\d+",
+            "^\\d+\\.",
+            "^\\d+\\.\\d+",
+            "^[A-Z][A-Za-z\\s]+:$",
+            "^[IVX]+\\.", // Roman numerals
+            "^Part \\d+",
+            "^PART \\d+",
+            "^Appendix",
+            "^APPENDIX",
+        ]
+
+        for pattern in headingPatterns {
+            if trimmed.range(of: pattern, options: .regularExpression) != nil {
+                return true
+            }
+        }
+
+        // All caps text (common for headings)
+        if trimmed == trimmed.uppercased() && trimmed.count >= 3 && trimmed.count <= 100 {
+            return true
+        }
+
+        // Short text starting with capital, no sentence-ending punctuation
+        let endsWithSentencePunctuation = trimmed.hasSuffix(".") || trimmed.hasSuffix("!") || trimmed.hasSuffix("?")
+        if !endsWithSentencePunctuation && trimmed.count <= 80 && trimmed.first?.isUppercase == true {
+            let words = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            if words.count >= 1 && words.count <= 10 {
+                // Reject common body text starters
+                let bodyTextStarters = ["to see", "to understand", "to implement", "the following", "in this", "here's", "this is", "we'll", "you can", "for example"]
+                let lowercaseText = trimmed.lowercased()
+                for starter in bodyTextStarters {
+                    if lowercaseText.hasPrefix(starter) {
+                        return false
+                    }
+                }
+                return true
+            }
+        }
+
+        return false
+    }
+
     // MARK: - Clipboard Processing
 
     func processClipboardText(_ text: String) -> [String] {
@@ -145,10 +267,15 @@ final class DocumentProcessor {
         return paragraphs
     }
 
-    // MARK: - Private EPUB Extraction (Stub for now)
+    // MARK: - Private EPUB Extraction
 
     private func extractEPUBText(from url: URL) async throws -> [String] {
-        // TODO: Implement EPUB extraction in next task
-        throw DocumentProcessorError.unsupportedFormat
+        let extractor = EPUBExtractor()
+
+        do {
+            return try await extractor.extractText(from: url)
+        } catch {
+            throw DocumentProcessorError.extractionFailed
+        }
     }
 }

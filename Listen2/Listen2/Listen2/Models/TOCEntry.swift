@@ -5,7 +5,7 @@
 
 import Foundation
 
-struct TOCEntry: Identifiable, Hashable {
+struct TOCEntry: Identifiable, Hashable, Codable {
     let id: UUID
     let title: String
     let paragraphIndex: Int

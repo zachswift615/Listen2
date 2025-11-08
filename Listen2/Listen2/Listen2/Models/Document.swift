@@ -16,12 +16,14 @@ final class Document {
     var lastRead: Date
     var createdAt: Date
     var fileURL: URL? // Original file location
+    var tocEntriesData: Data? // Stored TOC entries as JSON
 
     init(
         title: String,
         sourceType: SourceType,
         extractedText: [String],
-        fileURL: URL? = nil
+        fileURL: URL? = nil,
+        tocEntriesData: Data? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -31,6 +33,7 @@ final class Document {
         self.lastRead = Date()
         self.createdAt = Date()
         self.fileURL = fileURL
+        self.tocEntriesData = tocEntriesData
     }
 
     var progressPercentage: Int {

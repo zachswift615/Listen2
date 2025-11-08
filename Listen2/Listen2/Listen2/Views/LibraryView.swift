@@ -69,12 +69,14 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [.pdf],
+                allowedContentTypes: [.pdf, .epub],
                 allowsMultipleSelection: false
             ) { result in
                 Task {
                     if let url = try? result.get().first {
-                        await viewModel.importDocument(from: url, sourceType: .pdf)
+                        // Determine source type from file extension
+                        let sourceType: SourceType = url.pathExtension.lowercased() == "epub" ? .epub : .pdf
+                        await viewModel.importDocument(from: url, sourceType: sourceType)
                     }
                 }
             }
@@ -120,7 +122,7 @@ struct LibraryView: View {
         EmptyStateView(
             icon: "books.vertical",
             title: "No Documents",
-            message: "Import a PDF or paste text to get started"
+            message: "Import a PDF, EPUB, or paste text to get started"
         )
     }
 

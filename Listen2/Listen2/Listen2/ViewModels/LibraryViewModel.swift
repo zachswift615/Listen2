@@ -100,13 +100,17 @@ final class LibraryViewModel: ObservableObject {
         do {
             let paragraphs = try await documentProcessor.extractText(from: url, sourceType: sourceType)
 
+            // Extract TOC data while we have file access (pass paragraphs for accurate index mapping)
+            let tocData = await documentProcessor.extractTOCData(from: url, sourceType: sourceType, paragraphs: paragraphs)
+
             let title = url.deletingPathExtension().lastPathComponent
 
             let document = Document(
                 title: title,
                 sourceType: sourceType,
                 extractedText: paragraphs,
-                fileURL: url
+                fileURL: url,
+                tocEntriesData: tocData
             )
 
             modelContext.insert(document)
