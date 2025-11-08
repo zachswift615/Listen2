@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		490D142D67798D9E76C0D7B0 /* onnxruntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = E15775105779F2515994ACE9 /* onnxruntime.xcframework */; };
+		85AE1CE9398CB1357527D0F8 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = E96309E614074D3F4B02B3A8 /* sherpa-onnx.xcframework */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 /* End PBXBuildFile section */
 
@@ -31,21 +33,29 @@
 		A6E02F032EBD6692005E8935 /* Listen2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listen2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F152EBD6693005E8935 /* Listen2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F1F2EBD6693005E8935 /* Listen2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E15775105779F2515994ACE9 /* onnxruntime.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = onnxruntime.xcframework; path = "../../../../../../../../private/tmp/sherpa-onnx/build-ios/ios-onnxruntime/onnxruntime.xcframework"; sourceTree = "<group>"; };
+		E96309E614074D3F4B02B3A8 /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "../../../../../../../../private/tmp/sherpa-onnx/build-ios/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
 		A6E02F182EBD6693005E8935 /* Listen2Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2Tests;
 			sourceTree = "<group>";
 		};
 		A6E02F222EBD6693005E8935 /* Listen2UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2UITests;
 			sourceTree = "<group>";
 		};
@@ -57,6 +67,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */,
+				85AE1CE9398CB1357527D0F8 /* sherpa-onnx.xcframework in Frameworks */,
+				490D142D67798D9E76C0D7B0 /* onnxruntime.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +97,8 @@
 				A6E02F222EBD6693005E8935 /* Listen2UITests */,
 				A6E030242EBEED0E005E8935 /* Frameworks */,
 				A6E02F042EBD6692005E8935 /* Products */,
+				E96309E614074D3F4B02B3A8 /* sherpa-onnx.xcframework */,
+				E15775105779F2515994ACE9 /* onnxruntime.xcframework */,
 			);
 			sourceTree = "<group>";
 		};
@@ -148,8 +162,6 @@
 				A6E02F182EBD6693005E8935 /* Listen2Tests */,
 			);
 			name = Listen2Tests;
-			packageProductDependencies = (
-			);
 			productName = Listen2Tests;
 			productReference = A6E02F152EBD6693005E8935 /* Listen2Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -171,8 +183,6 @@
 				A6E02F222EBD6693005E8935 /* Listen2UITests */,
 			);
 			name = Listen2UITests;
-			packageProductDependencies = (
-			);
 			productName = Listen2UITests;
 			productReference = A6E02F1F2EBD6693005E8935 /* Listen2UITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -415,10 +425,14 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Listen2/Preview Content\"";
 				DEVELOPMENT_TEAM = 2DM29VZ8ED;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"/private/tmp/sherpa-onnx/build-ios",
+					"/private/tmp/sherpa-onnx/build-ios/ios-onnxruntime",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -430,6 +444,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.zachswift.Listen2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Listen2/Listen2-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -445,10 +460,14 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Listen2/Preview Content\"";
 				DEVELOPMENT_TEAM = 2DM29VZ8ED;
 				ENABLE_PREVIEWS = YES;
+				FRAMEWORK_SEARCH_PATHS = (
+					"/private/tmp/sherpa-onnx/build-ios",
+					"/private/tmp/sherpa-onnx/build-ios/ios-onnxruntime",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIBackgroundModes = audio;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -460,6 +479,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.zachswift.Listen2;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "Listen2/Listen2-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
