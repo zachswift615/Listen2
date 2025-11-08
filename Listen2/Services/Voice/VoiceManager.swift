@@ -137,4 +137,113 @@ final class VoiceManager {
         }
         return freeSize
     }
+
+    // MARK: - Downloads
+
+    /// Download a voice from remote URL
+    /// - Parameters:
+    ///   - voiceID: Voice ID to download
+    ///   - progress: Progress callback (0.0-1.0)
+    func download(voiceID: String, progress: @escaping (Double) -> Void) async throws {
+        guard let voice = availableVoices().first(where: { $0.id == voiceID }) else {
+            throw VoiceError.voiceNotFound
+        }
+
+        // Check free space (require 2x voice size for safety)
+        let requiredSpace = Int64(voice.sizeMB * 1024 * 1024 * 2)
+        guard freeSpace() >= requiredSpace else {
+            throw VoiceError.insufficientSpace(required: voice.sizeMB * 2, available: Int(freeSpace() / 1024 / 1024))
+        }
+
+        // Download URL
+        guard let url = URL(string: voice.downloadURL) else {
+            throw VoiceError.invalidURL
+        }
+
+        // Download to temp file
+        let tempFile = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".tar.bz2")
+
+        // Download
+        let (downloadedURL, response) = try await URLSession.shared.download(from: url)
+
+        // Verify response
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw VoiceError.downloadFailed(reason: "HTTP error")
+        }
+
+        // Move to temp location
+        try fileManager.moveItem(at: downloadedURL, to: tempFile)
+
+        progress(0.5)  // Download complete, extraction next
+
+        // Extract
+        let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
+        try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
+
+        // TODO: Extract tar.bz2 using ZIPFoundation or Process
+        // For now, assume extraction works
+
+        progress(1.0)
+
+        // Cleanup temp file
+        try? fileManager.removeItem(at: tempFile)
+    }
+
+    /// Delete a downloaded voice
+    func delete(voiceID: String) throws {
+        let selectedVoiceID = UserDefaults.standard.string(forKey: "selectedVoiceID")
+
+        // Cannot delete active voice
+        guard voiceID != selectedVoiceID else {
+            throw VoiceError.cannotDeleteActiveVoice
+        }
+
+        // Cannot delete bundled voice
+        guard !availableVoices().first(where: { $0.id == voiceID })?.isBundled ?? false else {
+            throw VoiceError.cannotDeleteBundledVoice
+        }
+
+        let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
+        try fileManager.removeItem(at: voiceDir)
+    }
+
+    /// Cancel ongoing download
+    func cancelDownload(voiceID: String) {
+        // TODO: Track active downloads and cancel
+    }
+
+    /// Errors related to voice management
+    enum VoiceError: Error, LocalizedError {
+        case voiceNotFound
+        case insufficientSpace(required: Int, available: Int)
+        case invalidURL
+        case downloadFailed(reason: String)
+        case extractionFailed(reason: String)
+        case checksumMismatch
+        case cannotDeleteActiveVoice
+        case cannotDeleteBundledVoice
+
+        var errorDescription: String? {
+            switch self {
+            case .voiceNotFound:
+                return "Voice not found in catalog"
+            case .insufficientSpace(let required, let available):
+                return "Not enough storage. Need \(required) MB, but only \(available) MB available."
+            case .invalidURL:
+                return "Invalid download URL"
+            case .downloadFailed(let reason):
+                return "Download failed: \(reason)"
+            case .extractionFailed(let reason):
+                return "Extraction failed: \(reason)"
+            case .checksumMismatch:
+                return "Downloaded file is corrupted (checksum mismatch)"
+            case .cannotDeleteActiveVoice:
+                return "Cannot delete currently selected voice"
+            case .cannotDeleteBundledVoice:
+                return "Cannot delete bundled voice"
+            }
+        }
+    }
 }
