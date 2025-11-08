@@ -51,18 +51,29 @@ final class DocumentProcessor {
     }
 
     /// Extracts and encodes TOC metadata during document import
-    /// Returns nil for non-PDF sources or if extraction fails
+    /// Returns nil if extraction fails
     func extractTOCData(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> Data? {
-        guard sourceType == .pdf else {
+        let entries: [TOCEntry]
+
+        switch sourceType {
+        case .pdf:
+            guard let pdfDocument = PDFDocument(url: url) else {
+                return nil
+            }
+
+            let tocService = TOCService()
+            entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
+
+        case .epub:
+            let extractor = EPUBExtractor()
+            guard let tocEntries = try? await extractor.extractTOC(from: url, paragraphs: paragraphs) else {
+                return nil
+            }
+            entries = tocEntries
+
+        case .clipboard:
             return nil
         }
-
-        guard let pdfDocument = PDFDocument(url: url) else {
-            return nil
-        }
-
-        let tocService = TOCService()
-        let entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
 
         guard !entries.isEmpty else {
             return nil

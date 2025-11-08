@@ -14,6 +14,7 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Settings
 
     @AppStorage("paragraphPauseDelay") private var paragraphPauseDelay: Double = 0.3
+    @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
 
     // MARK: - Published Properties
 
@@ -105,7 +106,24 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func setPlaybackRate(_ rate: Float) {
-        playbackRate = max(0.5, min(2.5, rate))
+        let newRate = max(0.5, min(2.5, rate))
+
+        // Save to defaults for future sessions
+        defaultPlaybackRate = Double(newRate)
+
+        // Check if we were playing BEFORE we modify state
+        let wasPlaying = isPlaying || synthesizer.isSpeaking
+        let currentIndex = currentProgress.paragraphIndex
+
+        // Update the rate
+        playbackRate = newRate
+
+        // If we were playing, restart current paragraph with new rate
+        // This ensures rapid slider changes all trigger restarts
+        if wasPlaying {
+            stop()
+            speakParagraph(at: currentIndex)
+        }
     }
 
     func setVoice(_ voice: Voice) {

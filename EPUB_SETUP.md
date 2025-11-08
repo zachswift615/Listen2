@@ -14,19 +14,22 @@ ZIPFoundation is a lightweight, pure-Swift library for ZIP file extraction (whic
    ```
 
 2. **Add Package Dependency**
-   - Select the "Listen2" project in the navigator
-   - Select the "Listen2" target
+   - Select the "Listen2" project in the navigator (blue project icon)
+   - Click on "Project" → "Listen2" (under PROJECT, not TARGETS)
+   - Go to the "Package Dependencies" tab
+   - Click the "+" button at the bottom
+   - Enter the URL: `https://github.com/weichsel/ZIPFoundation.git`
+   - Dependency Rule: "Up to Next Major Version" `0.9.0`
+   - Click "Add Package"
+   - Wait for package resolution (latest version is 0.9.20)
+
+3. **Link ZIPFoundation to Target** ⚠️ CRITICAL STEP
+   - Select the "Listen2" target (under TARGETS)
    - Go to the "General" tab
    - Scroll down to "Frameworks, Libraries, and Embedded Content"
    - Click the "+" button
-   - Click "Add Other" → "Add Package Dependency"
-
-3. **Add ZIPFoundation**
-   - Enter the URL: `https://github.com/weichsel/ZIPFoundation.git`
-   - Dependency Rule: "Up to Next Major Version" `2.0.0`
-   - Click "Add Package"
-   - Select "ZIPFoundation" library
-   - Click "Add Package"
+   - Under "Swift Packages", select "ZIPFoundation"
+   - Click "Add"
 
 4. **Build the Project**
    - Press ⌘B to build
