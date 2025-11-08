@@ -25,14 +25,13 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Private Properties
 
     private let synthesizer = AVSpeechSynthesizer()
+    private let audioSessionManager = AudioSessionManager()
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
     private var shouldAutoAdvance = true // Track whether to auto-advance
 
     // MARK: - Initialization
-
-    private var audioSessionConfigured = false
 
     override init() {
         super.init()
@@ -44,23 +43,52 @@ final class TTSService: NSObject, ObservableObject {
 
         // Setup remote command center for lock screen controls
         setupRemoteCommandCenter()
+
+        // Setup audio session manager
+        setupAudioSessionObservers()
     }
 
     // MARK: - Audio Session Configuration
 
     private func configureAudioSession() {
-        guard !audioSessionConfigured else { return }
-
         do {
-            let audioSession = AVAudioSession.sharedInstance()
-            // .playback category automatically routes to speaker
-            try audioSession.setCategory(.playback, mode: .spokenAudio)
-            try audioSession.setActive(true)
-            audioSessionConfigured = true
+            try audioSessionManager.activateSession()
         } catch {
-            // Silently fail - audio will still work with default settings
-            print("Note: Could not configure custom audio session, using defaults")
+            // Log error but don't fail - audio will still work with default settings
+            print("Warning: Could not activate audio session: \(error.localizedDescription)")
         }
+    }
+
+    private func setupAudioSessionObservers() {
+        // Monitor interruption state changes
+        audioSessionManager.$isInterrupted
+            .sink { [weak self] isInterrupted in
+                if isInterrupted {
+                    // Pause playback when interrupted
+                    self?.pause()
+                }
+                // Note: Resume is handled by user action or remote command center
+            }
+            .store(in: &cancellables)
+
+        // Monitor route changes for headphone disconnection
+        audioSessionManager.$currentRoute
+            .dropFirst() // Skip initial value
+            .sink { [weak self] route in
+                // Pause when headphones are unplugged
+                // This is a common UX pattern for audio apps
+                if self?.isPlaying == true && !route.contains("Headphone") {
+                    self?.pause()
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    private var cancellables = Set<AnyCancellable>()
+
+    deinit {
+        // Clean up audio session
+        try? audioSessionManager.deactivateSession()
     }
 
     private func setupRemoteCommandCenter() {
@@ -99,9 +127,9 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Public Methods
 
-    func availableVoices() -> [Voice] {
+    func availableVoices() -> [AVVoice] {
         AVSpeechSynthesisVoice.speechVoices()
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
             .sorted { $0.language < $1.language }
     }
 
@@ -126,7 +154,7 @@ final class TTSService: NSObject, ObservableObject {
         }
     }
 
-    func setVoice(_ voice: Voice) {
+    func setVoice(_ voice: AVVoice) {
         currentVoice = AVSpeechSynthesisVoice(identifier: voice.id)
     }
 
