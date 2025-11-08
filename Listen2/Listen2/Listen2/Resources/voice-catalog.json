@@ -1,0 +1,66 @@
+{
+  "voices": [
+    {
+      "id": "en_US-lessac-medium",
+      "name": "Lessac",
+      "language": "en_US",
+      "gender": "female",
+      "quality": "medium",
+      "size_mb": 60,
+      "sample_url": null,
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": true
+    },
+    {
+      "id": "en_US-lessac-high",
+      "name": "Lessac",
+      "language": "en_US",
+      "gender": "female",
+      "quality": "high",
+      "size_mb": 80,
+      "sample_url": null,
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-high.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-hfc_female-medium",
+      "name": "HFC Female",
+      "language": "en_US",
+      "gender": "female",
+      "quality": "medium",
+      "size_mb": 63,
+      "sample_url": null,
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_female-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-hfc_male-medium",
+      "name": "HFC Male",
+      "language": "en_US",
+      "gender": "male",
+      "quality": "medium",
+      "size_mb": 63,
+      "sample_url": null,
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_male-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-ryan-high",
+      "name": "Ryan",
+      "language": "en_US",
+      "gender": "male",
+      "quality": "high",
+      "size_mb": 75,
+      "sample_url": null,
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-high.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    }
+  ],
+  "version": "1.0",
+  "last_updated": "2025-11-08"
+}
