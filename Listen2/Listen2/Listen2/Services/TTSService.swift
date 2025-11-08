@@ -26,6 +26,7 @@ final class TTSService: NSObject, ObservableObject {
 
     private let synthesizer = AVSpeechSynthesizer()
     private let audioSessionManager = AudioSessionManager()
+    private let nowPlayingManager = NowPlayingInfoManager()
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
@@ -41,8 +42,8 @@ final class TTSService: NSObject, ObservableObject {
         currentVoice = AVSpeechSynthesisVoice.speechVoices()
             .first { $0.language.hasPrefix("en") }
 
-        // Setup remote command center for lock screen controls
-        setupRemoteCommandCenter()
+        // Setup now playing manager with command handlers
+        setupNowPlayingManager()
 
         // Setup audio session manager
         setupAudioSessionObservers()
@@ -91,38 +92,22 @@ final class TTSService: NSObject, ObservableObject {
         try? audioSessionManager.deactivateSession()
     }
 
-    private func setupRemoteCommandCenter() {
-        let commandCenter = MPRemoteCommandCenter.shared()
-
-        commandCenter.playCommand.addTarget { [weak self] _ in
-            self?.resume()
-            return .success
-        }
-
-        commandCenter.pauseCommand.addTarget { [weak self] _ in
-            self?.pause()
-            return .success
-        }
-
-        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
-            self?.skipToNext()
-            return .success
-        }
-
-        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
-            self?.skipToPrevious()
-            return .success
-        }
-    }
-
-    private func updateNowPlayingInfo(title: String) {
-        var nowPlayingInfo = [String: Any]()
-        nowPlayingInfo[MPMediaItemPropertyTitle] = title
-        nowPlayingInfo[MPMediaItemPropertyArtist] = "Listen2"
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 0
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    private func setupNowPlayingManager() {
+        // Set up command handlers for lock screen controls
+        nowPlayingManager.setCommandHandlers(
+            play: { [weak self] in
+                self?.resume()
+            },
+            pause: { [weak self] in
+                self?.pause()
+            },
+            next: { [weak self] in
+                self?.skipToNext()
+            },
+            previous: { [weak self] in
+                self?.skipToPrevious()
+            }
+        )
     }
 
     // MARK: - Public Methods
@@ -145,6 +130,9 @@ final class TTSService: NSObject, ObservableObject {
 
         // Update the rate
         playbackRate = newRate
+
+        // Update now playing info with new rate
+        nowPlayingManager.updatePlaybackRate(newRate)
 
         // If we were playing, restart current paragraph with new rate
         // This ensures rapid slider changes all trigger restarts
@@ -179,18 +167,19 @@ final class TTSService: NSObject, ObservableObject {
             isPlaying: false
         )
 
-        updateNowPlayingInfo(title: title)
         speakParagraph(at: index)
     }
 
     func pause() {
         synthesizer.pauseSpeaking(at: .word)
         isPlaying = false
+        nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
 
     func resume() {
         synthesizer.continueSpeaking()
         isPlaying = true
+        nowPlayingManager.updatePlaybackState(isPlaying: true)
     }
 
     func skipToNext() {
@@ -213,6 +202,7 @@ final class TTSService: NSObject, ObservableObject {
     func stop() {
         synthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
+        nowPlayingManager.clearNowPlayingInfo()
     }
 
     // MARK: - Private Methods
@@ -235,6 +225,15 @@ final class TTSService: NSObject, ObservableObject {
             isPlaying: true
         )
 
+        // Update now playing info for lock screen
+        nowPlayingManager.updateNowPlayingInfo(
+            documentTitle: currentTitle,
+            paragraphIndex: index,
+            totalParagraphs: currentText.count,
+            isPlaying: true,
+            rate: playbackRate
+        )
+
         synthesizer.speak(utterance)
     }
 }
@@ -247,6 +246,7 @@ extension TTSService: AVSpeechSynthesizerDelegate {
         isPlaying = true
         // Re-enable auto-advance once utterance has actually started
         shouldAutoAdvance = true
+        nowPlayingManager.updatePlaybackState(isPlaying: true)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
@@ -258,11 +258,15 @@ extension TTSService: AVSpeechSynthesizerDelegate {
         let nextIndex = currentProgress.paragraphIndex + 1
         if nextIndex < currentText.count {
             speakParagraph(at: nextIndex)
+        } else {
+            // Reached end of document, clear now playing info
+            nowPlayingManager.clearNowPlayingInfo()
         }
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isPlaying = false
+        nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
