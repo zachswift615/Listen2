@@ -80,7 +80,7 @@ final class ReaderCoordinator: ObservableObject {
     // MARK: - Voice Change Handling
 
     func changeVoice(
-        _ newVoice: Voice,
+        _ newVoice: AVVoice,
         viewModel: ReaderViewModel
     ) {
         // Capture current state

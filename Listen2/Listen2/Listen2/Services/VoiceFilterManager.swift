@@ -9,7 +9,7 @@ import SwiftUI
 final class VoiceFilterManager: ObservableObject {
 
     @Published var selectedLanguages: Set<String> = []
-    @Published var selectedGender: VoiceGender? = nil
+    @Published var selectedGender: AVVoiceGender? = nil
 
     @AppStorage("lastUsedLanguageFilter") private var lastUsedLanguagesData: Data = Data()
 
@@ -19,7 +19,7 @@ final class VoiceFilterManager: ObservableObject {
 
     // MARK: - Filtering
 
-    func filteredVoices(_ allVoices: [Voice]) -> [Voice] {
+    func filteredVoices(_ allVoices: [AVVoice]) -> [AVVoice] {
         var filtered = allVoices
 
         // Filter by language
@@ -58,7 +58,7 @@ final class VoiceFilterManager: ObservableObject {
         selectedGender = nil
     }
 
-    func setDefaultToSystemLanguage(_ allVoices: [Voice]) {
+    func setDefaultToSystemLanguage(_ allVoices: [AVVoice]) {
         if selectedLanguages.isEmpty {
             let systemLanguage = Locale.current.language.languageCode?.identifier ?? "en"
             let matchingLanguages = allVoices

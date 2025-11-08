@@ -16,7 +16,7 @@ final class ReaderViewModel: ObservableObject {
     @Published var currentWordRange: Range<String.Index>?
     @Published var isPlaying: Bool = false
     @Published var playbackRate: Float = 1.0
-    @Published var selectedVoice: Voice?
+    @Published var selectedVoice: AVVoice?
     @Published var tocEntries: [TOCEntry] = []
 
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
@@ -91,7 +91,7 @@ final class ReaderViewModel: ObservableObject {
         ttsService.setPlaybackRate(rate)
     }
 
-    func setVoice(_ voice: Voice) {
+    func setVoice(_ voice: AVVoice) {
         // Just update the selected voice
         // Coordinator will handle the stop/restart logic
         selectedVoice = voice

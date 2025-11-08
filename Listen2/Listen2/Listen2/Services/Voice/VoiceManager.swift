@@ -201,7 +201,7 @@ final class VoiceManager {
         }
 
         // Cannot delete bundled voice
-        guard !availableVoices().first(where: { $0.id == voiceID })?.isBundled ?? false else {
+        if availableVoices().first(where: { $0.id == voiceID })?.isBundled == true {
             throw VoiceError.cannotDeleteBundledVoice
         }
 

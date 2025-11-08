@@ -121,9 +121,9 @@ struct VoicePickerSheet: View {
     let coordinator: ReaderCoordinator?
     @Environment(\.dismiss) private var dismiss
 
-    @State private var allVoices: [Voice] = []
+    @State private var allVoices: [AVVoice] = []
 
-    var filteredVoices: [Voice] {
+    var filteredVoices: [AVVoice] {
         filterManager.filteredVoices(allVoices)
     }
 

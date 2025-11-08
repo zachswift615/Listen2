@@ -17,19 +17,19 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Available Voices
 
-    var availableVoices: [Voice] {
+    var availableVoices: [AVVoice] {
         AVSpeechSynthesisVoice.speechVoices()
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
             .sorted { $0.language < $1.language }
     }
 
-    var selectedVoice: Voice? {
+    var selectedVoice: AVVoice? {
         get {
             guard let identifier = defaultVoiceIdentifier,
                   let avVoice = AVSpeechSynthesisVoice(identifier: identifier) else {
                 return availableVoices.first { $0.language.hasPrefix("en") }
             }
-            return Voice(from: avVoice)
+            return AVVoice(from: avVoice)
         }
         set {
             defaultVoiceIdentifier = newValue?.id
