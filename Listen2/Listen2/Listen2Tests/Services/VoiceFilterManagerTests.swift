@@ -15,7 +15,7 @@ final class VoiceFilterManagerTests: XCTestCase {
         // Create test voices
         let voices = AVSpeechSynthesisVoice.speechVoices()
             .prefix(10)
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
 
         // Filter for English voices only
         manager.selectedLanguages = Set(voices.filter { $0.language.hasPrefix("en") }.map { $0.language })
@@ -31,7 +31,7 @@ final class VoiceFilterManagerTests: XCTestCase {
 
         let voices = AVSpeechSynthesisVoice.speechVoices()
             .prefix(10)
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
 
         manager.selectedGender = .female
 
@@ -47,7 +47,7 @@ final class VoiceFilterManagerTests: XCTestCase {
 
         let voices = AVSpeechSynthesisVoice.speechVoices()
             .prefix(20)
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
 
         manager.selectedLanguages = Set(voices.filter { $0.language.hasPrefix("en") }.map { $0.language })
         manager.selectedGender = .male
@@ -65,7 +65,7 @@ final class VoiceFilterManagerTests: XCTestCase {
 
         let voices = AVSpeechSynthesisVoice.speechVoices()
             .prefix(10)
-            .map { Voice(from: $0) }
+            .map { AVVoice(from: $0) }
 
         let filtered = manager.filteredVoices(Array(voices))
 

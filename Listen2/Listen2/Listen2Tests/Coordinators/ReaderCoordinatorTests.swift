@@ -37,7 +37,7 @@ final class ReaderCoordinatorTests: XCTestCase {
         return ReaderViewModel(document: document, modelContext: context)
     }
 
-    private func createTestVoice() -> Voice? {
+    private func createTestVoice() -> AVVoice? {
         // Get first available English voice from the system
         let ttsService = TTSService()
         return ttsService.availableVoices().first { $0.language.hasPrefix("en") }
@@ -114,8 +114,6 @@ final class ReaderCoordinatorTests: XCTestCase {
 
         // Ensure not playing
         XCTAssertFalse(viewModel.isPlaying)
-
-        let originalVoice = viewModel.selectedVoice
 
         // Change voice
         coordinator.changeVoice(testVoice, viewModel: viewModel)

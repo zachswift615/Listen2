@@ -13,7 +13,7 @@ final class VoiceTests: XCTestCase {
         // Test that Samantha is detected as female
         if let avVoice = AVSpeechSynthesisVoice.speechVoices()
             .first(where: { $0.identifier.contains("Samantha") }) {
-            let voice = Voice(from: avVoice)
+            let voice = AVVoice(from: avVoice)
             XCTAssertEqual(voice.gender, .female)
         }
     }
@@ -22,7 +22,7 @@ final class VoiceTests: XCTestCase {
         // Test that Alex is detected as male
         if let avVoice = AVSpeechSynthesisVoice.speechVoices()
             .first(where: { $0.identifier.contains("Alex") }) {
-            let voice = Voice(from: avVoice)
+            let voice = AVVoice(from: avVoice)
             XCTAssertEqual(voice.gender, .male)
         }
     }
@@ -30,7 +30,7 @@ final class VoiceTests: XCTestCase {
     func testGenderDetectionDefaultsToNeutral() {
         // Test that unknown voices default to neutral
         if let avVoice = AVSpeechSynthesisVoice.speechVoices().first {
-            let voice = Voice(from: avVoice)
+            let voice = AVVoice(from: avVoice)
             XCTAssertNotNil(voice.gender) // Should have some gender value
         }
     }
