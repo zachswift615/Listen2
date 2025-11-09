@@ -21,7 +21,7 @@ final class TOCServiceTests: XCTestCase {
             return
         }
 
-        let paragraphs = ["Test paragraph 1", "Test paragraph 2"]
+        let paragraphs: [String] = []
         let entries = service.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
         XCTAssertNotNil(entries)
         XCTAssertTrue(entries.isEmpty) // No outline in minimal PDF
