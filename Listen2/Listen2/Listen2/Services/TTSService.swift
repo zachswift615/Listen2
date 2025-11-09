@@ -193,8 +193,19 @@ final class TTSService: NSObject, ObservableObject {
 
     func setVoice(_ voice: AVVoice) {
         if voice.isPiperVoice {
+            // Validate voice ID format
+            guard voice.id.hasPrefix("piper:") else {
+                print("[TTSService] ⚠️ Invalid Piper voice ID format: \(voice.id)")
+                return
+            }
+
+            // Stop current playback if active
+            if isPlaying {
+                stop()
+            }
+
             // Extract voice ID from "piper:en_US-lessac-medium" format
-            let voiceID = String(voice.id.dropFirst(6))  // Remove "piper:" prefix
+            let voiceID = String(voice.id.dropFirst("piper:".count))
 
             // Reinitialize Piper provider with new voice
             Task {
@@ -204,7 +215,10 @@ final class TTSService: NSObject, ObservableObject {
                         voiceManager: voiceManager
                     )
                     try await piperProvider.initialize()
-                    self.provider = piperProvider
+
+                    await MainActor.run {
+                        self.provider = piperProvider
+                    }
 
                     // Update synthesis queue
                     self.synthesisQueue = await SynthesisQueue(provider: piperProvider)
