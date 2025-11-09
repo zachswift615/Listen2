@@ -263,7 +263,13 @@ final class VoiceManager {
                         continue
                     }
                     pathComponents.removeFirst()
-                    let relativePath = pathComponents.joined(separator: "/")
+                    var relativePath = pathComponents.joined(separator: "/")
+
+                    // Rename voice-specific .onnx file to generic model.onnx
+                    if relativePath.hasSuffix(".onnx") && !relativePath.hasSuffix("model.onnx") {
+                        print("[VoiceManager] 🔄 Renaming \(relativePath) → model.onnx")
+                        relativePath = "model.onnx"
+                    }
 
                     let filePath = voiceDir.appendingPathComponent(relativePath)
 
