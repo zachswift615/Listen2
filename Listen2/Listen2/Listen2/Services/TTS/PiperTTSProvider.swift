@@ -34,13 +34,9 @@ final class PiperTTSProvider: TTSProvider {
 
         // Get model paths from VoiceManager
         guard let modelPath = voiceManager.modelPath(for: voiceID),
-              let tokensPath = voiceManager.tokensPath(for: voiceID) else {
+              let tokensPath = voiceManager.tokensPath(for: voiceID),
+              let espeakDataPath = voiceManager.speakNGDataPath(for: voiceID) else {
             throw TTSError.synthesisFailed(reason: "Voice '\(voiceID)' not found")
-        }
-
-        // espeak-ng-data is always at bundle root (shared across voices)
-        guard let dataDir = Bundle.main.resourcePath else {
-            throw TTSError.synthesisFailed(reason: "espeak-ng-data not found in bundle")
         }
 
         // Configure VITS model
@@ -48,7 +44,7 @@ final class PiperTTSProvider: TTSProvider {
             model: modelPath.path,
             lexicon: "",
             tokens: tokensPath.path,
-            dataDir: dataDir
+            dataDir: espeakDataPath.path
         )
 
         let modelConfig = sherpaOnnxOfflineTtsModelConfig(vits: vits)

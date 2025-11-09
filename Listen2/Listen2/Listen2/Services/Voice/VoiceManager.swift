@@ -108,6 +108,26 @@ final class VoiceManager {
         return nil
     }
 
+    /// Get espeak-ng-data directory path
+    /// - Returns: Path to espeak-ng-data directory if available, nil otherwise
+    func speakNGDataPath(for voiceID: String) -> URL? {
+        // Check if bundled (shared across all voices)
+        if let bundledPath = Bundle.main.url(forResource: "espeak-ng-data", withExtension: nil, subdirectory: "PiperModels") {
+            return bundledPath
+        }
+
+        // Check Documents/Voices/ (downloaded with voice)
+        let downloadedPath = voicesDirectory
+            .appendingPathComponent(voiceID)
+            .appendingPathComponent("espeak-ng-data")
+
+        if fileManager.fileExists(atPath: downloadedPath.path) {
+            return downloadedPath
+        }
+
+        return nil
+    }
+
     // MARK: - Storage Info
 
     /// Total disk space used by downloaded voices (bytes)
