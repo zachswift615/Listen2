@@ -206,12 +206,32 @@ final class VoiceManager {
 
         progress(0.5)  // Download complete, extraction next
 
-        // Extract
+        // Extract tar.bz2 using tar command
         let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
         try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
 
-        // TODO: Extract tar.bz2 using ZIPFoundation or Process
-        // For now, assume extraction works
+        // Extract using tar command
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
+        process.arguments = [
+            "-xjf",  // Extract bzip2 compressed tar
+            tempFile.path,
+            "-C",    // Change to directory
+            voiceDir.path,
+            "--strip-components=1"  // Remove top-level directory from archive
+        ]
+
+        let pipe = Pipe()
+        process.standardError = pipe
+
+        try process.run()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0 else {
+            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
+            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw VoiceError.extractionFailed(reason: errorMessage)
+        }
 
         progress(1.0)
 

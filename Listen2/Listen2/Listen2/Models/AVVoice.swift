@@ -18,6 +18,7 @@ struct AVVoice: Identifiable, Hashable {
     let language: String
     let quality: AVSpeechSynthesisVoiceQuality
     let gender: AVVoiceGender
+    let isPiperVoice: Bool  // True if this is a Piper TTS voice
 
     init(from avVoice: AVSpeechSynthesisVoice) {
         self.id = avVoice.identifier
@@ -25,6 +26,32 @@ struct AVVoice: Identifiable, Hashable {
         self.language = avVoice.language
         self.quality = avVoice.quality
         self.gender = Self.detectGender(from: avVoice)
+        self.isPiperVoice = false
+    }
+
+    /// Initialize from Piper Voice model
+    init(from piperVoice: Voice) {
+        self.id = "piper:\(piperVoice.id)"  // Prefix to distinguish from AVSpeech
+        self.name = piperVoice.displayName
+        self.language = piperVoice.language
+        // Map Piper quality to AVSpeech quality
+        self.quality = Self.mapPiperQuality(piperVoice.quality)
+        // Map Piper gender
+        self.gender = AVVoiceGender(rawValue: piperVoice.gender) ?? .neutral
+        self.isPiperVoice = true
+    }
+
+    private static func mapPiperQuality(_ quality: String) -> AVSpeechSynthesisVoiceQuality {
+        switch quality.lowercased() {
+        case "low":
+            return .default
+        case "medium":
+            return .enhanced
+        case "high", "very_high":
+            return .premium
+        default:
+            return .enhanced
+        }
     }
 
     var displayName: String {
