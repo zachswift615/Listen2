@@ -207,53 +207,79 @@ final class VoiceManager {
 
         progress(0.5)  // Download complete, extraction next
 
+        print("[VoiceManager] Starting extraction for \(voiceID)")
+
         // Extract tar.bz2 using SWCompression (works on both iOS and macOS)
         let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
         try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
 
-        do {
-            // Read the compressed tar.bz2 file
-            let compressedData = try Data(contentsOf: tempFile)
+        print("[VoiceManager] Created voice directory: \(voiceDir.path)")
 
-            // Decompress bzip2
-            let decompressedData = try BZip2.decompress(data: compressedData)
+        // Perform CPU-intensive decompression and extraction on background thread
+        let extractionResult = try await Task.detached(priority: .userInitiated) { [voiceDir, tempFile, fileManager] in
+            do {
+                // Read the compressed tar.bz2 file
+                print("[VoiceManager] Reading compressed file...")
+                let compressedData = try Data(contentsOf: tempFile)
+                print("[VoiceManager] Compressed file size: \(compressedData.count / 1024 / 1024) MB")
 
-            // Extract tar archive
-            let tarContents = try TarContainer.open(container: decompressedData)
+                // Decompress bzip2 (CPU-intensive)
+                print("[VoiceManager] Decompressing bzip2...")
+                let decompressedData = try BZip2.decompress(data: compressedData)
+                print("[VoiceManager] Decompressed size: \(decompressedData.count / 1024 / 1024) MB")
 
-            // Extract all files, stripping the top-level directory
-            for entry in tarContents {
-                // Skip directories
-                guard entry.info.type == .regular || entry.info.type == .symbolicLink else {
-                    continue
+                // Extract tar archive
+                print("[VoiceManager] Opening tar container...")
+                let tarContents = try TarContainer.open(container: decompressedData)
+                print("[VoiceManager] Tar contains \(tarContents.count) entries")
+
+                // Extract all files, stripping the top-level directory
+                var extractedCount = 0
+                for entry in tarContents {
+                    // Skip directories
+                    guard entry.info.type == .regular || entry.info.type == .symbolicLink else {
+                        continue
+                    }
+
+                    // Strip first path component (removes top-level directory from archive)
+                    var pathComponents = entry.info.name.split(separator: "/").map(String.init)
+                    guard pathComponents.count > 1 else {
+                        // Skip if only one component (shouldn't happen)
+                        continue
+                    }
+                    pathComponents.removeFirst()
+                    let relativePath = pathComponents.joined(separator: "/")
+
+                    let filePath = voiceDir.appendingPathComponent(relativePath)
+
+                    // Create parent directory if needed
+                    let parentDir = filePath.deletingLastPathComponent()
+                    if !fileManager.fileExists(atPath: parentDir.path) {
+                        try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+                    }
+
+                    // Write file data
+                    if let data = entry.data {
+                        try data.write(to: filePath)
+                        extractedCount += 1
+                        if extractedCount % 100 == 0 {
+                            print("[VoiceManager] Extracted \(extractedCount) files...")
+                        }
+                    }
                 }
 
-                // Strip first path component (removes top-level directory from archive)
-                var pathComponents = entry.info.name.split(separator: "/").map(String.init)
-                guard pathComponents.count > 1 else {
-                    // Skip if only one component (shouldn't happen)
-                    continue
-                }
-                pathComponents.removeFirst()
-                let relativePath = pathComponents.joined(separator: "/")
-
-                let filePath = voiceDir.appendingPathComponent(relativePath)
-
-                // Create parent directory if needed
-                let parentDir = filePath.deletingLastPathComponent()
-                if !fileManager.fileExists(atPath: parentDir.path) {
-                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
-                }
-
-                // Write file data
-                if let data = entry.data {
-                    try data.write(to: filePath)
-                }
+                print("[VoiceManager] ✅ Extraction complete! Extracted \(extractedCount) files")
+                return extractedCount
+            } catch {
+                print("[VoiceManager] ❌ Extraction failed: \(error.localizedDescription)")
+                throw error
             }
-        } catch {
-            // Clean up voice directory on extraction failure
+        }.value
+
+        // Check if extraction succeeded
+        if extractionResult == 0 {
             try? fileManager.removeItem(at: voiceDir)
-            throw VoiceError.extractionFailed(reason: error.localizedDescription)
+            throw VoiceError.extractionFailed(reason: "No files extracted")
         }
 
         progress(1.0)
