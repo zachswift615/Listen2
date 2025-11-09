@@ -147,6 +147,16 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Public Methods
 
     func availableVoices() -> [AVVoice] {
+        piperVoices()
+    }
+
+    func piperVoices() -> [AVVoice] {
+        voiceManager.downloadedVoices()
+            .map { AVVoice(from: $0) }
+            .sorted { $0.language < $1.language }
+    }
+
+    func iosVoices() -> [AVVoice] {
         AVSpeechSynthesisVoice.speechVoices()
             .map { AVVoice(from: $0) }
             .sorted { $0.language < $1.language }
@@ -182,7 +192,32 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func setVoice(_ voice: AVVoice) {
-        currentVoice = AVSpeechSynthesisVoice(identifier: voice.id)
+        if voice.isPiperVoice {
+            // Extract voice ID from "piper:en_US-lessac-medium" format
+            let voiceID = String(voice.id.dropFirst(6))  // Remove "piper:" prefix
+
+            // Reinitialize Piper provider with new voice
+            Task {
+                do {
+                    let piperProvider = PiperTTSProvider(
+                        voiceID: voiceID,
+                        voiceManager: voiceManager
+                    )
+                    try await piperProvider.initialize()
+                    self.provider = piperProvider
+
+                    // Update synthesis queue
+                    self.synthesisQueue = await SynthesisQueue(provider: piperProvider)
+
+                    print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
+                } catch {
+                    print("[TTSService] ⚠️ Failed to switch Piper voice: \(error)")
+                }
+            }
+        } else {
+            // iOS voice - set for fallback
+            currentVoice = AVSpeechSynthesisVoice(identifier: voice.id)
+        }
     }
 
     // MARK: - Playback Control

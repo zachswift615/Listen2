@@ -211,6 +211,7 @@ final class VoiceManager {
         try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
 
         // Extract using tar command
+        #if os(macOS)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
         process.arguments = [
@@ -232,6 +233,10 @@ final class VoiceManager {
             let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
             throw VoiceError.extractionFailed(reason: errorMessage)
         }
+        #else
+        // iOS doesn't support Process - voices must be pre-bundled
+        throw VoiceError.extractionFailed(reason: "Voice extraction not supported on iOS - voices must be bundled")
+        #endif
 
         progress(1.0)
 
