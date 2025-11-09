@@ -24,7 +24,10 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Private Properties
 
-    private let synthesizer = AVSpeechSynthesizer()
+    private var provider: TTSProvider?
+    private var fallbackSynthesizer = AVSpeechSynthesizer()
+    private let voiceManager = VoiceManager()
+    private var usePiper: Bool = true  // Feature flag
     private let audioSessionManager = AudioSessionManager()
     private let nowPlayingManager = NowPlayingInfoManager()
     private var currentText: [String] = []
@@ -36,17 +39,36 @@ final class TTSService: NSObject, ObservableObject {
 
     override init() {
         super.init()
-        synthesizer.delegate = self
+        fallbackSynthesizer.delegate = self
 
-        // Set default voice (first English voice)
-        currentVoice = AVSpeechSynthesisVoice.speechVoices()
-            .first { $0.language.hasPrefix("en") }
+        // Try to initialize Piper TTS
+        Task {
+            await initializePiperProvider()
+        }
 
-        // Setup now playing manager with command handlers
+        // Setup now playing manager
         setupNowPlayingManager()
 
-        // Setup audio session manager
+        // Setup audio session observers
         setupAudioSessionObservers()
+    }
+
+    private func initializePiperProvider() async {
+        guard usePiper else { return }
+
+        do {
+            let bundledVoice = voiceManager.bundledVoice()
+            let piperProvider = PiperTTSProvider(
+                voiceID: bundledVoice.id,
+                voiceManager: voiceManager
+            )
+            try await piperProvider.initialize()
+            self.provider = piperProvider
+            print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
+        } catch {
+            print("[TTSService] ⚠️ Piper initialization failed, using AVSpeech fallback: \(error)")
+            self.provider = nil
+        }
     }
 
     // MARK: - Audio Session Configuration
@@ -125,7 +147,7 @@ final class TTSService: NSObject, ObservableObject {
         defaultPlaybackRate = Double(newRate)
 
         // Check if we were playing BEFORE we modify state
-        let wasPlaying = isPlaying || synthesizer.isSpeaking
+        let wasPlaying = isPlaying || fallbackSynthesizer.isSpeaking
         let currentIndex = currentProgress.paragraphIndex
 
         // Update the rate
@@ -171,13 +193,13 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func pause() {
-        synthesizer.pauseSpeaking(at: .word)
+        fallbackSynthesizer.pauseSpeaking(at: .word)
         isPlaying = false
         nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
 
     func resume() {
-        synthesizer.continueSpeaking()
+        fallbackSynthesizer.continueSpeaking()
         isPlaying = true
         nowPlayingManager.updatePlaybackState(isPlaying: true)
     }
@@ -200,7 +222,7 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func stop() {
-        synthesizer.stopSpeaking(at: .immediate)
+        fallbackSynthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
         nowPlayingManager.clearNowPlayingInfo()
     }
@@ -234,7 +256,7 @@ final class TTSService: NSObject, ObservableObject {
             rate: playbackRate
         )
 
-        synthesizer.speak(utterance)
+        fallbackSynthesizer.speak(utterance)
     }
 }
 
