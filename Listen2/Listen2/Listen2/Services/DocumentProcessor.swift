@@ -61,9 +61,13 @@ final class DocumentProcessor {
             return nil
         }
 
+        print("🔤 Starting word position extraction (this may take a while for large PDFs)...")
+        let startTime = Date()
+
         do {
             let wordMap = try await voxPDFService.extractWordPositions(from: url)
-            print("✅ Extracted \(wordMap.words.count) words for highlighting")
+            let duration = Date().timeIntervalSince(startTime)
+            print("✅ Extracted \(wordMap.words.count) words for highlighting in \(String(format: "%.1f", duration))s")
             return wordMap
         } catch {
             print("⚠️ Word position extraction failed: \(error), word highlighting unavailable")
