@@ -1,0 +1,16 @@
+# Git LFS tracking for large binary files
+
+# Static libraries in frameworks
+*.a filter=lfs diff=lfs merge=lfs -text
+
+# Piper TTS models
+*.onnx filter=lfs diff=lfs merge=lfs -text
+
+# Binary data files
+**/espeak-ng-data/phondata filter=lfs diff=lfs merge=lfs -text
+**/espeak-ng-data/phonindex filter=lfs diff=lfs merge=lfs -text
+**/espeak-ng-data/phontab filter=lfs diff=lfs merge=lfs -text
+**/espeak-ng-data/intonations filter=lfs diff=lfs merge=lfs -text
+
+# VoxPDF framework
+Frameworks/VoxPDFCore.xcframework/** filter=lfs diff=lfs merge=lfs -text
