@@ -28,11 +28,11 @@ final class ReaderViewModel: ObservableObject {
     private let tocService = TOCService()
     private var cancellables = Set<AnyCancellable>()
 
-    init(document: Document, modelContext: ModelContext) {
+    init(document: Document, modelContext: ModelContext, ttsService: TTSService) {
         self.document = document
         self.currentParagraphIndex = document.currentPosition
         self.modelContext = modelContext
-        self.ttsService = TTSService()
+        self.ttsService = ttsService
 
         // Set initial playback rate from defaults
         self.playbackRate = Float(defaultPlaybackRate)

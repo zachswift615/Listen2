@@ -21,7 +21,7 @@ final class TTSService: NSObject, ObservableObject {
     @Published private(set) var currentProgress: ReadingProgress = .initial
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var playbackRate: Float = 1.0
-    @Published private(set) var isInitializing: Bool = false
+    @Published private(set) var isInitializing: Bool = true
 
     // MARK: - Private Properties
 

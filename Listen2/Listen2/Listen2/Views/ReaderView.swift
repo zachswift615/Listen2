@@ -7,14 +7,27 @@ import SwiftUI
 import SwiftData
 
 struct ReaderView: View {
+    @EnvironmentObject var ttsService: TTSService
+    let document: Document
+    let modelContext: ModelContext
+
+    var body: some View {
+        ReaderViewContent(document: document, modelContext: modelContext, ttsService: ttsService)
+    }
+}
+
+private struct ReaderViewContent: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.modelContext) private var modelContext
     @StateObject private var viewModel: ReaderViewModel
     @StateObject private var coordinator = ReaderCoordinator()
     @State private var showingVoicePicker = false
 
-    init(document: Document, modelContext: ModelContext) {
-        _viewModel = StateObject(wrappedValue: ReaderViewModel(document: document, modelContext: modelContext))
+    init(document: Document, modelContext: ModelContext, ttsService: TTSService) {
+        _viewModel = StateObject(wrappedValue: ReaderViewModel(
+            document: document,
+            modelContext: modelContext,
+            ttsService: ttsService
+        ))
     }
 
     var body: some View {

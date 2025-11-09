@@ -241,7 +241,8 @@ struct VoicePickerSheet: View {
     QuickSettingsSheet(
         viewModel: ReaderViewModel(
             document: Document(title: "Test", sourceType: .pdf, extractedText: []),
-            modelContext: ModelContext(try! ModelContainer(for: Document.self))
+            modelContext: ModelContext(try! ModelContainer(for: Document.self)),
+            ttsService: TTSService()
         )
     )
 }
