@@ -250,6 +250,9 @@ final class VoxPDFService {
             }
             defer { voxpdf_free_document(doc) }
 
+            // Build page-to-paragraph-index mapping
+            let pageMapping = try self.buildPageToParagraphMapping(doc: doc)
+
             // Get TOC count
             let tocCount = voxpdf_get_toc_count(doc, &error)
             guard error == CVoxPDFErrorOk else {
@@ -278,9 +281,20 @@ final class VoxPDFService {
 
                 let titleText = String(cString: title)
 
-                // Always use semantic matching to find the paragraph index
-                // The paragraph_index from VoxPDF may be in a different index space
-                let paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
+                // Use the page number from VoxPDF TOC metadata
+                // This is the actual page number from the PDF's TOC structure
+                let pageNum = Int(tocEntry.page_number)
+
+                // Map page number to paragraph index using our mapping
+                let paragraphIndex: Int
+                if let pageInfo = pageMapping[pageNum] {
+                    // Use the first paragraph on this page
+                    paragraphIndex = pageInfo.firstParagraphIndex
+                } else {
+                    // Fallback: use text search if page mapping unavailable
+                    // (shouldn't happen, but safety first)
+                    paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
+                }
 
                 tocEntries.append(TOCEntry(
                     title: titleText,
@@ -291,6 +305,32 @@ final class VoxPDFService {
 
             return tocEntries
         }.value
+    }
+
+    /// Build a mapping from page numbers to paragraph indices
+    /// - Parameter doc: Open PDF document
+    /// - Returns: Dictionary mapping page number to paragraph range info
+    private func buildPageToParagraphMapping(doc: OpaquePointer) throws -> [Int: (firstParagraphIndex: Int, lastParagraphIndex: Int, paragraphCount: Int)] {
+        var mapping: [Int: (Int, Int, Int)] = [:]
+        var error: CVoxPDFError = CVoxPDFErrorOk
+
+        let pageCount = voxpdf_get_page_count(doc)
+        var currentParagraphIndex = 0
+
+        for pageNum in 0..<pageCount {
+            let paragraphCount = voxpdf_get_paragraph_count(doc, UInt32(pageNum), &error)
+            guard error == CVoxPDFErrorOk else {
+                continue
+            }
+
+            let firstIndex = currentParagraphIndex
+            let lastIndex = currentParagraphIndex + Int(paragraphCount) - 1
+
+            mapping[Int(pageNum)] = (firstIndex, lastIndex, Int(paragraphCount))
+            currentParagraphIndex += Int(paragraphCount)
+        }
+
+        return mapping
     }
 
     /// Extract word-level positions from PDF for word highlighting
