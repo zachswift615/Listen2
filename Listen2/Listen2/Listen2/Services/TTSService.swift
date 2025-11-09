@@ -31,6 +31,7 @@ final class TTSService: NSObject, ObservableObject {
     private let audioSessionManager = AudioSessionManager()
     private let nowPlayingManager = NowPlayingInfoManager()
     private var audioPlayer: AudioPlayer!
+    private var synthesisQueue: SynthesisQueue?
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
@@ -70,10 +71,15 @@ final class TTSService: NSObject, ObservableObject {
             )
             try await piperProvider.initialize()
             self.provider = piperProvider
+
+            // Initialize synthesis queue with provider
+            self.synthesisQueue = await SynthesisQueue(provider: piperProvider)
+
             print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
         } catch {
             print("[TTSService] ⚠️ Piper initialization failed, using AVSpeech fallback: \(error)")
             self.provider = nil
+            self.synthesisQueue = nil
         }
     }
 
@@ -159,6 +165,11 @@ final class TTSService: NSObject, ObservableObject {
         // Update the rate
         playbackRate = newRate
 
+        // Update synthesis queue with new speed (clears cache)
+        Task { @MainActor in
+            synthesisQueue?.setSpeed(newRate)
+        }
+
         // Update now playing info with new rate
         nowPlayingManager.updatePlaybackRate(newRate)
 
@@ -184,6 +195,11 @@ final class TTSService: NSObject, ObservableObject {
         currentTitle = title
 
         guard index < paragraphs.count else { return }
+
+        // Initialize synthesis queue with new content
+        Task { @MainActor in
+            synthesisQueue?.setContent(paragraphs: paragraphs, speed: playbackRate)
+        }
 
         // Stop auto-advance temporarily when jumping to specific paragraph
         // This prevents race condition with didFinish from previous utterance
@@ -236,9 +252,12 @@ final class TTSService: NSObject, ObservableObject {
     func stop() {
         Task { @MainActor in
             audioPlayer.stop()
+            // Clear synthesis queue cache when stopped
+            synthesisQueue?.clearAll()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
+
         nowPlayingManager.clearNowPlayingInfo()
     }
 
@@ -263,16 +282,21 @@ final class TTSService: NSObject, ObservableObject {
             rate: playbackRate
         )
 
-        // Try Piper TTS first, fallback to AVSpeech if unavailable or on error
-        if let provider = provider {
+        // Try Piper TTS with synthesis queue first, fallback to AVSpeech if unavailable or on error
+        if let queue = synthesisQueue {
             Task {
                 do {
-                    let wavData = try await provider.synthesize(text, speed: playbackRate)
-                    try await MainActor.run {
-                        try audioPlayer.play(data: wavData) { [weak self] in
-                            self?.handleParagraphComplete()
+                    // Get audio from queue (may be pre-synthesized or synthesize on-demand)
+                    guard let wavData = try await queue.getAudio(for: index) else {
+                        // Audio is being synthesized, wait briefly and retry
+                        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                        guard let retryData = try await queue.getAudio(for: index) else {
+                            throw TTSError.synthesisFailed(reason: "Synthesis timeout")
                         }
+                        try await playAudio(retryData)
+                        return
                     }
+                    try await playAudio(wavData)
                 } catch {
                     print("[TTSService] ⚠️ Piper synthesis failed: \(error), falling back to AVSpeech")
                     await MainActor.run {
@@ -282,6 +306,14 @@ final class TTSService: NSObject, ObservableObject {
             }
         } else {
             fallbackToAVSpeech(text: text)
+        }
+    }
+
+    private func playAudio(_ data: Data) async throws {
+        try await MainActor.run {
+            try audioPlayer.play(data: data) { [weak self] in
+                self?.handleParagraphComplete()
+            }
         }
     }
 
