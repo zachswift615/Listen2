@@ -10,6 +10,11 @@ import Foundation
 /// Service for extracting text and structure from PDF documents using VoxPDF
 final class VoxPDFService {
 
+    // MARK: - Constants
+
+    /// Minimum heading length for contains-based matching
+    private static let minimumHeadingLengthForContainsMatch = 10
+
     enum VoxPDFError: Error {
         case invalidPDF
         case extractionFailed(String)
@@ -42,107 +47,121 @@ final class VoxPDFService {
     /// - Parameter url: URL to the PDF file
     /// - Returns: Array of paragraph strings
     func extractParagraphs(from url: URL) async throws -> [String] {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw VoxPDFError.invalidPDF
-        }
+        try await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw VoxPDFError.invalidPDF
+            }
 
-        var error: CVoxPDFError = CVoxPDFErrorOk
+            var error: CVoxPDFError = CVoxPDFErrorOk
 
-        // Open PDF document
-        guard let doc = voxpdf_open(url.path, &error) else {
-            throw VoxPDFError(from: error)
-        }
-        defer { voxpdf_free_document(doc) }
-
-        // Get page count
-        let pageCount = voxpdf_get_page_count(doc)
-        guard pageCount > 0 else {
-            throw VoxPDFError.invalidPDF
-        }
-
-        var allParagraphs: [String] = []
-
-        // Extract paragraphs from each page
-        for page in 0..<pageCount {
-            let paragraphCount = voxpdf_get_paragraph_count(doc, UInt32(page), &error)
-            guard error == CVoxPDFErrorOk else {
+            // Open PDF document
+            guard let doc = voxpdf_open(url.path, &error) else {
                 throw VoxPDFError(from: error)
             }
+            defer { voxpdf_free_document(doc) }
 
-            // Extract each paragraph
-            for paraIndex in 0..<paragraphCount {
-                var paragraph = CParagraph()
-                var textPtr: UnsafePointer<CChar>?
+            // Get page count
+            let pageCount = voxpdf_get_page_count(doc)
+            guard pageCount > 0 else {
+                throw VoxPDFError.invalidPDF
+            }
 
-                let success = voxpdf_get_paragraph(
-                    doc,
-                    UInt32(page),
-                    paraIndex,
-                    &paragraph,
-                    &textPtr,
-                    &error
-                )
+            var allParagraphs: [String] = []
 
-                guard success, error == CVoxPDFErrorOk, let text = textPtr else {
-                    continue // Skip problematic paragraphs
+            // Extract paragraphs from each page
+            for page in 0..<pageCount {
+                let paragraphCount = voxpdf_get_paragraph_count(doc, UInt32(page), &error)
+                guard error == CVoxPDFErrorOk else {
+                    throw VoxPDFError(from: error)
                 }
 
-                let paragraphText = String(cString: text)
-                if !paragraphText.isEmpty {
-                    allParagraphs.append(paragraphText)
+                // Extract each paragraph
+                for paraIndex in 0..<paragraphCount {
+                    var paragraph = CParagraph()
+                    var textPtr: UnsafePointer<CChar>?
+
+                    let success = voxpdf_get_paragraph(
+                        doc,
+                        UInt32(page),
+                        paraIndex,
+                        &paragraph,
+                        &textPtr,
+                        &error
+                    )
+
+                    guard success, error == CVoxPDFErrorOk, let text = textPtr else {
+                        continue // Skip problematic paragraphs
+                    }
+                    defer { voxpdf_free_string(UnsafeMutablePointer(mutating: text)) }
+
+                    let paragraphText = String(cString: text)
+                    if !paragraphText.isEmpty {
+                        allParagraphs.append(paragraphText)
+                    }
                 }
             }
-        }
 
-        return allParagraphs
+            guard !allParagraphs.isEmpty else {
+                throw VoxPDFError.extractionFailed("No paragraphs could be extracted")
+            }
+
+            return allParagraphs
+        }.value
     }
 
     /// Extract raw text from a PDF document
     /// - Parameter url: URL to the PDF file
     /// - Returns: Concatenated text content
     func extractText(from url: URL) async throws -> String {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw VoxPDFError.invalidPDF
-        }
-
-        var error: CVoxPDFError = CVoxPDFErrorOk
-
-        // Open PDF document
-        guard let doc = voxpdf_open(url.path, &error) else {
-            throw VoxPDFError(from: error)
-        }
-        defer { voxpdf_free_document(doc) }
-
-        // Get page count
-        let pageCount = voxpdf_get_page_count(doc)
-        guard pageCount > 0 else {
-            throw VoxPDFError.invalidPDF
-        }
-
-        var allText: [String] = []
-
-        // Extract text from each page
-        for page in 0..<pageCount {
-            var textPtr: UnsafePointer<CChar>?
-
-            let success = voxpdf_extract_page_text(
-                doc,
-                UInt32(page),
-                &textPtr,
-                &error
-            )
-
-            guard success, error == CVoxPDFErrorOk, let text = textPtr else {
-                continue // Skip problematic pages
+        try await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw VoxPDFError.invalidPDF
             }
 
-            let pageText = String(cString: text)
-            if !pageText.isEmpty {
-                allText.append(pageText)
-            }
-        }
+            var error: CVoxPDFError = CVoxPDFErrorOk
 
-        return allText.joined(separator: "\n\n")
+            // Open PDF document
+            guard let doc = voxpdf_open(url.path, &error) else {
+                throw VoxPDFError(from: error)
+            }
+            defer { voxpdf_free_document(doc) }
+
+            // Get page count
+            let pageCount = voxpdf_get_page_count(doc)
+            guard pageCount > 0 else {
+                throw VoxPDFError.invalidPDF
+            }
+
+            var allText: [String] = []
+
+            // Extract text from each page
+            for page in 0..<pageCount {
+                var textPtr: UnsafePointer<CChar>?
+
+                let success = voxpdf_extract_page_text(
+                    doc,
+                    UInt32(page),
+                    &textPtr,
+                    &error
+                )
+
+                guard success, error == CVoxPDFErrorOk, let text = textPtr else {
+                    continue // Skip problematic pages
+                }
+                defer { voxpdf_free_string(UnsafeMutablePointer(mutating: text)) }
+
+                let pageText = String(cString: text)
+                if !pageText.isEmpty {
+                    allText.append(pageText)
+                }
+            }
+
+            guard !allText.isEmpty else {
+                throw VoxPDFError.extractionFailed("No text could be extracted")
+            }
+
+            return allText.joined(separator: "\n\n")
+        }.value
     }
 
     /// Extract table of contents from PDF metadata
@@ -151,62 +170,60 @@ final class VoxPDFService {
     ///   - paragraphs: Already extracted paragraphs for matching
     /// - Returns: Array of TOC entries with paragraph indices
     func extractTOC(from url: URL, paragraphs: [String]) async throws -> [TOCEntry] {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw VoxPDFError.invalidPDF
-        }
-
-        var error: CVoxPDFError = CVoxPDFErrorOk
-
-        // Open PDF document
-        guard let doc = voxpdf_open(url.path, &error) else {
-            throw VoxPDFError(from: error)
-        }
-        defer { voxpdf_free_document(doc) }
-
-        // Get TOC count
-        let tocCount = voxpdf_get_toc_count(doc, &error)
-        guard error == CVoxPDFErrorOk else {
-            throw VoxPDFError(from: error)
-        }
-
-        var tocEntries: [TOCEntry] = []
-
-        // Extract each TOC entry
-        for tocIndex in 0..<tocCount {
-            var tocEntry = CTocEntry()
-            var titlePtr: UnsafePointer<CChar>?
-
-            let success = voxpdf_get_toc_entry(
-                doc,
-                tocIndex,
-                &tocEntry,
-                &titlePtr,
-                &error
-            )
-
-            guard success, error == CVoxPDFErrorOk, let title = titlePtr else {
-                continue // Skip problematic TOC entries
+        try await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw VoxPDFError.invalidPDF
             }
 
-            let titleText = String(cString: title)
+            var error: CVoxPDFError = CVoxPDFErrorOk
 
-            // Use the paragraph index from VoxPDF if available
-            // Otherwise, try to find matching paragraph
-            let paragraphIndex: Int
-            if tocEntry.paragraph_index < paragraphs.count {
-                paragraphIndex = Int(tocEntry.paragraph_index)
-            } else {
-                paragraphIndex = findParagraphIndex(for: titleText, in: paragraphs)
+            // Open PDF document
+            guard let doc = voxpdf_open(url.path, &error) else {
+                throw VoxPDFError(from: error)
+            }
+            defer { voxpdf_free_document(doc) }
+
+            // Get TOC count
+            let tocCount = voxpdf_get_toc_count(doc, &error)
+            guard error == CVoxPDFErrorOk else {
+                throw VoxPDFError(from: error)
             }
 
-            tocEntries.append(TOCEntry(
-                title: titleText,
-                paragraphIndex: paragraphIndex,
-                level: Int(tocEntry.level)
-            ))
-        }
+            var tocEntries: [TOCEntry] = []
 
-        return tocEntries
+            // Extract each TOC entry
+            for tocIndex in 0..<tocCount {
+                var tocEntry = CTocEntry()
+                var titlePtr: UnsafePointer<CChar>?
+
+                let success = voxpdf_get_toc_entry(
+                    doc,
+                    tocIndex,
+                    &tocEntry,
+                    &titlePtr,
+                    &error
+                )
+
+                guard success, error == CVoxPDFErrorOk, let title = titlePtr else {
+                    continue // Skip problematic TOC entries
+                }
+                defer { voxpdf_free_string(UnsafeMutablePointer(mutating: title)) }
+
+                let titleText = String(cString: title)
+
+                // Always use semantic matching to find the paragraph index
+                // The paragraph_index from VoxPDF may be in a different index space
+                let paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
+
+                tocEntries.append(TOCEntry(
+                    title: titleText,
+                    paragraphIndex: paragraphIndex,
+                    level: Int(tocEntry.level)
+                ))
+            }
+
+            return tocEntries
+        }.value
     }
 
     // MARK: - Private Helpers
@@ -230,7 +247,7 @@ final class VoxPDFService {
         }
 
         // Contains match (for longer headings)
-        if normalized.count > 10 {
+        if normalized.count > Self.minimumHeadingLengthForContainsMatch {
             for (index, paragraph) in paragraphs.enumerated() {
                 if paragraph.lowercased().contains(normalized) {
                     return index
