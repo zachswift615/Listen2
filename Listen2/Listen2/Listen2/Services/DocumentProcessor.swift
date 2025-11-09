@@ -9,6 +9,10 @@ import UniformTypeIdentifiers
 
 final class DocumentProcessor {
 
+    // MARK: - Dependencies
+
+    private let voxPDFService = VoxPDFService()
+
     // MARK: - Public Methods
 
     /// Fixes hyphenated words that are broken across lines in PDF text
@@ -87,6 +91,26 @@ final class DocumentProcessor {
     // MARK: - Private PDF Extraction
 
     private func extractPDFText(from url: URL) async throws -> [String] {
+        // Use VoxPDF for superior extraction
+        do {
+            let paragraphs = try await voxPDFService.extractParagraphs(from: url)
+
+            guard !paragraphs.isEmpty else {
+                throw DocumentProcessorError.extractionFailed
+            }
+
+            print("✅ VoxPDF extraction succeeded with \(paragraphs.count) paragraphs")
+            return paragraphs
+        } catch {
+            print("⚠️ VoxPDF extraction failed: \(error), falling back to PDFKit")
+
+            // Fallback to PDFKit if VoxPDF fails
+            return try await extractPDFTextFallback(from: url)
+        }
+    }
+
+    /// Fallback PDF extraction using PDFKit (original implementation)
+    private func extractPDFTextFallback(from url: URL) async throws -> [String] {
         guard let document = PDFDocument(url: url) else {
             throw DocumentProcessorError.invalidFile
         }
@@ -109,6 +133,7 @@ final class DocumentProcessor {
             throw DocumentProcessorError.extractionFailed
         }
 
+        print("✅ PDFKit fallback extraction succeeded with \(paragraphs.count) paragraphs")
         return paragraphs
     }
 
