@@ -9,6 +9,10 @@ import AVFoundation
 @MainActor
 final class SettingsViewModel: ObservableObject {
 
+    // MARK: - Services
+
+    let ttsService: TTSService
+
     // MARK: - Persisted Settings
 
     @AppStorage("defaultSpeed") var defaultSpeed: Double = 1.0
@@ -17,10 +21,16 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Available Voices
 
+    var piperVoices: [AVVoice] {
+        ttsService.piperVoices()
+    }
+
+    var iosVoices: [AVVoice] {
+        ttsService.iosVoices()
+    }
+
     var availableVoices: [AVVoice] {
-        AVSpeechSynthesisVoice.speechVoices()
-            .map { AVVoice(from: $0) }
-            .sorted { $0.language < $1.language }
+        piperVoices
     }
 
     var selectedVoice: AVVoice? {
@@ -34,5 +44,11 @@ final class SettingsViewModel: ObservableObject {
         set {
             defaultVoiceIdentifier = newValue?.id
         }
+    }
+
+    // MARK: - Initialization
+
+    init(ttsService: TTSService = TTSService()) {
+        self.ttsService = ttsService
     }
 }

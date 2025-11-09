@@ -10,6 +10,7 @@ struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @State private var showingVoicePicker = false
     @State private var showingVoiceLibrary = false
+    @State private var useIOSVoice = false
 
     var body: some View {
         NavigationStack {
@@ -174,33 +175,82 @@ struct SettingsView: View {
     // MARK: - Voice Picker Sheet
     private var voicePickerView: some View {
         NavigationStack {
-            List {
-                ForEach(viewModel.availableVoices) { voice in
-                    Button {
-                        viewModel.selectedVoice = voice
-                        showingVoicePicker = false
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
-                                Text(voice.name)
-                                    .font(DesignSystem.Typography.headline)
-                                    .foregroundColor(DesignSystem.Colors.textPrimary)
+            Form {
+                Section {
+                    // Piper voices
+                    ForEach(viewModel.piperVoices) { voice in
+                        Button {
+                            viewModel.selectedVoice = voice
+                            showingVoicePicker = false
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
+                                    Text(voice.name)
+                                        .font(DesignSystem.Typography.headline)
+                                        .foregroundColor(DesignSystem.Colors.textPrimary)
 
-                                Text(voice.displayName)
-                                    .font(DesignSystem.Typography.caption)
-                                    .foregroundStyle(DesignSystem.Colors.textSecondary)
-                            }
+                                    Text(voice.displayName)
+                                        .font(DesignSystem.Typography.caption)
+                                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                                }
 
-                            Spacer()
+                                Spacer()
 
-                            if voice.id == viewModel.selectedVoice?.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(DesignSystem.Colors.primary)
-                                    .font(.system(size: DesignSystem.IconSize.medium, weight: .semibold))
+                                if voice.id == viewModel.selectedVoice?.id {
+                                    Image(systemName: "checkmark")
+                                        .foregroundStyle(DesignSystem.Colors.primary)
+                                        .font(.system(size: DesignSystem.IconSize.medium, weight: .semibold))
+                                }
                             }
                         }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                } header: {
+                    Text("Voice")
+                } footer: {
+                    if useIOSVoice {
+                        Text("Using iOS voice as fallback. Piper voices offer better quality.")
+                    } else {
+                        Text("Neural TTS voices powered by Piper")
+                    }
+                }
+
+                Section {
+                    // Toggle to show iOS voices (fallback)
+                    Toggle("Use iOS Voice (Fallback)", isOn: $useIOSVoice)
+
+                    // iOS voice picker (only shown when toggle enabled)
+                    if useIOSVoice {
+                        ForEach(viewModel.iosVoices) { voice in
+                            Button {
+                                viewModel.selectedVoice = voice
+                                showingVoicePicker = false
+                            } label: {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
+                                        Text(voice.name)
+                                            .font(DesignSystem.Typography.headline)
+                                            .foregroundColor(DesignSystem.Colors.textPrimary)
+
+                                        Text(voice.displayName)
+                                            .font(DesignSystem.Typography.caption)
+                                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                                    }
+
+                                    Spacer()
+
+                                    if voice.id == viewModel.selectedVoice?.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(DesignSystem.Colors.primary)
+                                            .font(.system(size: DesignSystem.IconSize.medium, weight: .semibold))
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                } header: {
+                    Text("Fallback Options")
                 }
             }
             .navigationTitle("Select Voice")
