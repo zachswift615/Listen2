@@ -111,13 +111,16 @@ final class VoiceManager {
     /// Get espeak-ng-data directory path
     /// - Returns: Path to espeak-ng-data directory if available, nil otherwise
     func speakNGDataPath(for voiceID: String) -> URL? {
-        // WORKAROUND: Xcode 16 flattens espeak-ng-data directory contents to bundle root
-        // Instead of looking for the directory, use bundle root where files are located
+        // Check for bundled espeak-ng-data (added as folder reference to preserve structure)
+        if let bundledPath = Bundle.main.url(forResource: "espeak-ng-data", withExtension: nil) {
+            return bundledPath
+        }
+
+        // Fallback: Check if it's in bundle root (old Xcode 16 flattening workaround)
         if let bundledPath = Bundle.main.resourceURL {
-            // Verify at least one espeak file exists (phondata is always present)
-            let testFile = bundledPath.appendingPathComponent("phondata")
-            if fileManager.fileExists(atPath: testFile.path) {
-                return bundledPath
+            let espeakDir = bundledPath.appendingPathComponent("espeak-ng-data")
+            if fileManager.fileExists(atPath: espeakDir.path) {
+                return espeakDir
             }
         }
 
