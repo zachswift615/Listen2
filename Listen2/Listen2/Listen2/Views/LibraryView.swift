@@ -139,6 +139,6 @@ struct LibraryView: View {
 
     private var processingOverlay: some View {
         Color.clear
-            .loadingOverlay(isLoading: true, message: "Processing...")
+            .loadingOverlay(isLoading: true, message: "Importing document...")
     }
 }

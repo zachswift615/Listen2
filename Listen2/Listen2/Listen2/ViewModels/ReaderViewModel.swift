@@ -18,6 +18,7 @@ final class ReaderViewModel: ObservableObject {
     @Published var playbackRate: Float = 1.0
     @Published var selectedVoice: AVVoice?
     @Published var tocEntries: [TOCEntry] = []
+    @Published var isLoading: Bool = true
 
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
     @AppStorage("selectedVoiceId") private var selectedVoiceId: String = ""
@@ -122,6 +123,7 @@ final class ReaderViewModel: ObservableObject {
             if let entries = try? decoder.decode([TOCEntry].self, from: tocData) {
                 print("📖 ✅ Decoded \(entries.count) TOC entries from stored data")
                 tocEntries = entries
+                isLoading = false
                 return
             } else {
                 print("📖 ⚠️ Failed to decode stored TOC data")
@@ -155,6 +157,7 @@ final class ReaderViewModel: ObservableObject {
                         if !entries.isEmpty {
                             tocEntries = entries
                             print("📖 🎉 Using PDF metadata TOC with \(entries.count) entries")
+                            isLoading = false
                             return
                         } else {
                             print("📖 ⚠️ PDF outline exists but extracted 0 entries")
@@ -181,6 +184,7 @@ final class ReaderViewModel: ObservableObject {
             }
         }
         tocEntries = detectedEntries
+        isLoading = false
     }
 
     func cleanup() {
