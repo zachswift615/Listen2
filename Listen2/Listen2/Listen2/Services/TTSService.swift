@@ -21,6 +21,7 @@ final class TTSService: NSObject, ObservableObject {
     @Published private(set) var currentProgress: ReadingProgress = .initial
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var playbackRate: Float = 1.0
+    @Published private(set) var isInitializing: Bool = false
 
     // MARK: - Private Properties
 
@@ -63,6 +64,10 @@ final class TTSService: NSObject, ObservableObject {
     private func initializePiperProvider() async {
         guard usePiper else { return }
 
+        await MainActor.run {
+            isInitializing = true
+        }
+
         do {
             let bundledVoice = voiceManager.bundledVoice()
             let piperProvider = PiperTTSProvider(
@@ -80,6 +85,10 @@ final class TTSService: NSObject, ObservableObject {
             print("[TTSService] ⚠️ Piper initialization failed, using AVSpeech fallback: \(error)")
             self.provider = nil
             self.synthesisQueue = nil
+        }
+
+        await MainActor.run {
+            isInitializing = false
         }
     }
 

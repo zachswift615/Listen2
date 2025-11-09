@@ -10,6 +10,7 @@ import SwiftData
 
 @main
 struct Listen2App: App {
+    @StateObject private var ttsService = TTSService()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -26,7 +27,12 @@ struct Listen2App: App {
 
     var body: some Scene {
         WindowGroup {
-            LibraryView(modelContext: sharedModelContainer.mainContext)
+            if ttsService.isInitializing {
+                LoadingView()
+            } else {
+                LibraryView(modelContext: sharedModelContainer.mainContext)
+                    .environmentObject(ttsService)
+            }
         }
         .modelContainer(sharedModelContainer)
     }
