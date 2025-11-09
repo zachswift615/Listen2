@@ -32,10 +32,18 @@ final class PiperTTSProvider: TTSProvider {
     func initialize() async throws {
         guard !isInitialized else { return }
 
-        // Get model paths from VoiceManager
-        guard let modelPath = voiceManager.modelPath(for: voiceID),
-              let tokensPath = voiceManager.tokensPath(for: voiceID),
-              let espeakDataPath = voiceManager.speakNGDataPath(for: voiceID) else {
+        // Get model paths from VoiceManager with detailed logging
+        let modelPath = voiceManager.modelPath(for: voiceID)
+        let tokensPath = voiceManager.tokensPath(for: voiceID)
+        let espeakDataPath = voiceManager.speakNGDataPath(for: voiceID)
+
+        print("[PiperTTS] DEBUG: modelPath = \(modelPath?.path ?? "nil")")
+        print("[PiperTTS] DEBUG: tokensPath = \(tokensPath?.path ?? "nil")")
+        print("[PiperTTS] DEBUG: espeakDataPath = \(espeakDataPath?.path ?? "nil")")
+
+        guard let modelPath = modelPath,
+              let tokensPath = tokensPath,
+              let espeakDataPath = espeakDataPath else {
             throw TTSError.synthesisFailed(reason: "Voice '\(voiceID)' not found")
         }
 
