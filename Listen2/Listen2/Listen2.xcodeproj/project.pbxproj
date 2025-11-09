@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 		A6E030292EBEF943005E8935 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030272EBEF943005E8935 /* sherpa-onnx.xcframework */; };
 		A6E0302A2EBEF943005E8935 /* sherpa-onnx.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030272EBEF943005E8935 /* sherpa-onnx.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -388,22 +389,16 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
 		A6E02F182EBD6693005E8935 /* Listen2Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = Listen2Tests;
 			sourceTree = "<group>";
 		};
 		A6E02F222EBD6693005E8935 /* Listen2UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = Listen2UITests;
 			sourceTree = "<group>";
 		};
@@ -417,6 +412,7 @@
 				A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */,
 				A6E030292EBEF943005E8935 /* sherpa-onnx.xcframework in Frameworks */,
 				A6E0302B2EBEF943005E8935 /* onnxruntime.xcframework in Frameworks */,
+				A64206B12EC14F1500305522 /* SWCompression in Frameworks */,
 				C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1098,7 +1094,7 @@
 				A6E039C22EBF0455005E8935 /* voices */,
 			);
 			name = "espeak-ng-data";
-			path = "Listen2/Resources/espeak-ng-data";
+			path = "Listen2/Resources/PiperModels/espeak-ng-data";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -1124,6 +1120,7 @@
 			name = Listen2;
 			packageProductDependencies = (
 				A6E030252EBEED0E005E8935 /* ZIPFoundation */,
+				A64206B02EC14F1500305522 /* SWCompression */,
 			);
 			productName = Listen2;
 			productReference = A6E02F032EBD6692005E8935 /* Listen2.app */;
@@ -1205,6 +1202,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A6E030232EBEEA5C005E8935 /* XCRemoteSwiftPackageReference "ZIPFoundation" */,
+				A64206AF2EC14F1500305522 /* XCRemoteSwiftPackageReference "SWCompression" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A6E02F042EBD6692005E8935 /* Products */;
@@ -1260,7 +1258,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n\n  echo \"=== Copy espeak-ng-data Script ===\"\n  echo \"SRCROOT: ${SRCROOT}\"\n  echo \"CONFIGURATION_BUILD_DIR: ${CONFIGURATION_BUILD_DIR}\"\n  echo \"CONTENTS_FOLDER_PATH: ${CONTENTS_FOLDER_PATH}\"\n\n  ESPEAK_SOURCE=\"${SRCROOT}/Listen2/Resources/espeak-ng-data\"\n  ESPEAK_DEST=\"${CONFIGURATION_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/espeak-ng-data\"\n\n  echo \"Source path: ${ESPEAK_SOURCE}\"\n  echo \"Destination path: ${ESPEAK_DEST}\"\n\n  if [ -d \"${ESPEAK_SOURCE}\" ]; then\n      echo \"✅ Source directory exists\"\n\n      # Remove existing if present\n      if [ -d \"${ESPEAK_DEST}\" ]; then\n          echo \"Removing existing espeak-ng-data...\"\n          rm -rf \"${ESPEAK_DEST}\"\n      fi\n\n      echo \"Copying with rsync...\"\n      rsync -av --exclude='.DS_Store' \"${ESPEAK_SOURCE}/\" \"${ESPEAK_DEST}/\"\n\n      if [ -d \"${ESPEAK_DEST}\" ]; then\n          echo \"✅ espeak-ng-data copied successfully!\"\n          ls -la \"${ESPEAK_DEST}\"\n      else\n          echo \"❌ Copy failed - destination doesn't exist\"\n          exit 1\n      fi\n  else\n      echo \"❌ Source directory not found: ${ESPEAK_SOURCE}\"\n      exit 1\n  fi\n";
+			shellScript = "set -e\n\n  echo \"=== Copy espeak-ng-data Script ===\"\n  echo \"SRCROOT: ${SRCROOT}\"\n  echo \"CONFIGURATION_BUILD_DIR: ${CONFIGURATION_BUILD_DIR}\"\n  echo \"CONTENTS_FOLDER_PATH: ${CONTENTS_FOLDER_PATH}\"\n\n  ESPEAK_SOURCE=\"${SRCROOT}/Listen2/Resources/PiperModels/espeak-ng-data\"\n  ESPEAK_DEST=\"${CONFIGURATION_BUILD_DIR}/${CONTENTS_FOLDER_PATH}/espeak-ng-data\"\n\n  echo \"Source path: ${ESPEAK_SOURCE}\"\n  echo \"Destination path: ${ESPEAK_DEST}\"\n\n  if [ -d \"${ESPEAK_SOURCE}\" ]; then\n      echo \"✅ Source directory exists\"\n\n      # Remove existing if present\n      if [ -d \"${ESPEAK_DEST}\" ]; then\n          echo \"Removing existing espeak-ng-data...\"\n          rm -rf \"${ESPEAK_DEST}\"\n      fi\n\n      echo \"Copying with rsync...\"\n      rsync -av --exclude='.DS_Store' \"${ESPEAK_SOURCE}/\" \"${ESPEAK_DEST}/\"\n\n      if [ -d \"${ESPEAK_DEST}\" ]; then\n          echo \"✅ espeak-ng-data copied successfully!\"\n          ls -la \"${ESPEAK_DEST}\"\n      else\n          echo \"❌ Copy failed - destination doesn't exist\"\n          exit 1\n      fi\n  else\n      echo \"❌ Source directory not found: ${ESPEAK_SOURCE}\"\n      exit 1\n  fi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1599,6 +1597,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		A64206AF2EC14F1500305522 /* XCRemoteSwiftPackageReference "SWCompression" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/tsolomko/SWCompression";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.8.6;
+			};
+		};
 		A6E030232EBEEA5C005E8935 /* XCRemoteSwiftPackageReference "ZIPFoundation" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/weichsel/ZIPFoundation.git";
@@ -1610,6 +1616,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A64206B02EC14F1500305522 /* SWCompression */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A64206AF2EC14F1500305522 /* XCRemoteSwiftPackageReference "SWCompression" */;
+			productName = SWCompression;
+		};
 		A6E030252EBEED0E005E8935 /* ZIPFoundation */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A6E030232EBEEA5C005E8935 /* XCRemoteSwiftPackageReference "ZIPFoundation" */;
