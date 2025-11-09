@@ -226,6 +226,139 @@ final class VoxPDFService {
         }.value
     }
 
+    /// Extract word-level positions from PDF for word highlighting
+    /// - Parameter url: URL to the PDF file
+    /// - Returns: Document word map for word-level navigation
+    func extractWordPositions(from url: URL) async throws -> DocumentWordMap {
+        try await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                throw VoxPDFError.invalidPDF
+            }
+
+            var error: CVoxPDFError = CVoxPDFErrorOk
+
+            // Open PDF document
+            guard let doc = voxpdf_open(url.path, &error) else {
+                throw VoxPDFError(from: error)
+            }
+            defer { voxpdf_free_document(doc) }
+
+            // Get page count
+            let pageCount = voxpdf_get_page_count(doc)
+            guard pageCount > 0 else {
+                throw VoxPDFError.invalidPDF
+            }
+
+            var allWords: [WordPosition] = []
+            var globalParagraphIndex = 0
+            var characterOffsetInCurrentParagraph = 0
+            var wordsInCurrentParagraph: [WordPosition] = []
+
+            // Extract words from each page
+            for pageNum in 0..<pageCount {
+                let page = UInt32(pageNum)
+
+                // Get paragraph count for this page
+                let paragraphCount = voxpdf_get_paragraph_count(doc, page, &error)
+                guard error == CVoxPDFErrorOk else {
+                    continue // Skip problematic pages
+                }
+
+                // Process each paragraph on this page
+                for paraIndex in 0..<paragraphCount {
+                    var paragraph = CParagraph()
+                    var paraTextPtr: UnsafePointer<CChar>?
+
+                    let paraSuccess = voxpdf_get_paragraph(
+                        doc,
+                        page,
+                        paraIndex,
+                        &paragraph,
+                        &paraTextPtr,
+                        &error
+                    )
+
+                    guard paraSuccess, error == CVoxPDFErrorOk else {
+                        continue
+                    }
+                    defer {
+                        if let ptr = paraTextPtr {
+                            voxpdf_free_string(UnsafeMutablePointer(mutating: ptr))
+                        }
+                    }
+
+                    // If starting a new paragraph, finalize the previous one
+                    if !wordsInCurrentParagraph.isEmpty {
+                        allWords.append(contentsOf: wordsInCurrentParagraph)
+                        wordsInCurrentParagraph = []
+                        globalParagraphIndex += 1
+                        characterOffsetInCurrentParagraph = 0
+                    }
+
+                    // Get word count for this paragraph
+                    let wordCount = voxpdf_get_word_count(doc, page, &error)
+                    guard error == CVoxPDFErrorOk else {
+                        continue
+                    }
+
+                    // Extract each word
+                    for wordIndex in 0..<wordCount {
+                        var wordPos = CWordPosition()
+                        var wordTextPtr: UnsafePointer<CChar>?
+
+                        let wordSuccess = voxpdf_get_word(
+                            doc,
+                            page,
+                            wordIndex,
+                            &wordPos,
+                            &wordTextPtr,
+                            &error
+                        )
+
+                        guard wordSuccess, error == CVoxPDFErrorOk, let textPtr = wordTextPtr else {
+                            continue
+                        }
+                        defer { voxpdf_free_string(UnsafeMutablePointer(mutating: textPtr)) }
+
+                        let wordText = String(cString: textPtr)
+                        guard !wordText.isEmpty else { continue }
+
+                        let bbox = WordPosition.BoundingBox(
+                            x: wordPos.x,
+                            y: wordPos.y,
+                            width: wordPos.width,
+                            height: wordPos.height
+                        )
+
+                        let word = WordPosition(
+                            text: wordText,
+                            characterOffset: characterOffsetInCurrentParagraph,
+                            length: wordText.count,
+                            paragraphIndex: globalParagraphIndex,
+                            pageNumber: Int(wordPos.page),
+                            boundingBox: bbox
+                        )
+
+                        wordsInCurrentParagraph.append(word)
+                        // Add 1 for space between words
+                        characterOffsetInCurrentParagraph += wordText.count + 1
+                    }
+                }
+            }
+
+            // Append any remaining words
+            if !wordsInCurrentParagraph.isEmpty {
+                allWords.append(contentsOf: wordsInCurrentParagraph)
+            }
+
+            guard !allWords.isEmpty else {
+                throw VoxPDFError.extractionFailed("No words could be extracted")
+            }
+
+            return DocumentWordMap(words: allWords)
+        }.value
+    }
+
     // MARK: - Private Helpers
 
     /// Find the paragraph that best matches a TOC heading

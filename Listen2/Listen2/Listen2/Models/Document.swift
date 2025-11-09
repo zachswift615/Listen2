@@ -18,12 +18,16 @@ final class Document {
     var fileURL: URL? // Original file location
     var tocEntriesData: Data? // Stored TOC entries as JSON
 
+    @Attribute(.externalStorage)
+    var wordMapData: Data? // Stored word map for word-level highlighting (PDF only)
+
     init(
         title: String,
         sourceType: SourceType,
         extractedText: [String],
         fileURL: URL? = nil,
-        tocEntriesData: Data? = nil
+        tocEntriesData: Data? = nil,
+        wordMapData: Data? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -34,10 +38,17 @@ final class Document {
         self.createdAt = Date()
         self.fileURL = fileURL
         self.tocEntriesData = tocEntriesData
+        self.wordMapData = wordMapData
     }
 
     var progressPercentage: Int {
         guard !extractedText.isEmpty else { return 0 }
         return Int((Double(currentPosition) / Double(extractedText.count)) * 100)
+    }
+
+    /// Decode word map from stored data (for word-level highlighting)
+    var wordMap: DocumentWordMap? {
+        guard let data = wordMapData else { return nil }
+        return try? JSONDecoder().decode(DocumentWordMap.self, from: data)
     }
 }

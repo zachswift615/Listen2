@@ -54,6 +54,23 @@ final class DocumentProcessor {
         }
     }
 
+    /// Extract word positions for word-level highlighting (PDF only)
+    /// Returns nil for non-PDF sources or if extraction fails
+    func extractWordPositions(from url: URL, sourceType: SourceType) async -> DocumentWordMap? {
+        guard sourceType == .pdf else {
+            return nil
+        }
+
+        do {
+            let wordMap = try await voxPDFService.extractWordPositions(from: url)
+            print("✅ Extracted \(wordMap.words.count) words for highlighting")
+            return wordMap
+        } catch {
+            print("⚠️ Word position extraction failed: \(error), word highlighting unavailable")
+            return nil
+        }
+    }
+
     /// Extracts and encodes TOC metadata during document import
     /// Returns nil if extraction fails
     func extractTOCData(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> Data? {

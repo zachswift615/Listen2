@@ -37,6 +37,7 @@ final class TTSService: NSObject, ObservableObject {
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
     private var shouldAutoAdvance = true // Track whether to auto-advance
+    private var wordMap: DocumentWordMap? // Word map for precise highlighting
 
     // MARK: - Initialization
 
@@ -245,12 +246,13 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Playback Control
 
-    func startReading(paragraphs: [String], from index: Int, title: String = "Document") {
+    func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil) {
         // Configure audio session on first playback (lazy initialization)
         configureAudioSession()
 
         currentText = paragraphs
         currentTitle = title
+        self.wordMap = wordMap
 
         guard index < paragraphs.count else { return }
 
@@ -449,10 +451,23 @@ extension TTSService: AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, willSpeakRangeOfSpeechString characterRange: NSRange, utterance: AVSpeechUtterance) {
-        // DISABLED: Word highlighting causes severe performance issues on real devices
-        // This delegate fires 100+ times per paragraph, triggering expensive UI updates
-        // Keeping only paragraph highlighting for smooth performance
+        // Use word map for precise highlighting if available
+        if let wordMap = wordMap {
+            let currentIndex = currentProgress.paragraphIndex
+            guard currentIndex < currentText.count else { return }
+            let paragraphText = currentText[currentIndex]
 
-        // TODO: Re-enable with throttling/debouncing if needed
+            // Convert NSRange to word range using word map
+            if let wordRange = wordMap.wordRange(for: characterRange, in: currentIndex, paragraphText: paragraphText) {
+                currentProgress = ReadingProgress(
+                    paragraphIndex: currentIndex,
+                    wordRange: wordRange,
+                    isPlaying: true
+                )
+            }
+        }
+        // Note: Word highlighting without word map is disabled due to performance issues
+        // The delegate fires 100+ times per paragraph, and without pre-computed positions,
+        // it causes expensive UI updates. Word map provides efficient, pre-computed positions.
     }
 }
