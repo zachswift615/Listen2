@@ -57,16 +57,31 @@ final class DocumentProcessor {
     /// Extracts and encodes TOC metadata during document import
     /// Returns nil if extraction fails
     func extractTOCData(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> Data? {
-        let entries: [TOCEntry]
+        var entries: [TOCEntry] = []
 
         switch sourceType {
         case .pdf:
-            guard let pdfDocument = PDFDocument(url: url) else {
-                return nil
-            }
+            // Try VoxPDF first
+            do {
+                entries = try await voxPDFService.extractTOC(from: url, paragraphs: paragraphs)
 
-            let tocService = TOCService()
-            entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
+                if !entries.isEmpty {
+                    print("✅ VoxPDF extracted \(entries.count) TOC entries")
+                } else {
+                    print("⚠️ VoxPDF returned empty TOC, falling back to PDFKit")
+                    throw DocumentProcessorError.extractionFailed
+                }
+            } catch {
+                print("⚠️ VoxPDF TOC extraction failed: \(error), falling back to PDFKit")
+
+                // Fallback to PDFKit metadata extraction
+                guard let pdfDocument = PDFDocument(url: url) else {
+                    return nil
+                }
+
+                let tocService = TOCService()
+                entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
+            }
 
         case .epub:
             let extractor = EPUBExtractor()
