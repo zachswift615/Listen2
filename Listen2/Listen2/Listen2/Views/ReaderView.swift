@@ -32,37 +32,45 @@ private struct ReaderViewContent: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Text content
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                            ForEach(Array(viewModel.document.extractedText.enumerated()), id: \.offset) { index, paragraph in
-                                paragraphView(text: paragraph, index: index)
-                                    .id(index)
+            ZStack {
+                VStack(spacing: 0) {
+                    // Text content
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                                ForEach(Array(viewModel.document.extractedText.enumerated()), id: \.offset) { index, paragraph in
+                                    paragraphView(text: paragraph, index: index)
+                                        .id(index)
+                                }
+                            }
+                            .padding()
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation {
+                                coordinator.toggleOverlay()
                             }
                         }
+                        .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
+                            withAnimation {
+                                proxy.scrollTo(newIndex, anchor: .center)
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // Controls
+                    playbackControls
                         .padding()
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation {
-                            coordinator.toggleOverlay()
-                        }
-                    }
-                    .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
-                        withAnimation {
-                            proxy.scrollTo(newIndex, anchor: .center)
-                        }
-                    }
+                        .background(.regularMaterial)
                 }
 
-                Divider()
-
-                // Controls
-                playbackControls
-                    .padding()
-                    .background(.regularMaterial)
+                // Loading overlay
+                if viewModel.isLoading {
+                    Color.clear
+                        .loadingOverlay(isLoading: true, message: "Opening book...")
+                }
             }
             .navigationTitle(viewModel.document.title)
             .navigationBarTitleDisplayMode(.inline)
