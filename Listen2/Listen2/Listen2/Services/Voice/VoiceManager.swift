@@ -103,18 +103,20 @@ final class VoiceManager {
     /// Get tokens.txt path for voice
     /// - Returns: Path if voice is bundled or downloaded, nil otherwise
     func tokensPath(for voiceID: String) -> URL? {
-        // Check if bundled (Xcode 16 flattens Resources to bundle root)
-        if let bundledPath = Bundle.main.url(forResource: "tokens", withExtension: "txt") {
-            return bundledPath
-        }
-
-        // Check Documents/Voices/
+        // Check Documents/Voices/ FIRST (downloaded voices)
         let downloadedPath = voicesDirectory
             .appendingPathComponent(voiceID)
             .appendingPathComponent("tokens.txt")
 
         if fileManager.fileExists(atPath: downloadedPath.path) {
+            print("[VoiceManager] 🔍 tokensPath(\(voiceID)): Found downloaded at \(downloadedPath.path)")
             return downloadedPath
+        }
+
+        // Fallback to bundled (only for bundled voice)
+        if let bundledPath = Bundle.main.url(forResource: "tokens", withExtension: "txt") {
+            print("[VoiceManager] 🔍 tokensPath(\(voiceID)): Using bundled at \(bundledPath.path)")
+            return bundledPath
         }
 
         return nil
@@ -123,26 +125,29 @@ final class VoiceManager {
     /// Get espeak-ng-data directory path
     /// - Returns: Path to espeak-ng-data directory if available, nil otherwise
     func speakNGDataPath(for voiceID: String) -> URL? {
-        // Check for bundled espeak-ng-data (added as folder reference to preserve structure)
-        if let bundledPath = Bundle.main.url(forResource: "espeak-ng-data", withExtension: nil) {
-            return bundledPath
-        }
-
-        // Fallback: Check if it's in bundle root (old Xcode 16 flattening workaround)
-        if let bundledPath = Bundle.main.resourceURL {
-            let espeakDir = bundledPath.appendingPathComponent("espeak-ng-data")
-            if fileManager.fileExists(atPath: espeakDir.path) {
-                return espeakDir
-            }
-        }
-
-        // Check Documents/Voices/ (downloaded voices have proper directory structure)
+        // Check Documents/Voices/ FIRST (downloaded voices)
         let downloadedPath = voicesDirectory
             .appendingPathComponent(voiceID)
             .appendingPathComponent("espeak-ng-data")
 
         if fileManager.fileExists(atPath: downloadedPath.path) {
+            print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Found downloaded at \(downloadedPath.path)")
             return downloadedPath
+        }
+
+        // Fallback to bundled (only for bundled voice)
+        if let bundledPath = Bundle.main.url(forResource: "espeak-ng-data", withExtension: nil) {
+            print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundled at \(bundledPath.path)")
+            return bundledPath
+        }
+
+        // Second fallback: Check if it's in bundle root (old Xcode 16 flattening workaround)
+        if let bundledPath = Bundle.main.resourceURL {
+            let espeakDir = bundledPath.appendingPathComponent("espeak-ng-data")
+            if fileManager.fileExists(atPath: espeakDir.path) {
+                print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundle root at \(espeakDir.path)")
+                return espeakDir
+            }
         }
 
         return nil
