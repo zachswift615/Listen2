@@ -79,17 +79,19 @@ final class DocumentProcessor {
         switch sourceType {
         case .pdf:
             // Try VoxPDF first
+            print("🚀 Starting VoxPDF TOC extraction...")
             do {
                 entries = try await voxPDFService.extractTOC(from: url, paragraphs: paragraphs)
 
                 if !entries.isEmpty {
-                    print("✅ VoxPDF extracted \(entries.count) TOC entries")
+                    print("✅ ✅ ✅ VoxPDF extracted \(entries.count) TOC entries - USING PAGE NUMBERS")
                 } else {
-                    print("⚠️ VoxPDF returned empty TOC, falling back to PDFKit")
+                    print("⚠️ ⚠️ ⚠️ VoxPDF returned empty TOC, falling back to PDFKit TEXT SEARCH")
                     throw DocumentProcessorError.extractionFailed
                 }
             } catch {
-                print("⚠️ VoxPDF TOC extraction failed: \(error), falling back to PDFKit")
+                print("❌ ❌ ❌ VoxPDF TOC extraction FAILED: \(error)")
+                print("⚠️ ⚠️ ⚠️ FALLING BACK TO PDFKIT TEXT SEARCH")
 
                 // Fallback to PDFKit metadata extraction
                 guard let pdfDocument = PDFDocument(url: url) else {
@@ -98,6 +100,7 @@ final class DocumentProcessor {
 
                 let tocService = TOCService()
                 entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
+                print("📝 PDFKit extracted \(entries.count) TOC entries using TEXT SEARCH (unreliable)")
             }
 
         case .epub:
