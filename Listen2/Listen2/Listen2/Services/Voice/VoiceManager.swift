@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SWCompression
 
 /// Manages Piper TTS voices (catalog, downloads, storage)
 final class VoiceManager {
@@ -206,37 +207,54 @@ final class VoiceManager {
 
         progress(0.5)  // Download complete, extraction next
 
-        // Extract tar.bz2 using tar command
+        // Extract tar.bz2 using SWCompression (works on both iOS and macOS)
         let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
         try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
 
-        // Extract using tar command
-        #if os(macOS)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tar")
-        process.arguments = [
-            "-xjf",  // Extract bzip2 compressed tar
-            tempFile.path,
-            "-C",    // Change to directory
-            voiceDir.path,
-            "--strip-components=1"  // Remove top-level directory from archive
-        ]
+        do {
+            // Read the compressed tar.bz2 file
+            let compressedData = try Data(contentsOf: tempFile)
 
-        let pipe = Pipe()
-        process.standardError = pipe
+            // Decompress bzip2
+            let decompressedData = try BZip2.decompress(data: compressedData)
 
-        try process.run()
-        process.waitUntilExit()
+            // Extract tar archive
+            let tarContents = try TarContainer.open(container: decompressedData)
 
-        guard process.terminationStatus == 0 else {
-            let errorData = pipe.fileHandleForReading.readDataToEndOfFile()
-            let errorMessage = String(data: errorData, encoding: .utf8) ?? "Unknown error"
-            throw VoiceError.extractionFailed(reason: errorMessage)
+            // Extract all files, stripping the top-level directory
+            for entry in tarContents {
+                // Skip directories
+                guard entry.info.type == .regular || entry.info.type == .symbolicLink else {
+                    continue
+                }
+
+                // Strip first path component (removes top-level directory from archive)
+                var pathComponents = entry.info.name.split(separator: "/").map(String.init)
+                guard pathComponents.count > 1 else {
+                    // Skip if only one component (shouldn't happen)
+                    continue
+                }
+                pathComponents.removeFirst()
+                let relativePath = pathComponents.joined(separator: "/")
+
+                let filePath = voiceDir.appendingPathComponent(relativePath)
+
+                // Create parent directory if needed
+                let parentDir = filePath.deletingLastPathComponent()
+                if !fileManager.fileExists(atPath: parentDir.path) {
+                    try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
+                }
+
+                // Write file data
+                if let data = entry.data {
+                    try data.write(to: filePath)
+                }
+            }
+        } catch {
+            // Clean up voice directory on extraction failure
+            try? fileManager.removeItem(at: voiceDir)
+            throw VoiceError.extractionFailed(reason: error.localizedDescription)
         }
-        #else
-        // iOS doesn't support Process - voices must be pre-bundled
-        throw VoiceError.extractionFailed(reason: "Voice extraction not supported on iOS - voices must be bundled")
-        #endif
 
         progress(1.0)
 
