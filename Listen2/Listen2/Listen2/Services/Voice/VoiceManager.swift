@@ -51,12 +51,19 @@ final class VoiceManager {
     func downloadedVoices() -> [Voice] {
         let allVoices = availableVoices()
 
-        return allVoices.filter { voice in
+        let downloaded = allVoices.filter { voice in
             if voice.isBundled {
                 return true  // Bundled voices always "downloaded"
             }
-            return modelPath(for: voice.id) != nil
+            let hasModel = modelPath(for: voice.id) != nil
+            if !hasModel {
+                print("[VoiceManager] 🔍 Voice '\(voice.id)' NOT downloaded - modelPath returned nil")
+            }
+            return hasModel
         }
+
+        print("[VoiceManager] 📊 Downloaded voices: \(downloaded.count) of \(allVoices.count)")
+        return downloaded
     }
 
     /// The bundled voice (en_US-lessac-medium)
@@ -74,6 +81,7 @@ final class VoiceManager {
     func modelPath(for voiceID: String) -> URL? {
         // Check if bundled (Xcode 16 flattens Resources to bundle root)
         if let bundledPath = Bundle.main.url(forResource: voiceID, withExtension: "onnx") {
+            print("[VoiceManager] 🔍 modelPath(\(voiceID)): Found bundled at \(bundledPath.path)")
             return bundledPath
         }
 
@@ -82,7 +90,10 @@ final class VoiceManager {
             .appendingPathComponent(voiceID)
             .appendingPathComponent("model.onnx")
 
-        if fileManager.fileExists(atPath: downloadedPath.path) {
+        let exists = fileManager.fileExists(atPath: downloadedPath.path)
+        print("[VoiceManager] 🔍 modelPath(\(voiceID)): Checking \(downloadedPath.path) - exists: \(exists)")
+
+        if exists {
             return downloadedPath
         }
 
@@ -275,6 +286,18 @@ final class VoiceManager {
                 }
 
                 print("[VoiceManager] ✅ Extraction complete! Extracted \(extractedCount) files")
+
+                // List extracted files for debugging
+                if let contents = try? fileManager.contentsOfDirectory(at: voiceDir, includingPropertiesForKeys: nil) {
+                    print("[VoiceManager] 📁 Extracted files in \(voiceDir.lastPathComponent):")
+                    for file in contents.prefix(10) {
+                        print("[VoiceManager]   - \(file.lastPathComponent)")
+                    }
+                    if contents.count > 10 {
+                        print("[VoiceManager]   ... and \(contents.count - 10) more files")
+                    }
+                }
+
                 return extractedCount
             } catch {
                 print("[VoiceManager] ❌ Extraction failed: \(error.localizedDescription)")
@@ -289,6 +312,19 @@ final class VoiceManager {
         }
 
         progress(1.0)
+
+        // Verify critical files exist
+        let modelPath = voiceDir.appendingPathComponent("model.onnx")
+        let tokensPath = voiceDir.appendingPathComponent("tokens.txt")
+
+        print("[VoiceManager] 🔍 Verifying extracted files:")
+        print("[VoiceManager]   Voice directory: \(voiceDir.path)")
+        print("[VoiceManager]   model.onnx exists: \(fileManager.fileExists(atPath: modelPath.path))")
+        print("[VoiceManager]   tokens.txt exists: \(fileManager.fileExists(atPath: tokensPath.path))")
+
+        if !fileManager.fileExists(atPath: modelPath.path) {
+            print("[VoiceManager] ⚠️ WARNING: model.onnx not found after extraction!")
+        }
 
         // Cleanup temp file
         try? fileManager.removeItem(at: tempFile)
