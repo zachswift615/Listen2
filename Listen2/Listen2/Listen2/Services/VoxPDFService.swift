@@ -372,20 +372,51 @@ final class VoxPDFService {
 
             var allWords: [WordPosition] = []
             var globalParagraphIndex = 0
-            var characterOffsetInCurrentParagraph = 0
-            var wordsInCurrentParagraph: [WordPosition] = []
 
             // Extract words from each page
             for pageNum in 0..<pageCount {
                 let page = UInt32(pageNum)
 
-                // Get paragraph count for this page
-                let paragraphCount = voxpdf_get_paragraph_count(doc, page, &error)
+                // Get ALL words for this page (VoxPDF only provides page-level word extraction)
+                let pageWordCount = voxpdf_get_word_count(doc, page, &error)
                 guard error == CVoxPDFErrorOk else {
                     continue // Skip problematic pages
                 }
 
-                // Process each paragraph on this page
+                // Extract all words on the page into an array
+                var pageWords: [(text: String, position: CWordPosition)] = []
+                for wordIndex in 0..<pageWordCount {
+                    var wordPos = CWordPosition()
+                    var wordTextPtr: UnsafePointer<CChar>?
+
+                    let wordSuccess = voxpdf_get_word(
+                        doc,
+                        page,
+                        wordIndex,
+                        &wordPos,
+                        &wordTextPtr,
+                        &error
+                    )
+
+                    guard wordSuccess, error == CVoxPDFErrorOk, let textPtr = wordTextPtr else {
+                        continue
+                    }
+                    defer { voxpdf_free_string(UnsafeMutablePointer(mutating: textPtr)) }
+
+                    let wordText = String(cString: textPtr)
+                    guard !wordText.isEmpty else { continue }
+
+                    pageWords.append((text: wordText, position: wordPos))
+                }
+
+                // Get paragraph count for this page
+                let paragraphCount = voxpdf_get_paragraph_count(doc, page, &error)
+                guard error == CVoxPDFErrorOk else {
+                    continue
+                }
+
+                // Now assign words to paragraphs using CParagraph.word_count
+                var wordIndexInPage = 0
                 for paraIndex in 0..<paragraphCount {
                     var paragraph = CParagraph()
                     var paraTextPtr: UnsafePointer<CChar>?
@@ -408,41 +439,18 @@ final class VoxPDFService {
                         }
                     }
 
-                    // If starting a new paragraph, finalize the previous one
-                    if !wordsInCurrentParagraph.isEmpty {
-                        allWords.append(contentsOf: wordsInCurrentParagraph)
-                        wordsInCurrentParagraph = []
-                        globalParagraphIndex += 1
-                        characterOffsetInCurrentParagraph = 0
-                    }
+                    // Use CParagraph.word_count to slice the correct words for this paragraph
+                    let wordsInThisParagraph = Int(paragraph.word_count)
+                    var characterOffset = 0
 
-                    // Get word count for this paragraph
-                    let wordCount = voxpdf_get_word_count(doc, page, &error)
-                    guard error == CVoxPDFErrorOk else {
-                        continue
-                    }
-
-                    // Extract each word
-                    for wordIndex in 0..<wordCount {
-                        var wordPos = CWordPosition()
-                        var wordTextPtr: UnsafePointer<CChar>?
-
-                        let wordSuccess = voxpdf_get_word(
-                            doc,
-                            page,
-                            wordIndex,
-                            &wordPos,
-                            &wordTextPtr,
-                            &error
-                        )
-
-                        guard wordSuccess, error == CVoxPDFErrorOk, let textPtr = wordTextPtr else {
-                            continue
+                    // Extract the words that belong to this paragraph
+                    for _ in 0..<wordsInThisParagraph {
+                        guard wordIndexInPage < pageWords.count else {
+                            break // Safety check
                         }
-                        defer { voxpdf_free_string(UnsafeMutablePointer(mutating: textPtr)) }
 
-                        let wordText = String(cString: textPtr)
-                        guard !wordText.isEmpty else { continue }
+                        let (wordText, wordPos) = pageWords[wordIndexInPage]
+                        wordIndexInPage += 1
 
                         let bbox = WordPosition.BoundingBox(
                             x: wordPos.x,
@@ -453,23 +461,20 @@ final class VoxPDFService {
 
                         let word = WordPosition(
                             text: wordText,
-                            characterOffset: characterOffsetInCurrentParagraph,
+                            characterOffset: characterOffset,
                             length: wordText.count,
                             paragraphIndex: globalParagraphIndex,
                             pageNumber: Int(wordPos.page),
                             boundingBox: bbox
                         )
 
-                        wordsInCurrentParagraph.append(word)
+                        allWords.append(word)
                         // Add 1 for space between words
-                        characterOffsetInCurrentParagraph += wordText.count + 1
+                        characterOffset += wordText.count + 1
                     }
-                }
-            }
 
-            // Append any remaining words
-            if !wordsInCurrentParagraph.isEmpty {
-                allWords.append(contentsOf: wordsInCurrentParagraph)
+                    globalParagraphIndex += 1
+                }
             }
 
             guard !allWords.isEmpty else {
