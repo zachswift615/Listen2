@@ -329,7 +329,7 @@ final class TTSService: NSObject, ObservableObject {
         currentProgress = ReadingProgress(
             paragraphIndex: index,
             wordRange: nil,
-            isPlaying: true
+            isPlaying: false
         )
 
         nowPlayingManager.updateNowPlayingInfo(
@@ -390,14 +390,22 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func handleParagraphComplete() {
-        isPlaying = false
+        // Don't set isPlaying to false yet if we're auto-advancing
+        // This prevents flicker when transitioning between paragraphs
 
-        guard shouldAutoAdvance else { return }
+        guard shouldAutoAdvance else {
+            isPlaying = false
+            return
+        }
 
         let nextIndex = currentProgress.paragraphIndex + 1
         if nextIndex < currentText.count {
+            // Auto-advance to next paragraph WITHOUT setting isPlaying to false
+            // The next paragraph will maintain isPlaying = true
             speakParagraph(at: nextIndex)
         } else {
+            // Reached end of document - now we can set to false
+            isPlaying = false
             nowPlayingManager.clearNowPlayingInfo()
         }
     }
