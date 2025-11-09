@@ -314,6 +314,11 @@ final class TTSService: NSObject, ObservableObject {
             try audioPlayer.play(data: data) { [weak self] in
                 self?.handleParagraphComplete()
             }
+
+            // Re-enable auto-advance once playback has started
+            // (mirrors AVSpeech didStart delegate behavior)
+            isPlaying = true
+            shouldAutoAdvance = true
         }
     }
 
