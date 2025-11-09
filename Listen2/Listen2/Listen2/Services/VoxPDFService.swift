@@ -437,29 +437,42 @@ final class VoxPDFService {
     private func findParagraphIndex(for heading: String, in paragraphs: [String]) -> Int {
         let normalized = heading.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
-        // Exact match
+        // Skip the first 10% of paragraphs (likely TOC pages) when searching
+        // This prevents matching chapter titles in the book's table of contents
+        // instead of the actual chapter headings later in the document
+        let tocSkipThreshold = max(10, paragraphs.count / 10)
+        let searchStart = min(tocSkipThreshold, paragraphs.count)
+
+        // Exact match (skip TOC pages)
+        for index in searchStart..<paragraphs.count {
+            if paragraphs[index].lowercased() == normalized {
+                return index
+            }
+        }
+
+        // Starts with match (skip TOC pages)
+        for index in searchStart..<paragraphs.count {
+            if paragraphs[index].lowercased().hasPrefix(normalized) {
+                return index
+            }
+        }
+
+        // Contains match for longer headings (skip TOC pages)
+        if normalized.count > Self.minimumHeadingLengthForContainsMatch {
+            for index in searchStart..<paragraphs.count {
+                if paragraphs[index].lowercased().contains(normalized) {
+                    return index
+                }
+            }
+        }
+
+        // Fallback: try exact match from the beginning (in case chapter is in TOC section)
         for (index, paragraph) in paragraphs.enumerated() {
             if paragraph.lowercased() == normalized {
                 return index
             }
         }
 
-        // Starts with match
-        for (index, paragraph) in paragraphs.enumerated() {
-            if paragraph.lowercased().hasPrefix(normalized) {
-                return index
-            }
-        }
-
-        // Contains match (for longer headings)
-        if normalized.count > Self.minimumHeadingLengthForContainsMatch {
-            for (index, paragraph) in paragraphs.enumerated() {
-                if paragraph.lowercased().contains(normalized) {
-                    return index
-                }
-            }
-        }
-
-        return 0 // Fallback to first paragraph
+        return 0 // Final fallback to first paragraph
     }
 }
