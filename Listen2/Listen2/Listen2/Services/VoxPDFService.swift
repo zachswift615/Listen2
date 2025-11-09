@@ -290,10 +290,12 @@ final class VoxPDFService {
                 if let pageInfo = pageMapping[pageNum] {
                     // Use the first paragraph on this page
                     paragraphIndex = pageInfo.firstParagraphIndex
+                    print("📍 TOC: '\(titleText)' -> page \(pageNum) -> paragraph \(paragraphIndex) (first on page)")
                 } else {
                     // Fallback: use text search if page mapping unavailable
                     // (shouldn't happen, but safety first)
                     paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
+                    print("⚠️ TOC: '\(titleText)' -> page \(pageNum) NOT IN MAPPING, using text search -> paragraph \(paragraphIndex)")
                 }
 
                 tocEntries.append(TOCEntry(
@@ -317,6 +319,8 @@ final class VoxPDFService {
         let pageCount = voxpdf_get_page_count(doc)
         var currentParagraphIndex = 0
 
+        print("🗺️ Building page mapping for \(pageCount) pages...")
+
         for pageNum in 0..<pageCount {
             let paragraphCount = voxpdf_get_paragraph_count(doc, UInt32(pageNum), &error)
             guard error == CVoxPDFErrorOk else {
@@ -328,8 +332,13 @@ final class VoxPDFService {
 
             mapping[Int(pageNum)] = (firstIndex, lastIndex, Int(paragraphCount))
             currentParagraphIndex += Int(paragraphCount)
+
+            if pageNum < 5 || pageNum >= pageCount - 2 {
+                print("  Page \(pageNum): paragraphs \(firstIndex)-\(lastIndex) (count: \(paragraphCount))")
+            }
         }
 
+        print("🗺️ Page mapping complete: \(mapping.count) pages, \(currentParagraphIndex) total paragraphs")
         return mapping
     }
 
