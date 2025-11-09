@@ -423,16 +423,22 @@ extension TTSService: AVSpeechSynthesizerDelegate {
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        isPlaying = false
+        // Don't set isPlaying to false yet if we're auto-advancing
+        // This prevents flicker when transitioning between paragraphs
 
-        // Auto-advance to next paragraph (only if not jumping to specific paragraph)
-        guard shouldAutoAdvance else { return }
+        guard shouldAutoAdvance else {
+            isPlaying = false
+            return
+        }
 
         let nextIndex = currentProgress.paragraphIndex + 1
         if nextIndex < currentText.count {
+            // Auto-advance to next paragraph WITHOUT setting isPlaying to false
+            // The didStart delegate will set isPlaying = true
             speakParagraph(at: nextIndex)
         } else {
-            // Reached end of document, clear now playing info
+            // Reached end of document - now we can set to false
+            isPlaying = false
             nowPlayingManager.clearNowPlayingInfo()
         }
     }
