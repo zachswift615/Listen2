@@ -79,4 +79,81 @@ final class VoxPDFServiceTests: XCTestCase {
             XCTAssertTrue(error is VoxPDFService.VoxPDFError)
         }
     }
+
+    func testExtractParagraphs_WrongExtension_ThrowsInvalidPDF() async throws {
+        // Given: A file with wrong extension
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test.txt")
+        try "Not a PDF".write(to: tempURL, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        // When/Then: Should throw invalidPDF error
+        do {
+            _ = try await sut.extractParagraphs(from: tempURL)
+            XCTFail("Should throw invalidPDF error for non-PDF extension")
+        } catch let error as VoxPDFService.VoxPDFError {
+            XCTAssertEqual(error.errorDescription, "The PDF file is invalid or cannot be opened")
+        } catch {
+            XCTFail("Should throw VoxPDFError, got \(error)")
+        }
+    }
+
+    func testExtractParagraphs_EmptyFile_ThrowsEmptyDocument() async throws {
+        // Given: An empty file with PDF extension
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("empty.pdf")
+        try Data().write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        // When/Then: Should throw emptyDocument error
+        do {
+            _ = try await sut.extractParagraphs(from: tempURL)
+            XCTFail("Should throw emptyDocument error for empty file")
+        } catch let error as VoxPDFService.VoxPDFError {
+            XCTAssertEqual(error.errorDescription, "The PDF document is empty")
+        } catch {
+            XCTFail("Should throw VoxPDFError, got \(error)")
+        }
+    }
+
+    func testExtractParagraphs_InvalidMagicNumber_ThrowsInvalidPDF() async throws {
+        // Given: A file with PDF extension but invalid magic number
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("invalid.pdf")
+        try "Not a real PDF file".data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        // When/Then: Should throw invalidPDF error
+        do {
+            _ = try await sut.extractParagraphs(from: tempURL)
+            XCTFail("Should throw invalidPDF error for invalid magic number")
+        } catch let error as VoxPDFService.VoxPDFError {
+            XCTAssertEqual(error.errorDescription, "The PDF file is invalid or cannot be opened")
+        } catch {
+            XCTFail("Should throw VoxPDFError, got \(error)")
+        }
+    }
+
+    func testExtractText_InvalidPDF_ThrowsError() async {
+        // Given: Invalid PDF path
+        let invalidURL = URL(fileURLWithPath: "/nonexistent/file.pdf")
+
+        // When/Then: Should throw error
+        do {
+            _ = try await sut.extractText(from: invalidURL)
+            XCTFail("Should throw error for invalid PDF")
+        } catch {
+            XCTAssertTrue(error is VoxPDFService.VoxPDFError)
+        }
+    }
+
+    func testExtractWordPositions_InvalidPDF_ThrowsError() async {
+        // Given: Invalid PDF path
+        let invalidURL = URL(fileURLWithPath: "/nonexistent/file.pdf")
+
+        // When/Then: Should throw error
+        do {
+            _ = try await sut.extractWordPositions(from: invalidURL)
+            XCTFail("Should throw error for invalid PDF")
+        } catch {
+            XCTAssertTrue(error is VoxPDFService.VoxPDFError)
+        }
+    }
 }

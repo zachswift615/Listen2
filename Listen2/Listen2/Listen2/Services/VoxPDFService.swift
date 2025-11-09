@@ -15,13 +15,39 @@ final class VoxPDFService {
     /// Minimum heading length for contains-based matching
     private static let minimumHeadingLengthForContainsMatch = 10
 
-    enum VoxPDFError: Error {
+    enum VoxPDFError: Error, LocalizedError {
         case invalidPDF
-        case extractionFailed(String)
+        case extractionFailed(underlying: Error)
+        case unsupportedOperation
+        case emptyDocument
+        case corruptedStructure
         case pageNotFound
         case ioError
         case outOfMemory
         case invalidText
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidPDF:
+                return "The PDF file is invalid or cannot be opened"
+            case .extractionFailed(let error):
+                return "Failed to extract content: \(error.localizedDescription)"
+            case .unsupportedOperation:
+                return "This operation is not yet supported"
+            case .emptyDocument:
+                return "The PDF document is empty"
+            case .corruptedStructure:
+                return "The PDF structure is corrupted or malformed"
+            case .pageNotFound:
+                return "The requested page was not found in the PDF"
+            case .ioError:
+                return "An I/O error occurred while reading the PDF"
+            case .outOfMemory:
+                return "Insufficient memory to process the PDF"
+            case .invalidText:
+                return "The PDF contains invalid text encoding"
+            }
+        }
 
         init(from cError: CVoxPDFError) {
             switch cError {
@@ -36,8 +62,34 @@ final class VoxPDFService {
             case CVoxPDFErrorInvalidText:
                 self = .invalidText
             default:
-                self = .extractionFailed("Unknown error code: \(cError.rawValue)")
+                self = .corruptedStructure
             }
+        }
+    }
+
+    // MARK: - Validation
+
+    /// Validate that a file is a valid PDF
+    /// - Parameter url: URL to the PDF file
+    /// - Throws: VoxPDFError if the file is invalid
+    private func validatePDF(at url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw VoxPDFError.invalidPDF
+        }
+
+        guard url.pathExtension.lowercased() == "pdf" else {
+            throw VoxPDFError.invalidPDF
+        }
+
+        let data = try Data(contentsOf: url)
+        guard !data.isEmpty else {
+            throw VoxPDFError.emptyDocument
+        }
+
+        // PDF magic number check
+        let pdfHeader = Data([0x25, 0x50, 0x44, 0x46]) // "%PDF"
+        guard data.prefix(4) == pdfHeader else {
+            throw VoxPDFError.invalidPDF
         }
     }
 
@@ -48,8 +100,13 @@ final class VoxPDFService {
     /// - Returns: Array of paragraph strings
     func extractParagraphs(from url: URL) async throws -> [String] {
         try await Task.detached(priority: .userInitiated) {
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw VoxPDFError.invalidPDF
+            // Validate PDF before attempting extraction
+            do {
+                try self.validatePDF(at: url)
+            } catch let error as VoxPDFError {
+                throw error
+            } catch {
+                throw VoxPDFError.extractionFailed(underlying: error)
             }
 
             var error: CVoxPDFError = CVoxPDFErrorOk
@@ -63,7 +120,7 @@ final class VoxPDFService {
             // Get page count
             let pageCount = voxpdf_get_page_count(doc)
             guard pageCount > 0 else {
-                throw VoxPDFError.invalidPDF
+                throw VoxPDFError.emptyDocument
             }
 
             var allParagraphs: [String] = []
@@ -102,7 +159,7 @@ final class VoxPDFService {
             }
 
             guard !allParagraphs.isEmpty else {
-                throw VoxPDFError.extractionFailed("No paragraphs could be extracted")
+                throw VoxPDFError.emptyDocument
             }
 
             return allParagraphs
@@ -114,8 +171,13 @@ final class VoxPDFService {
     /// - Returns: Concatenated text content
     func extractText(from url: URL) async throws -> String {
         try await Task.detached(priority: .userInitiated) {
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw VoxPDFError.invalidPDF
+            // Validate PDF before attempting extraction
+            do {
+                try self.validatePDF(at: url)
+            } catch let error as VoxPDFError {
+                throw error
+            } catch {
+                throw VoxPDFError.extractionFailed(underlying: error)
             }
 
             var error: CVoxPDFError = CVoxPDFErrorOk
@@ -129,7 +191,7 @@ final class VoxPDFService {
             // Get page count
             let pageCount = voxpdf_get_page_count(doc)
             guard pageCount > 0 else {
-                throw VoxPDFError.invalidPDF
+                throw VoxPDFError.emptyDocument
             }
 
             var allText: [String] = []
@@ -157,7 +219,7 @@ final class VoxPDFService {
             }
 
             guard !allText.isEmpty else {
-                throw VoxPDFError.extractionFailed("No text could be extracted")
+                throw VoxPDFError.emptyDocument
             }
 
             return allText.joined(separator: "\n\n")
@@ -171,8 +233,13 @@ final class VoxPDFService {
     /// - Returns: Array of TOC entries with paragraph indices
     func extractTOC(from url: URL, paragraphs: [String]) async throws -> [TOCEntry] {
         try await Task.detached(priority: .userInitiated) {
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw VoxPDFError.invalidPDF
+            // Validate PDF before attempting extraction
+            do {
+                try self.validatePDF(at: url)
+            } catch let error as VoxPDFError {
+                throw error
+            } catch {
+                throw VoxPDFError.extractionFailed(underlying: error)
             }
 
             var error: CVoxPDFError = CVoxPDFErrorOk
@@ -231,8 +298,13 @@ final class VoxPDFService {
     /// - Returns: Document word map for word-level navigation
     func extractWordPositions(from url: URL) async throws -> DocumentWordMap {
         try await Task.detached(priority: .userInitiated) {
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw VoxPDFError.invalidPDF
+            // Validate PDF before attempting extraction
+            do {
+                try self.validatePDF(at: url)
+            } catch let error as VoxPDFError {
+                throw error
+            } catch {
+                throw VoxPDFError.extractionFailed(underlying: error)
             }
 
             var error: CVoxPDFError = CVoxPDFErrorOk
@@ -246,7 +318,7 @@ final class VoxPDFService {
             // Get page count
             let pageCount = voxpdf_get_page_count(doc)
             guard pageCount > 0 else {
-                throw VoxPDFError.invalidPDF
+                throw VoxPDFError.emptyDocument
             }
 
             var allWords: [WordPosition] = []
@@ -352,7 +424,7 @@ final class VoxPDFService {
             }
 
             guard !allWords.isEmpty else {
-                throw VoxPDFError.extractionFailed("No words could be extracted")
+                throw VoxPDFError.emptyDocument
             }
 
             return DocumentWordMap(words: allWords)
