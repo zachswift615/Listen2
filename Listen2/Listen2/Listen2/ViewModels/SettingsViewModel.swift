@@ -9,10 +9,6 @@ import AVFoundation
 @MainActor
 final class SettingsViewModel: ObservableObject {
 
-    // MARK: - Services
-
-    let ttsService: TTSService
-
     // MARK: - Persisted Settings
 
     @AppStorage("defaultSpeed") var defaultSpeed: Double = 1.0
@@ -21,22 +17,36 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Available Voices
 
+    // Create a temporary service instance just for querying available voices
+    // This is safe because we're only reading voice lists, not managing playback state
+    private let voiceQueryService = TTSService()
+
     var piperVoices: [AVVoice] {
-        ttsService.piperVoices()
+        voiceQueryService.piperVoices()
     }
 
     var iosVoices: [AVVoice] {
-        ttsService.iosVoices()
+        voiceQueryService.iosVoices()
     }
 
     var availableVoices: [AVVoice] {
-        piperVoices
+        piperVoices + iosVoices
     }
 
     var selectedVoice: AVVoice? {
         get {
-            guard let identifier = defaultVoiceIdentifier,
-                  let avVoice = AVSpeechSynthesisVoice(identifier: identifier) else {
+            guard let identifier = defaultVoiceIdentifier else {
+                return availableVoices.first { $0.language.hasPrefix("en") }
+            }
+
+            // Handle Piper voices (IDs start with "piper:")
+            if identifier.hasPrefix("piper:") {
+                return piperVoices.first { $0.id == identifier }
+                    ?? iosVoices.first { $0.id == identifier }
+            }
+
+            // Handle iOS voices
+            guard let avVoice = AVSpeechSynthesisVoice(identifier: identifier) else {
                 return availableVoices.first { $0.language.hasPrefix("en") }
             }
             return AVVoice(from: avVoice)
@@ -44,11 +54,5 @@ final class SettingsViewModel: ObservableObject {
         set {
             defaultVoiceIdentifier = newValue?.id
         }
-    }
-
-    // MARK: - Initialization
-
-    init(ttsService: TTSService = TTSService()) {
-        self.ttsService = ttsService
     }
 }

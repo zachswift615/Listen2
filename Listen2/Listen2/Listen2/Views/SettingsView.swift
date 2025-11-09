@@ -10,7 +10,7 @@ struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @State private var showingVoicePicker = false
     @State private var showingVoiceLibrary = false
-    @State private var useIOSVoice = false
+    @AppStorage("useIOSVoice") private var useIOSVoice = false
 
     var body: some View {
         NavigationStack {
