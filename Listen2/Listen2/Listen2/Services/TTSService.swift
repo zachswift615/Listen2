@@ -318,6 +318,11 @@ final class TTSService: NSObject, ObservableObject {
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
 
+        // Reset state to prevent stale content when switching documents
+        currentText = []
+        currentProgress = .initial
+        wordMap = nil
+
         nowPlayingManager.clearNowPlayingInfo()
     }
 
