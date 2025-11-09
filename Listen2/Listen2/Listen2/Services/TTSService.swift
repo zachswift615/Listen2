@@ -30,6 +30,7 @@ final class TTSService: NSObject, ObservableObject {
     private var usePiper: Bool = true  // Feature flag
     private let audioSessionManager = AudioSessionManager()
     private let nowPlayingManager = NowPlayingInfoManager()
+    private var audioPlayer: AudioPlayer!
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
@@ -40,6 +41,11 @@ final class TTSService: NSObject, ObservableObject {
     override init() {
         super.init()
         fallbackSynthesizer.delegate = self
+
+        // Initialize audio player on main actor
+        Task { @MainActor in
+            self.audioPlayer = AudioPlayer()
+        }
 
         // Try to initialize Piper TTS
         Task {
@@ -193,12 +199,18 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func pause() {
+        Task { @MainActor in
+            audioPlayer.pause()
+        }
         fallbackSynthesizer.pauseSpeaking(at: .word)
         isPlaying = false
         nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
 
     func resume() {
+        Task { @MainActor in
+            audioPlayer.resume()
+        }
         fallbackSynthesizer.continueSpeaking()
         isPlaying = true
         nowPlayingManager.updatePlaybackState(isPlaying: true)
@@ -222,6 +234,9 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func stop() {
+        Task { @MainActor in
+            audioPlayer.stop()
+        }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         isPlaying = false
         nowPlayingManager.clearNowPlayingInfo()
@@ -233,13 +248,6 @@ final class TTSService: NSObject, ObservableObject {
         guard index < currentText.count else { return }
 
         let text = currentText[index]
-        let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = currentVoice
-        utterance.rate = playbackRate * 0.5 // AVSpeechUtterance rate is 0-1 scale
-
-        // Configure delays for smooth continuous reading
-        utterance.preUtteranceDelay = 0.0
-        utterance.postUtteranceDelay = paragraphPauseDelay // User-configurable pause
 
         currentProgress = ReadingProgress(
             paragraphIndex: index,
@@ -247,7 +255,6 @@ final class TTSService: NSObject, ObservableObject {
             isPlaying: true
         )
 
-        // Update now playing info for lock screen
         nowPlayingManager.updateNowPlayingInfo(
             documentTitle: currentTitle,
             paragraphIndex: index,
@@ -256,7 +263,48 @@ final class TTSService: NSObject, ObservableObject {
             rate: playbackRate
         )
 
+        // Try Piper TTS first, fallback to AVSpeech if unavailable or on error
+        if let provider = provider {
+            Task {
+                do {
+                    let wavData = try await provider.synthesize(text, speed: playbackRate)
+                    try await MainActor.run {
+                        try audioPlayer.play(data: wavData) { [weak self] in
+                            self?.handleParagraphComplete()
+                        }
+                    }
+                } catch {
+                    print("[TTSService] ⚠️ Piper synthesis failed: \(error), falling back to AVSpeech")
+                    await MainActor.run {
+                        self.fallbackToAVSpeech(text: text)
+                    }
+                }
+            }
+        } else {
+            fallbackToAVSpeech(text: text)
+        }
+    }
+
+    private func fallbackToAVSpeech(text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = currentVoice
+        utterance.rate = playbackRate * 0.5
+        utterance.preUtteranceDelay = 0.0
+        utterance.postUtteranceDelay = paragraphPauseDelay
         fallbackSynthesizer.speak(utterance)
+    }
+
+    private func handleParagraphComplete() {
+        isPlaying = false
+
+        guard shouldAutoAdvance else { return }
+
+        let nextIndex = currentProgress.paragraphIndex + 1
+        if nextIndex < currentText.count {
+            speakParagraph(at: nextIndex)
+        } else {
+            nowPlayingManager.clearNowPlayingInfo()
+        }
     }
 }
 
