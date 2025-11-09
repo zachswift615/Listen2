@@ -216,26 +216,30 @@ final class VoiceManager {
         print("[VoiceManager] Created voice directory: \(voiceDir.path)")
 
         // Perform CPU-intensive decompression and extraction on background thread
-        let extractionResult = try await Task.detached(priority: .userInitiated) { [voiceDir, tempFile, fileManager] in
+        let extractionResult = try await Task.detached(priority: .userInitiated) { [voiceDir, tempFile, fileManager, progress] in
             do {
                 // Read the compressed tar.bz2 file
                 print("[VoiceManager] Reading compressed file...")
                 let compressedData = try Data(contentsOf: tempFile)
                 print("[VoiceManager] Compressed file size: \(compressedData.count / 1024 / 1024) MB")
 
-                // Decompress bzip2 (CPU-intensive)
-                print("[VoiceManager] Decompressing bzip2...")
+                // Decompress bzip2 (CPU-intensive - can take 2-3 minutes for 64MB files)
+                print("[VoiceManager] Decompressing bzip2 (this may take a few minutes)...")
+                progress(0.55)  // Show some progress
                 let decompressedData = try BZip2.decompress(data: compressedData)
                 print("[VoiceManager] Decompressed size: \(decompressedData.count / 1024 / 1024) MB")
+                progress(0.75)  // Decompression complete
 
                 // Extract tar archive
                 print("[VoiceManager] Opening tar container...")
+                progress(0.80)
                 let tarContents = try TarContainer.open(container: decompressedData)
                 print("[VoiceManager] Tar contains \(tarContents.count) entries")
 
                 // Extract all files, stripping the top-level directory
                 var extractedCount = 0
-                for entry in tarContents {
+                let totalEntries = tarContents.count
+                for (index, entry) in tarContents.enumerated() {
                     // Skip directories
                     guard entry.info.type == .regular || entry.info.type == .symbolicLink else {
                         continue
@@ -263,7 +267,9 @@ final class VoiceManager {
                         try data.write(to: filePath)
                         extractedCount += 1
                         if extractedCount % 100 == 0 {
-                            print("[VoiceManager] Extracted \(extractedCount) files...")
+                            let extractProgress = 0.80 + (0.19 * Double(index) / Double(totalEntries))
+                            progress(extractProgress)
+                            print("[VoiceManager] Extracted \(extractedCount)/\(totalEntries) files (\(Int(extractProgress * 100))%)...")
                         }
                     }
                 }
