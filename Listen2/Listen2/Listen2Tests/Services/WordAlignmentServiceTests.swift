@@ -224,21 +224,13 @@ final class WordAlignmentServiceTests: XCTestCase {
     // MARK: - AlignmentResult Tests
 
     func testAlignmentResultValidation() {
-        // Valid alignment
+        // Valid alignment with empty wordTimings (Task 3 allows this)
         let validResult = AlignmentResult(
             paragraphIndex: 0,
             totalDuration: 5.0,
             wordTimings: []
         )
         XCTAssertTrue(validResult.isValid(for: "test text"))
-
-        // Invalid: empty timings
-        let emptyResult = AlignmentResult(
-            paragraphIndex: 0,
-            totalDuration: 5.0,
-            wordTimings: []
-        )
-        XCTAssertFalse(emptyResult.isValid(for: "test text"))
 
         // Invalid: negative duration
         let negativeResult = AlignmentResult(
@@ -247,6 +239,14 @@ final class WordAlignmentServiceTests: XCTestCase {
             wordTimings: []
         )
         XCTAssertFalse(negativeResult.isValid(for: "test text"))
+
+        // Invalid: duration too long (over 1 hour)
+        let tooLongResult = AlignmentResult(
+            paragraphIndex: 0,
+            totalDuration: 4000.0,
+            wordTimings: []
+        )
+        XCTAssertFalse(tooLongResult.isValid(for: "test text"))
     }
 
     func testWordTimingAtTime() {

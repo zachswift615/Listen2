@@ -23,8 +23,9 @@ struct AlignmentResult: Codable, Equatable {
         /// The word text (for validation)
         let text: String
 
-        /// String range for highlighting in the paragraph text
-        let stringRange: Range<String.Index>
+        /// Store range as integers for Codable
+        private let rangeLocation: Int
+        private let rangeLength: Int
 
         /// End time of the word (computed property)
         var endTime: TimeInterval {
@@ -37,8 +38,8 @@ struct AlignmentResult: Codable, Equatable {
             case startTime
             case duration
             case text
-            case stringRangeLocation
-            case stringRangeLength
+            case rangeLocation
+            case rangeLength
         }
 
         init(
@@ -52,43 +53,23 @@ struct AlignmentResult: Codable, Equatable {
             self.startTime = startTime
             self.duration = duration
             self.text = text
-            self.stringRange = stringRange
+
+            // Store the offsets from a dummy string
+            // These will be used to reconstruct the range from actual paragraph text
+            let dummyString = String(repeating: " ", count: 1000)
+            self.rangeLocation = dummyString.distance(from: dummyString.startIndex, to: stringRange.lowerBound)
+            self.rangeLength = dummyString.distance(from: stringRange.lowerBound, to: stringRange.upperBound)
         }
 
-        init(from decoder: Decoder) throws {
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            wordIndex = try container.decode(Int.self, forKey: .wordIndex)
-            startTime = try container.decode(TimeInterval.self, forKey: .startTime)
-            duration = try container.decode(TimeInterval.self, forKey: .duration)
-            text = try container.decode(String.self, forKey: .text)
-
-            // Decode string range from offset/length
-            let location = try container.decode(Int.self, forKey: .stringRangeLocation)
-            let length = try container.decode(Int.self, forKey: .stringRangeLength)
-
-            // Note: This is a placeholder. The actual stringRange will need to be
-            // reconstructed from the paragraph text when loading from cache.
-            // For now, we store the offsets and reconstruct during decode.
-            let dummyString = String(repeating: " ", count: location + length)
-            let startIndex = dummyString.index(dummyString.startIndex, offsetBy: location)
-            let endIndex = dummyString.index(startIndex, offsetBy: length)
-            stringRange = startIndex..<endIndex
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(wordIndex, forKey: .wordIndex)
-            try container.encode(startTime, forKey: .startTime)
-            try container.encode(duration, forKey: .duration)
-            try container.encode(text, forKey: .text)
-
-            // Encode string range as offset/length
-            // Note: This requires the paragraph text to reconstruct the actual Range<String.Index>
-            let dummyString = String(repeating: " ", count: 1000) // Dummy for encoding
-            let location = dummyString.distance(from: dummyString.startIndex, to: stringRange.lowerBound)
-            let length = dummyString.distance(from: stringRange.lowerBound, to: stringRange.upperBound)
-            try container.encode(location, forKey: .stringRangeLocation)
-            try container.encode(length, forKey: .stringRangeLength)
+        /// Reconstruct string range from paragraph text
+        /// - Parameter text: The actual paragraph text
+        /// - Returns: The string range in the paragraph text, or nil if offsets are invalid
+        func stringRange(in text: String) -> Range<String.Index>? {
+            guard let start = text.index(text.startIndex, offsetBy: rangeLocation, limitedBy: text.endIndex),
+                  let end = text.index(start, offsetBy: rangeLength, limitedBy: text.endIndex) else {
+                return nil
+            }
+            return start..<end
         }
     }
 
@@ -116,18 +97,17 @@ struct AlignmentResult: Codable, Equatable {
     /// - Parameter text: The paragraph text to validate against
     /// - Returns: True if the alignment appears valid
     func isValid(for text: String) -> Bool {
-        // Basic validation: check that word count matches
-        guard !wordTimings.isEmpty else { return false }
+        // Allow empty wordTimings until Task 5 implements mapping
+        guard totalDuration > 0 && totalDuration < 3600 else { return false }
 
-        // Check that timings are in order
+        // If we have wordTimings, validate they're in order
         for i in 1..<wordTimings.count {
             if wordTimings[i].startTime < wordTimings[i-1].startTime {
                 return false
             }
         }
 
-        // Check that total duration makes sense (positive and reasonable)
-        return totalDuration > 0 && totalDuration < 3600 // Max 1 hour per paragraph
+        return true
     }
 }
 
