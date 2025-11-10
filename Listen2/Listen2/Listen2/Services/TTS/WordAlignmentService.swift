@@ -227,39 +227,30 @@ actor WordAlignmentService {
 
         let tokenCount = Int(result.count)
 
-        // Extract token strings and timing information
-        var tokenTimings: [(text: String, start: TimeInterval, duration: TimeInterval)] = []
+        // Get VoxPDF words for this paragraph
+        let voxPDFWords = wordMap.words(for: paragraphIndex)
 
-        for i in 0..<tokenCount {
-            if let tokenPtr = tokensPtr[i] {
-                let tokenText = String(cString: tokenPtr)
-                let startTime = TimeInterval(timestamps[i])
+        // Map tokens to words using DTW alignment
+        let wordTimings = mapTokensToWords(
+            asrTokens: tokensPtr,
+            timestamps: timestamps,
+            durations: result.durations,
+            tokenCount: tokenCount,
+            voxPDFWords: voxPDFWords,
+            paragraphText: text
+        )
 
-                // Calculate duration: either use result.durations if available,
-                // or estimate from next token's start time
-                var duration: TimeInterval = 0.0
-                if i + 1 < tokenCount {
-                    duration = TimeInterval(timestamps[i + 1]) - startTime
-                } else {
-                    // Last token: estimate a small duration
-                    duration = 0.1
-                }
+        // Calculate total duration from last word or estimate from audio
+        let totalDuration = wordTimings.last?.endTime ?? TimeInterval(timestamps[tokenCount - 1] + 0.2)
 
-                tokenTimings.append((text: tokenText, start: startTime, duration: duration))
-                print("Token \(i): '\(tokenText)' at \(startTime)s, duration \(duration)s")
-            }
-        }
-
-        // For now, we'll create a simple alignment result with the tokens
-        // TODO: In Task 5, implement proper token-to-word mapping
-        let totalDuration = tokenTimings.last?.start ?? 0.0 + (tokenTimings.last?.duration ?? 0.0)
-
-        // Create alignment result (simplified for Task 3)
+        // Create alignment result
         let alignmentResult = AlignmentResult(
             paragraphIndex: paragraphIndex,
             totalDuration: totalDuration,
-            wordTimings: []  // TODO: Map tokens to words in Task 5
+            wordTimings: wordTimings
         )
+
+        print("Created alignment with \(wordTimings.count) word timings, total duration: \(totalDuration)s")
 
         // Cache the result
         alignmentCache[audioURL] = alignmentResult
@@ -387,5 +378,265 @@ actor WordAlignmentService {
         }
 
         return resampled
+    }
+
+    // MARK: - Token-to-Word Mapping
+
+    /// Normalize text for alignment (lowercase, remove punctuation)
+    /// - Parameter text: Input text
+    /// - Returns: Normalized text suitable for alignment
+    private func normalize(_ text: String) -> String {
+        // Convert to lowercase
+        var normalized = text.lowercased()
+
+        // Remove common punctuation but keep apostrophes for now (handle contractions specially)
+        let punctuationToRemove = CharacterSet.punctuationCharacters.subtracting(CharacterSet(charactersIn: "'"))
+        normalized = normalized.components(separatedBy: punctuationToRemove).joined()
+
+        // Remove extra whitespace
+        normalized = normalized.components(separatedBy: .whitespaces)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+
+        return normalized
+    }
+
+    /// Compute Levenshtein (edit) distance between two strings
+    /// - Parameters:
+    ///   - s1: First string
+    ///   - s2: Second string
+    /// - Returns: Edit distance (lower is more similar)
+    private func editDistance(_ s1: String, _ s2: String) -> Int {
+        let s1Array = Array(s1)
+        let s2Array = Array(s2)
+        let m = s1Array.count
+        let n = s2Array.count
+
+        // Create DP table
+        var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
+
+        // Initialize base cases
+        for i in 0...m {
+            dp[i][0] = i
+        }
+        for j in 0...n {
+            dp[0][j] = j
+        }
+
+        // Fill DP table
+        for i in 1...m {
+            for j in 1...n {
+                if s1Array[i-1] == s2Array[j-1] {
+                    dp[i][j] = dp[i-1][j-1]
+                } else {
+                    dp[i][j] = 1 + min(
+                        dp[i-1][j],     // deletion
+                        dp[i][j-1],     // insertion
+                        dp[i-1][j-1]    // substitution
+                    )
+                }
+            }
+        }
+
+        return dp[m][n]
+    }
+
+    /// Align ASR token sequence to VoxPDF word sequence using Dynamic Time Warping
+    /// - Parameters:
+    ///   - asrTokens: Array of ASR token strings
+    ///   - voxWords: Array of VoxPDF word strings
+    /// - Returns: Array of (wordIndex, [tokenIndices]) pairs showing alignment
+    private func alignSequences(_ asrTokens: [String], _ voxWords: [String]) -> [(wordIndex: Int, tokenIndices: [Int])] {
+        guard !asrTokens.isEmpty && !voxWords.isEmpty else {
+            return []
+        }
+
+        let m = asrTokens.count
+        let n = voxWords.count
+
+        // DTW cost matrix
+        var cost = Array(repeating: Array(repeating: Double.infinity, count: n + 1), count: m + 1)
+        cost[0][0] = 0
+
+        // Compute DTW costs
+        for i in 1...m {
+            for j in 1...n {
+                // Cost of matching token i-1 to word j-1
+                let matchCost = Double(editDistance(asrTokens[i-1], voxWords[j-1]))
+
+                // DTW allows staying on same word (many tokens -> one word)
+                // or skipping words (one token -> many words, less common)
+                cost[i][j] = matchCost + min(
+                    cost[i-1][j-1],  // diagonal: align token to word
+                    cost[i-1][j],    // vertical: multiple tokens per word
+                    cost[i][j-1]     // horizontal: skip word (less common)
+                )
+            }
+        }
+
+        // Backtrack to find alignment path
+        var alignment: [(wordIndex: Int, tokenIndices: [Int])] = []
+        var i = m
+        var j = n
+        var currentWord: (wordIndex: Int, tokenIndices: [Int])?
+
+        while i > 0 && j > 0 {
+            // Determine which direction we came from
+            let diag = cost[i-1][j-1]
+            let up = cost[i-1][j]
+            let left = cost[i][j-1]
+
+            if diag <= up && diag <= left {
+                // Diagonal: token i-1 aligns to word j-1
+                if let current = currentWord, current.wordIndex == j-1 {
+                    // Same word, prepend token
+                    currentWord?.tokenIndices.insert(i-1, at: 0)
+                } else {
+                    // New word, save previous
+                    if let current = currentWord {
+                        alignment.insert(current, at: 0)
+                    }
+                    currentWord = (wordIndex: j-1, tokenIndices: [i-1])
+                }
+                i -= 1
+                j -= 1
+            } else if up <= left {
+                // Vertical: token i-1 aligns to same word j-1
+                if let current = currentWord, current.wordIndex == j-1 {
+                    currentWord?.tokenIndices.insert(i-1, at: 0)
+                } else {
+                    if let current = currentWord {
+                        alignment.insert(current, at: 0)
+                    }
+                    currentWord = (wordIndex: j-1, tokenIndices: [i-1])
+                }
+                i -= 1
+            } else {
+                // Horizontal: skip word j-1 (no tokens align to it)
+                j -= 1
+            }
+        }
+
+        // Add last word
+        if let current = currentWord {
+            alignment.insert(current, at: 0)
+        }
+
+        return alignment
+    }
+
+    /// Map ASR tokens to VoxPDF words and create WordTiming array
+    /// - Parameters:
+    ///   - asrTokens: ASR token pointer array
+    ///   - timestamps: Start time for each token
+    ///   - durations: Duration of each token
+    ///   - tokenCount: Number of tokens
+    ///   - voxPDFWords: Array of VoxPDF word positions
+    ///   - paragraphText: Full text of the paragraph
+    /// - Returns: Array of WordTiming entries
+    private func mapTokensToWords(
+        asrTokens: UnsafePointer<UnsafePointer<CChar>?>,
+        timestamps: UnsafePointer<Float>,
+        durations: UnsafePointer<Float>?,
+        tokenCount: Int,
+        voxPDFWords: [WordPosition],
+        paragraphText: String
+    ) -> [AlignmentResult.WordTiming] {
+        guard tokenCount > 0 && !voxPDFWords.isEmpty else {
+            return []
+        }
+
+        // 1. Convert ASR tokens to strings
+        var asrTokenStrings: [String] = []
+        for i in 0..<tokenCount {
+            if let tokenPtr = asrTokens[i] {
+                let tokenText = String(cString: tokenPtr)
+                // Filter out whitespace-only tokens
+                if !tokenText.trimmingCharacters(in: .whitespaces).isEmpty {
+                    asrTokenStrings.append(tokenText)
+                }
+            }
+        }
+
+        print("ASR tokens: \(asrTokenStrings)")
+
+        // 2. Extract VoxPDF word texts and normalize both
+        let voxWordStrings = voxPDFWords.map { $0.text }
+        print("VoxPDF words: \(voxWordStrings)")
+
+        let normalizedASR = asrTokenStrings.map { normalize($0) }
+        let normalizedWords = voxWordStrings.map { normalize($0) }
+
+        print("Normalized ASR: \(normalizedASR)")
+        print("Normalized words: \(normalizedWords)")
+
+        // 3. Align sequences using DTW
+        let alignment = alignSequences(normalizedASR, normalizedWords)
+
+        print("Alignment: \(alignment)")
+
+        // 4. Build WordTiming array
+        var wordTimings: [AlignmentResult.WordTiming] = []
+
+        for (wordIndex, tokenIndices) in alignment {
+            guard wordIndex < voxPDFWords.count else { continue }
+
+            let voxWord = voxPDFWords[wordIndex]
+
+            // Calculate timing from aligned tokens
+            guard !tokenIndices.isEmpty else { continue }
+
+            let firstToken = tokenIndices.first!
+            let lastToken = tokenIndices.last!
+
+            let startTime = TimeInterval(timestamps[firstToken])
+
+            // Calculate end time
+            var endTime: TimeInterval
+            if let durations = durations {
+                endTime = TimeInterval(timestamps[lastToken] + durations[lastToken])
+            } else {
+                // Estimate from next token's start time
+                if lastToken + 1 < tokenCount {
+                    endTime = TimeInterval(timestamps[lastToken + 1])
+                } else {
+                    // Last token: add a small duration
+                    endTime = startTime + 0.2
+                }
+            }
+
+            let duration = endTime - startTime
+
+            // Get String.Index range from VoxPDF word position
+            guard let startIndex = paragraphText.index(
+                paragraphText.startIndex,
+                offsetBy: voxWord.characterOffset,
+                limitedBy: paragraphText.endIndex
+            ) else {
+                print("Warning: Invalid character offset \(voxWord.characterOffset) for word '\(voxWord.text)'")
+                continue
+            }
+
+            guard let endIndex = paragraphText.index(
+                startIndex,
+                offsetBy: voxWord.length,
+                limitedBy: paragraphText.endIndex
+            ) else {
+                print("Warning: Invalid length \(voxWord.length) for word '\(voxWord.text)'")
+                continue
+            }
+
+            let stringRange = startIndex..<endIndex
+
+            wordTimings.append(AlignmentResult.WordTiming(
+                wordIndex: wordIndex,
+                startTime: startTime,
+                duration: duration,
+                text: voxWord.text,
+                stringRange: stringRange
+            ))
+        }
+
+        return wordTimings
     }
 }

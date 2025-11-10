@@ -281,6 +281,205 @@ final class WordAlignmentServiceTests: XCTestCase {
         XCTAssertNil(result.wordTiming(at: 1.5), "Should return nil for time after all words")
     }
 
+    // MARK: - Token-to-Word Mapping Tests
+
+    func testTokenToWordMappingSimple() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Test with a simple case where tokens match words
+        let text = "Hello world"
+        let testAudioURL = try createTestAudioFile()
+        let wordMap = createTestWordMap()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // We should have word timings now (though they may not be perfect due to test audio being silence)
+        // Just verify the structure is correct
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertGreaterThan(result.totalDuration, 0)
+    }
+
+    func testTokenToWordMappingWithContractions() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Create word map with contractions
+        let words = [
+            WordPosition(
+                text: "don't",
+                characterOffset: 0,
+                length: 5,
+                paragraphIndex: 0,
+                pageNumber: 0
+            ),
+            WordPosition(
+                text: "worry",
+                characterOffset: 6,
+                length: 5,
+                paragraphIndex: 0,
+                pageNumber: 0
+            )
+        ]
+        let wordMap = DocumentWordMap(words: words)
+
+        let text = "don't worry"
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Verify result structure
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertGreaterThan(result.totalDuration, 0)
+    }
+
+    func testTokenToWordMappingWithPunctuation() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Create word map with punctuation
+        let words = [
+            WordPosition(
+                text: "Hello,",
+                characterOffset: 0,
+                length: 6,
+                paragraphIndex: 0,
+                pageNumber: 0
+            ),
+            WordPosition(
+                text: "world!",
+                characterOffset: 7,
+                length: 6,
+                paragraphIndex: 0,
+                pageNumber: 0
+            )
+        ]
+        let wordMap = DocumentWordMap(words: words)
+
+        let text = "Hello, world!"
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Verify result structure
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertGreaterThan(result.totalDuration, 0)
+    }
+
+    func testTokenToWordMappingEmptyWords() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Empty word map
+        let wordMap = DocumentWordMap(words: [])
+        let text = ""
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Should handle gracefully
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertTrue(result.wordTimings.isEmpty, "Should have no word timings for empty text")
+    }
+
+    func testWordTimingsAreSequential() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        let words = [
+            WordPosition(text: "The", characterOffset: 0, length: 3, paragraphIndex: 0, pageNumber: 0),
+            WordPosition(text: "quick", characterOffset: 4, length: 5, paragraphIndex: 0, pageNumber: 0),
+            WordPosition(text: "brown", characterOffset: 10, length: 5, paragraphIndex: 0, pageNumber: 0),
+            WordPosition(text: "fox", characterOffset: 16, length: 3, paragraphIndex: 0, pageNumber: 0)
+        ]
+        let wordMap = DocumentWordMap(words: words)
+        let text = "The quick brown fox"
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Verify word timings are in sequential order
+        if result.wordTimings.count > 1 {
+            for i in 1..<result.wordTimings.count {
+                XCTAssertGreaterThanOrEqual(
+                    result.wordTimings[i].startTime,
+                    result.wordTimings[i-1].startTime,
+                    "Word timings should be in chronological order"
+                )
+            }
+        }
+    }
+
+    func testWordTimingStringRanges() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        let text = "Hello world"
+        let words = [
+            WordPosition(text: "Hello", characterOffset: 0, length: 5, paragraphIndex: 0, pageNumber: 0),
+            WordPosition(text: "world", characterOffset: 6, length: 5, paragraphIndex: 0, pageNumber: 0)
+        ]
+        let wordMap = DocumentWordMap(words: words)
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Verify string ranges can be reconstructed
+        for wordTiming in result.wordTimings {
+            if let range = wordTiming.stringRange(in: text) {
+                let extractedText = String(text[range])
+                // The extracted text should match the word text (ignoring case/punctuation differences)
+                XCTAssertTrue(
+                    extractedText.lowercased().contains(wordTiming.text.lowercased()) ||
+                    wordTiming.text.lowercased().contains(extractedText.lowercased()),
+                    "String range should extract the correct word text"
+                )
+            }
+        }
+    }
+
+    func testAlignmentValidation() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        let wordMap = createTestWordMap()
+        let text = "Hello world"
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Result should be valid
+        XCTAssertTrue(result.isValid(for: text), "Alignment result should be valid")
+    }
+
     // MARK: - Helper Methods
 
     /// Create a test WAV audio file
