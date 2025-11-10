@@ -21,11 +21,18 @@ actor AlignmentCache {
 
     init() {
         // Get the Caches directory
-        let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        guard let cachesDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            fatalError("Unable to locate Caches directory - this should never happen")
+        }
         cacheBaseURL = cachesDir.appendingPathComponent("WordAlignments")
 
         // Create base directory if it doesn't exist
-        try? fileManager.createDirectory(at: cacheBaseURL, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: cacheBaseURL, withIntermediateDirectories: true)
+        } catch {
+            // Log error but don't crash - operations will fail gracefully with proper errors
+            print("⚠️ [AlignmentCache] Failed to create cache directory: \(error)")
+        }
     }
 
     // MARK: - Public Methods
