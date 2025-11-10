@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0DCA29804E27AFF558375A37 /* ASRModels in Resources */ = {isa = PBXBuildFile; fileRef = 14CF40110A795C1127CE6A5F /* ASRModels */; };
 		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
@@ -51,6 +52,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		14CF40110A795C1127CE6A5F /* ASRModels */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = ASRModels; path = Listen2/Resources/ASRModels; sourceTree = "<group>"; };
 		A6E02F032EBD6692005E8935 /* Listen2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listen2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F152EBD6693005E8935 /* Listen2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F1F2EBD6693005E8935 /* Listen2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -389,16 +391,22 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
 		A6E02F182EBD6693005E8935 /* Listen2Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2Tests;
 			sourceTree = "<group>";
 		};
 		A6E02F222EBD6693005E8935 /* Listen2UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2UITests;
 			sourceTree = "<group>";
 		};
@@ -434,6 +442,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2C9E4BD48FB17CEB71571BFB /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				14CF40110A795C1127CE6A5F /* ASRModels */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
 		A6E02EFA2EBD6692005E8935 = {
 			isa = PBXGroup;
 			children = (
@@ -443,6 +459,7 @@
 				A6E02F222EBD6693005E8935 /* Listen2UITests */,
 				A6E030242EBEED0E005E8935 /* Frameworks */,
 				A6E02F042EBD6692005E8935 /* Products */,
+				2C9E4BD48FB17CEB71571BFB /* Resources */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1221,6 +1238,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0DCA29804E27AFF558375A37 /* ASRModels in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
