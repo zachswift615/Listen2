@@ -1,8 +1,9 @@
 #!/usr/bin/env ruby
 require 'xcodeproj'
 
-# Navigate to project directory
-project_dir = '/Users/zachswift/projects/Listen2/Listen2/Listen2'
+# Navigate to project directory (relative to script location)
+script_dir = File.expand_path(File.dirname(__FILE__))
+project_dir = File.join(script_dir, 'Listen2', 'Listen2', 'Listen2')
 Dir.chdir(project_dir)
 
 # Open the project
