@@ -501,20 +501,18 @@ actor WordAlignmentService {
                 i -= 1
                 j -= 1
             } else if up <= left {
-                // Vertical: token i-1 aligns to same word j-1
-                if let current = currentWord, current.wordIndex == j-1 {
-                    currentWord?.tokenIndices.insert(i-1, at: 0)
-                } else {
-                    if let current = currentWord {
-                        alignment.insert(current, at: 0)
-                    }
-                    currentWord = (wordIndex: j-1, tokenIndices: [i-1])
-                }
+                // Vertical: multiple tokens for same word
+                currentWord?.tokenIndices.insert(i-1, at: 0)
                 i -= 1
             } else {
                 // Horizontal: skip word j-1 (no tokens align to it)
                 j -= 1
             }
+        }
+
+        // Handle remaining tokens/words
+        if i > 0 || j > 0 {
+            print("⚠️ [Alignment] Incomplete alignment: \(i) tokens, \(j) words remaining")
         }
 
         // Add last word
@@ -548,12 +546,14 @@ actor WordAlignmentService {
 
         // 1. Convert ASR tokens to strings
         var asrTokenStrings: [String] = []
+        var originalIndices: [Int] = []  // NEW: Track original indices
         for i in 0..<tokenCount {
             if let tokenPtr = asrTokens[i] {
                 let tokenText = String(cString: tokenPtr)
                 // Filter out whitespace-only tokens
                 if !tokenText.trimmingCharacters(in: .whitespaces).isEmpty {
                     asrTokenStrings.append(tokenText)
+                    originalIndices.append(i)  // Store original index
                 }
             }
         }
@@ -589,16 +589,20 @@ actor WordAlignmentService {
             let firstToken = tokenIndices.first!
             let lastToken = tokenIndices.last!
 
-            let startTime = TimeInterval(timestamps[firstToken])
+            // Use original indices to access timestamps
+            let originalFirstToken = originalIndices[firstToken]
+            let originalLastToken = originalIndices[lastToken]
+
+            let startTime = TimeInterval(timestamps[originalFirstToken])
 
             // Calculate end time
             var endTime: TimeInterval
             if let durations = durations {
-                endTime = TimeInterval(timestamps[lastToken] + durations[lastToken])
+                endTime = TimeInterval(timestamps[originalLastToken] + durations[originalLastToken])
             } else {
                 // Estimate from next token's start time
-                if lastToken + 1 < tokenCount {
-                    endTime = TimeInterval(timestamps[lastToken + 1])
+                if originalLastToken + 1 < tokenCount {
+                    endTime = TimeInterval(timestamps[originalLastToken + 1])
                 } else {
                     // Last token: add a small duration
                     endTime = startTime + 0.2

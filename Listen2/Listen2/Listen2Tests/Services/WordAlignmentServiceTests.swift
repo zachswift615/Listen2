@@ -480,6 +480,67 @@ final class WordAlignmentServiceTests: XCTestCase {
         XCTAssertTrue(result.isValid(for: text), "Alignment result should be valid")
     }
 
+    func testMultiTokenWordAlignment() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Test with words that likely split across multiple BPE tokens
+        // Words with uncommon spellings or technical terms are more likely to be split
+        let words = [
+            WordPosition(
+                text: "Transcription",
+                characterOffset: 0,
+                length: 13,
+                paragraphIndex: 0,
+                pageNumber: 0
+            ),
+            WordPosition(
+                text: "alignment",
+                characterOffset: 14,
+                length: 9,
+                paragraphIndex: 0,
+                pageNumber: 0
+            ),
+            WordPosition(
+                text: "technology",
+                characterOffset: 24,
+                length: 10,
+                paragraphIndex: 0,
+                pageNumber: 0
+            )
+        ]
+        let wordMap = DocumentWordMap(words: words)
+        let text = "Transcription alignment technology"
+        let testAudioURL = try createTestAudioFile()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Verify result structure
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertGreaterThan(result.totalDuration, 0)
+
+        // If word timings were created, verify they are sequential
+        if result.wordTimings.count > 1 {
+            for i in 1..<result.wordTimings.count {
+                XCTAssertGreaterThanOrEqual(
+                    result.wordTimings[i].startTime,
+                    result.wordTimings[i-1].startTime,
+                    "Word timings should be in chronological order even for multi-token words"
+                )
+            }
+        }
+
+        // Verify each word timing has valid duration
+        for wordTiming in result.wordTimings {
+            XCTAssertGreaterThan(wordTiming.duration, 0, "Each word should have positive duration")
+            XCTAssertLessThan(wordTiming.duration, 10.0, "Word duration should be reasonable")
+        }
+    }
+
     // MARK: - Helper Methods
 
     /// Create a test WAV audio file
