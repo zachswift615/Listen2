@@ -113,7 +113,7 @@ final class TTSService: NSObject, ObservableObject {
             guard let modelPath = Bundle.main.resourcePath else {
                 throw AlignmentError.recognitionFailed("Cannot find app bundle")
             }
-            let asrModelPath = (modelPath as NSString).appendingPathComponent("ASRModels/whisper-tiny")
+            let asrModelPath = (modelPath as NSString).appendingPathComponent("Resources/ASRModels/whisper-tiny")
 
             // Initialize alignment service
             try await alignmentService.initialize(modelPath: asrModelPath)
