@@ -48,6 +48,11 @@ final class TTSService: NSObject, ObservableObject {
     private var highlightTimer: Timer?
     private var currentAlignment: AlignmentResult?
 
+    // Timing validation to prevent getting stuck
+    private var lastHighlightedWordIndex: Int?
+    private var lastHighlightChangeTime: TimeInterval = 0
+    private let maxStuckDuration: TimeInterval = 2.0  // Force move if stuck for > 2 seconds
+
     // MARK: - Initialization
 
     override init() {
@@ -388,6 +393,10 @@ final class TTSService: NSObject, ObservableObject {
         currentDocumentID = nil
         currentAlignment = nil
 
+        // Reset timing validation tracking
+        lastHighlightedWordIndex = nil
+        lastHighlightChangeTime = 0
+
         nowPlayingManager.clearNowPlayingInfo()
     }
 
@@ -499,6 +508,10 @@ final class TTSService: NSObject, ObservableObject {
         // Clean up any existing timer
         stopHighlightTimer()
 
+        // Reset timing validation tracking
+        lastHighlightedWordIndex = nil
+        lastHighlightChangeTime = 0
+
         // Create timer running at ~60 FPS for smooth highlighting
         highlightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             self?.updateHighlightFromTime()
@@ -523,6 +536,41 @@ final class TTSService: NSObject, ObservableObject {
             if let wordTiming = alignment.wordTiming(at: currentTime),
                let paragraphText = currentText[safe: currentProgress.paragraphIndex],
                let stringRange = wordTiming.stringRange(in: paragraphText) {
+
+                // Check if we're stuck on the same word for too long
+                let wordChanged = lastHighlightedWordIndex != wordTiming.wordIndex
+
+                if wordChanged {
+                    // Word changed - update tracking
+                    lastHighlightedWordIndex = wordTiming.wordIndex
+                    lastHighlightChangeTime = currentTime
+                } else {
+                    // Same word - check if we're stuck
+                    let stuckDuration = currentTime - lastHighlightChangeTime
+                    if stuckDuration > maxStuckDuration {
+                        // We've been stuck on this word too long
+                        // This can happen if alignment has errors or timing issues
+                        print("⚠️  Highlight stuck on word '\(wordTiming.text)' for \(String(format: "%.2f", stuckDuration))s, forcing next word")
+
+                        // Try to find the next word in the alignment
+                        let nextWordIndex = wordTiming.wordIndex + 1
+                        if nextWordIndex < alignment.wordTimings.count {
+                            let nextTiming = alignment.wordTimings[nextWordIndex]
+                            if let nextRange = nextTiming.stringRange(in: paragraphText) {
+                                // Force move to next word
+                                currentProgress = ReadingProgress(
+                                    paragraphIndex: currentProgress.paragraphIndex,
+                                    wordRange: nextRange,
+                                    isPlaying: true
+                                )
+                                lastHighlightedWordIndex = nextTiming.wordIndex
+                                lastHighlightChangeTime = currentTime
+                                return
+                            }
+                        }
+                    }
+                }
+
                 // Update progress with word range for highlighting
                 currentProgress = ReadingProgress(
                     paragraphIndex: currentProgress.paragraphIndex,

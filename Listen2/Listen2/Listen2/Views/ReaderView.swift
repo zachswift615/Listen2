@@ -165,7 +165,7 @@ private struct ReaderViewContent: View {
 
         if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
             attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightWord
-            attributedString[attrStartIndex..<attrEndIndex].font = Font.body.weight(.regular)
+            attributedString[attrStartIndex..<attrEndIndex].font = DesignSystem.Typography.bodyLarge
         }
 
         return attributedString

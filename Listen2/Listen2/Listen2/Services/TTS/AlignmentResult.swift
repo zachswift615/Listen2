@@ -90,6 +90,15 @@ struct AlignmentResult: Codable, Equatable {
         // Word timings are guaranteed to be sorted by startTime
         guard !wordTimings.isEmpty else { return nil }
 
+        // Handle time before first word or after last word
+        if time < wordTimings[0].startTime {
+            return nil
+        }
+        if time >= wordTimings[wordTimings.count - 1].endTime {
+            // Return last word if we're past the end (prevents getting stuck)
+            return wordTimings.last
+        }
+
         // Binary search to find the word at the given time
         var left = 0
         var right = wordTimings.count - 1
@@ -98,7 +107,10 @@ struct AlignmentResult: Codable, Equatable {
             let mid = (left + right) / 2
             let timing = wordTimings[mid]
 
-            if time >= timing.startTime && time < timing.endTime {
+            // Add small tolerance (1ms) for floating point precision
+            let tolerance: TimeInterval = 0.001
+
+            if time >= timing.startTime - tolerance && time < timing.endTime + tolerance {
                 // Found the word
                 return timing
             } else if time < timing.startTime {
@@ -107,6 +119,23 @@ struct AlignmentResult: Codable, Equatable {
             } else {
                 // time >= timing.endTime, search right half
                 left = mid + 1
+            }
+        }
+
+        // If binary search fails (shouldn't happen), fall back to linear search
+        // This handles edge cases where timing boundaries might be imprecise
+        for timing in wordTimings {
+            if time >= timing.startTime && time < timing.endTime {
+                return timing
+            }
+        }
+
+        // If still no match and we're between words, return the closest word
+        // This prevents getting "stuck" between words
+        for i in 0..<wordTimings.count - 1 {
+            if time >= wordTimings[i].endTime && time < wordTimings[i + 1].startTime {
+                // Between words i and i+1, return the next word
+                return wordTimings[i + 1]
             }
         }
 
