@@ -118,33 +118,24 @@ final class TTSService: NSObject, ObservableObject {
 
             print("[TTSService] 🔍 Resource path: \(resourcePath)")
 
-            // List what's in the resource directory
+            // NeMo model files are at the root of the bundle (flattened by Xcode)
             let fileManager = FileManager.default
-            if let contents = try? fileManager.contentsOfDirectory(atPath: resourcePath) {
-                print("[TTSService] 📂 Contents of resource path: \(contents)")
-            }
+            let modelPath = (resourcePath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
+            let tokensPath = (resourcePath as NSString).appendingPathComponent("nemo-ctc-tokens.txt")
 
-            let asrModelPath = (resourcePath as NSString).appendingPathComponent("ASRModels/nemo-ctc-conformer-small")
-            print("[TTSService] 🔍 ASR model path: \(asrModelPath)")
-
-            // Check what's in ASRModels directory
-            let asrModelsDir = (resourcePath as NSString).appendingPathComponent("ASRModels")
-            if let asrContents = try? fileManager.contentsOfDirectory(atPath: asrModelsDir) {
-                print("[TTSService] 📂 Contents of ASRModels: \(asrContents)")
-            } else {
-                print("[TTSService] ⚠️ ASRModels directory not found or not readable")
-            }
-
-            // Check if model file exists
-            let modelPath = (asrModelPath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
+            // Check if model files exist at root
             if !fileManager.fileExists(atPath: modelPath) {
                 print("[TTSService] ❌ Model file not found at: \(modelPath)")
-                throw AlignmentError.recognitionFailed("ASR model files not found at: \(asrModelPath)")
+                throw AlignmentError.recognitionFailed("ASR model files not found at root of bundle")
             }
-            print("[TTSService] ✅ Model file found at: \(modelPath)")
+            if !fileManager.fileExists(atPath: tokensPath) {
+                print("[TTSService] ❌ Tokens file not found at: \(tokensPath)")
+                throw AlignmentError.recognitionFailed("ASR tokens file not found at root of bundle")
+            }
+            print("[TTSService] ✅ Model files found at bundle root")
 
-            // Initialize alignment service
-            try await alignmentService.initialize(modelPath: asrModelPath)
+            // Initialize alignment service with resource path (files are at root)
+            try await alignmentService.initialize(modelPath: resourcePath)
             print("[TTSService] ✅ Word alignment service initialized")
         } catch {
             print("[TTSService] ⚠️ Alignment service initialization failed: \(error)")
