@@ -109,11 +109,21 @@ final class TTSService: NSObject, ObservableObject {
 
     private func initializeAlignmentService() async {
         do {
-            // Get path to ASR model
-            guard let modelPath = Bundle.main.resourcePath else {
+            // Get path to ASR model - Bundle.main.resourcePath already points to Resources folder
+            guard let resourcePath = Bundle.main.resourcePath else {
                 throw AlignmentError.recognitionFailed("Cannot find app bundle")
             }
-            let asrModelPath = (modelPath as NSString).appendingPathComponent("Resources/ASRModels/whisper-tiny")
+
+            print("[TTSService] 🔍 Resource path: \(resourcePath)")
+            let asrModelPath = (resourcePath as NSString).appendingPathComponent("ASRModels/whisper-tiny")
+            print("[TTSService] 🔍 ASR model path: \(asrModelPath)")
+
+            // Check if model files exist
+            let encoderPath = (asrModelPath as NSString).appendingPathComponent("tiny-encoder.int8.onnx")
+            let fileManager = FileManager.default
+            if !fileManager.fileExists(atPath: encoderPath) {
+                throw AlignmentError.recognitionFailed("ASR model files not found at: \(asrModelPath)")
+            }
 
             // Initialize alignment service
             try await alignmentService.initialize(modelPath: asrModelPath)
