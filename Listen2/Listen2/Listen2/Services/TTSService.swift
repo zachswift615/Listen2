@@ -44,6 +44,10 @@ final class TTSService: NSObject, ObservableObject {
     private let alignmentService = WordAlignmentService()
     private let alignmentCache = AlignmentCache()
 
+    // Word highlighting for Piper playback
+    private var highlightTimer: Timer?
+    private var currentAlignment: AlignmentResult?
+
     // MARK: - Initialization
 
     override init() {
@@ -316,6 +320,7 @@ final class TTSService: NSObject, ObservableObject {
             audioPlayer.pause()
         }
         fallbackSynthesizer.pauseSpeaking(at: .word)
+        stopHighlightTimer()
         isPlaying = false
         nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
@@ -325,6 +330,7 @@ final class TTSService: NSObject, ObservableObject {
             audioPlayer.resume()
         }
         fallbackSynthesizer.continueSpeaking()
+        startHighlightTimer()
         isPlaying = true
         nowPlayingManager.updatePlaybackState(isPlaying: true)
     }
@@ -353,6 +359,7 @@ final class TTSService: NSObject, ObservableObject {
             synthesisQueue?.clearAll()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
+        stopHighlightTimer()
         isPlaying = false
 
         // Reset state to prevent stale content when switching documents
@@ -360,6 +367,7 @@ final class TTSService: NSObject, ObservableObject {
         currentProgress = .initial
         wordMap = nil
         currentDocumentID = nil
+        currentAlignment = nil
 
         nowPlayingManager.clearNowPlayingInfo()
     }
@@ -414,6 +422,10 @@ final class TTSService: NSObject, ObservableObject {
 
     private func playAudio(_ data: Data) async throws {
         try await MainActor.run {
+            // Get alignment for current paragraph from synthesis queue
+            let paragraphIndex = currentProgress.paragraphIndex
+            currentAlignment = synthesisQueue?.getAlignment(for: paragraphIndex)
+
             try audioPlayer.play(data: data) { [weak self] in
                 self?.handleParagraphComplete()
             }
@@ -422,6 +434,9 @@ final class TTSService: NSObject, ObservableObject {
             // (mirrors AVSpeech didStart delegate behavior)
             isPlaying = true
             shouldAutoAdvance = true
+
+            // Start word highlighting timer for Piper playback
+            startHighlightTimer()
         }
     }
 
@@ -453,6 +468,57 @@ final class TTSService: NSObject, ObservableObject {
             isPlaying = false
             nowPlayingManager.clearNowPlayingInfo()
         }
+    }
+
+    // MARK: - Word Highlighting
+
+    /// Start timer for word highlighting during Piper playback (60 FPS)
+    private func startHighlightTimer() {
+        // Only start timer if we have alignment data
+        guard currentAlignment != nil else { return }
+
+        // Clean up any existing timer
+        stopHighlightTimer()
+
+        // Create timer running at ~60 FPS for smooth highlighting
+        highlightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.updateHighlightFromTime()
+        }
+    }
+
+    /// Stop and clean up highlight timer
+    private func stopHighlightTimer() {
+        highlightTimer?.invalidate()
+        highlightTimer = nil
+    }
+
+    /// Update current word highlight based on audio playback time
+    private func updateHighlightFromTime() {
+        guard let alignment = currentAlignment else { return }
+
+        // Get current playback time from audio player
+        Task { @MainActor in
+            let currentTime = audioPlayer.currentTime
+
+            // Find the word being spoken at this time
+            if let wordTiming = alignment.wordTiming(at: currentTime),
+               let paragraphText = currentText[safe: currentProgress.paragraphIndex],
+               let stringRange = wordTiming.stringRange(in: paragraphText) {
+                // Update progress with word range for highlighting
+                currentProgress = ReadingProgress(
+                    paragraphIndex: currentProgress.paragraphIndex,
+                    wordRange: stringRange,
+                    isPlaying: true
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Safe Array Access
+extension Array {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
     }
 }
 

@@ -8,6 +8,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import QuartzCore
 
 @MainActor
 final class AudioPlayer: NSObject, ObservableObject {
@@ -20,7 +21,7 @@ final class AudioPlayer: NSObject, ObservableObject {
     // MARK: - Private Properties
 
     private var player: AVAudioPlayer?
-    private var playbackTimer: Timer?
+    private var displayLink: CADisplayLink?
     private var onFinished: (() -> Void)?
 
     // MARK: - Playback Control
@@ -42,20 +43,20 @@ final class AudioPlayer: NSObject, ObservableObject {
         }
 
         isPlaying = true
-        startProgressTimer()
+        startDisplayLink()
     }
 
     func pause() {
         player?.pause()
         isPlaying = false
-        stopProgressTimer()
+        stopDisplayLink()
     }
 
     func resume() {
         guard let player = player, !player.isPlaying else { return }
         player.play()
         isPlaying = true
-        startProgressTimer()
+        startDisplayLink()
     }
 
     func stop() {
@@ -63,7 +64,7 @@ final class AudioPlayer: NSObject, ObservableObject {
         player = nil
         isPlaying = false
         currentTime = 0
-        stopProgressTimer()
+        stopDisplayLink()
         onFinished = nil
     }
 
@@ -73,18 +74,26 @@ final class AudioPlayer: NSObject, ObservableObject {
 
     // MARK: - Progress Tracking
 
-    private func startProgressTimer() {
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updateProgress()
-        }
+    /// Start CADisplayLink for smooth 60 FPS time updates
+    private func startDisplayLink() {
+        // Clean up any existing display link
+        stopDisplayLink()
+
+        // Create display link targeting the update method
+        displayLink = CADisplayLink(target: self, selector: #selector(updateCurrentTime))
+
+        // Add to main run loop for UI updates
+        displayLink?.add(to: .main, forMode: .common)
     }
 
-    private func stopProgressTimer() {
-        playbackTimer?.invalidate()
-        playbackTimer = nil
+    /// Stop and clean up display link
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
     }
 
-    private func updateProgress() {
+    /// Called by CADisplayLink at ~60 FPS to update current time
+    @objc private func updateCurrentTime() {
         currentTime = player?.currentTime ?? 0
     }
 
@@ -99,7 +108,7 @@ extension AudioPlayer: AVAudioPlayerDelegate {
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
             isPlaying = false
-            stopProgressTimer()
+            stopDisplayLink()
             onFinished?()
         }
     }
