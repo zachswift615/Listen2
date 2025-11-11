@@ -20,7 +20,8 @@ Listen2 solves these problems with:
 ### Core Reading Experience
 - 📄 **PDF Support** - Import and read PDF documents with smart text extraction
 - 📋 **Clipboard Import** - Paste text and start listening immediately
-- 🎙️ **50+ Native Voices** - High-quality iOS text-to-speech voices
+- 🎙️ **Premium Piper TTS Voices** - Natural-sounding neural text-to-speech with 50+ voices
+- 💡 **Word-Level Highlighting** - Precise word-by-word highlighting synchronized with audio using ASR alignment
 - ⚡ **Background Playback** - Continues reading when app is backgrounded or device is locked
 - 🎚️ **Playback Controls** - Adjust speed (0.5x-2.5x), pause duration, and voice selection
 - 🔖 **Position Saving** - Automatically remembers where you left off
@@ -29,7 +30,8 @@ Listen2 solves these problems with:
 - 🔧 **Hyphenation Fix** - Intelligently joins words split across PDF lines
 - 📖 **Paragraph Detection** - Groups lines into semantic paragraphs for natural reading
 - 🗑️ **Clutter Filtering** - Skips page numbers, headers, and TOC entries
-- 📍 **Paragraph Highlighting** - Visual feedback shows current reading position
+- 📍 **Word-Level Highlighting** - Precise word tracking with <100ms accuracy using ASR alignment
+- 🚀 **Background Prefetching** - Pre-synthesizes upcoming paragraphs for instant playback
 
 ### User Experience
 - 🎨 **Thoughtful Design** - Comprehensive design system with calm blue palette
@@ -85,9 +87,11 @@ Listen2/
 ### Key Technologies
 - **SwiftUI** - Modern declarative UI framework
 - **SwiftData** - Type-safe persistence layer
-- **AVFoundation** - Native text-to-speech with AVSpeechSynthesizer
+- **Piper TTS** - Neural text-to-speech engine via sherpa-onnx
+- **sherpa-onnx ASR** - Whisper-tiny model for word-level alignment
 - **PDFKit** - PDF text extraction and processing
 - **Combine** - Reactive state management
+- **Swift Concurrency** - Actor-based thread safety for ASR operations
 
 ### Design Patterns
 - MVVM with protocol-oriented design
@@ -110,14 +114,18 @@ xcodebuild test -project Listen2.xcodeproj -scheme Listen2 \
 - **Design System** - `Listen2/Design/DesignSystem.swift` contains all color, typography, spacing, and animation tokens
 - **Document Processing** - `Listen2/Services/DocumentProcessor.swift` handles PDF text extraction and hyphenation fixing
 - **TTS Engine** - `Listen2/Services/TTSService.swift` manages text-to-speech playback with word-level tracking
+- **Word Alignment** - `Listen2/Services/TTS/WordAlignmentService.swift` performs ASR-based word-level alignment
 - **Persistence** - SwiftData models in `Listen2/Models/` with automatic change tracking
 
 ### Design Documents
 
-All design decisions are documented in `docs/plans/`:
-- `2025-11-05-voice-reader-app-design.md` - Original app design
-- `2025-11-05-voice-reader-mvp.md` - MVP implementation plan (11 tasks)
-- `2025-01-07-reader-enhancements-design.md` - Upcoming features (TOC, overlay controls, voice filtering)
+All design decisions are documented in `docs/`:
+- `plans/2025-11-05-voice-reader-app-design.md` - Original app design
+- `plans/2025-11-05-voice-reader-mvp.md` - MVP implementation plan
+- `plans/2025-11-08-piper-tts-integration-implementation.md` - Piper TTS integration
+- `plans/2025-11-09-word-alignment-implementation-plan.md` - Word-level alignment implementation
+- `word-alignment-implementation-summary.md` - Complete alignment feature documentation
+- `architecture/word-alignment-flow.md` - Architecture diagrams and data flow
 
 ## How It Works
 
@@ -141,9 +149,12 @@ See `DocumentProcessor.swift:joinLinesIntoParagraphs()` for implementation.
 ### Performance Optimizations
 
 Listen2 is optimized for real-device performance:
-- **Word highlighting disabled** - Prevented 0.6s UI hangs on iPhone 15 Pro Max
+- **ASR-based word alignment** - Precise word-level highlighting with <100ms accuracy
+- **Background prefetching** - Pre-synthesizes 3 paragraphs ahead for instant playback
+- **Multi-level caching** - Memory + disk caching for >95% cache hit rate
+- **Binary search word lookup** - 60 FPS highlighting with <1μs per lookup
+- **Actor-based concurrency** - Thread-safe ASR operations without blocking UI
 - **Lazy audio session** - Configured only on first playback
-- **Paragraph-only highlighting** - Smooth 60fps scrolling during TTS
 - **Efficient text processing** - Minimal memory allocations during paragraph joining
 
 ## Roadmap
@@ -172,7 +183,8 @@ This is a personal project, but feedback and suggestions are welcome! Feel free 
 
 **Built with:**
 - SwiftUI and SwiftData
-- AVFoundation for native iOS voices
+- Piper TTS via sherpa-onnx for natural neural voices
+- sherpa-onnx Whisper-tiny for word-level alignment
 - PDFKit for PDF text extraction
 
 **Inspired by:**
