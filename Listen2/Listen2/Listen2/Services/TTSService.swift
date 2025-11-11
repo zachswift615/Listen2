@@ -115,13 +115,13 @@ final class TTSService: NSObject, ObservableObject {
             }
 
             print("[TTSService] 🔍 Resource path: \(resourcePath)")
-            let asrModelPath = (resourcePath as NSString).appendingPathComponent("ASRModels/whisper-tiny")
+            let asrModelPath = (resourcePath as NSString).appendingPathComponent("ASRModels/nemo-ctc-conformer-small")
             print("[TTSService] 🔍 ASR model path: \(asrModelPath)")
 
-            // Check if model files exist
-            let encoderPath = (asrModelPath as NSString).appendingPathComponent("tiny-encoder.int8.onnx")
+            // Check if model file exists
+            let modelPath = (asrModelPath as NSString).appendingPathComponent("model.int8.onnx")
             let fileManager = FileManager.default
-            if !fileManager.fileExists(atPath: encoderPath) {
+            if !fileManager.fileExists(atPath: modelPath) {
                 throw AlignmentError.recognitionFailed("ASR model files not found at: \(asrModelPath)")
             }
 

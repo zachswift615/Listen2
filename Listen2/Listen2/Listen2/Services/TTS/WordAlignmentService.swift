@@ -33,25 +33,19 @@ actor WordAlignmentService {
         }
 
         // Build paths to model files
-        let encoderPath = (modelPath as NSString).appendingPathComponent("tiny-encoder.int8.onnx")
-        let decoderPath = (modelPath as NSString).appendingPathComponent("tiny-decoder.int8.onnx")
-        let tokensPath = (modelPath as NSString).appendingPathComponent("tiny-tokens.txt")
+        let modelFilePath = (modelPath as NSString).appendingPathComponent("model.int8.onnx")
+        let tokensPath = (modelPath as NSString).appendingPathComponent("tokens.txt")
 
         // Verify files exist
         let fileManager = FileManager.default
-        guard fileManager.fileExists(atPath: encoderPath),
-              fileManager.fileExists(atPath: decoderPath),
+        guard fileManager.fileExists(atPath: modelFilePath),
               fileManager.fileExists(atPath: tokensPath) else {
             throw AlignmentError.recognitionFailed("Model files not found at path: \(modelPath)")
         }
 
-        // Create Whisper config
-        var whisperConfig = SherpaOnnxOfflineWhisperModelConfig(
-            encoder: (encoderPath as NSString).utf8String,
-            decoder: (decoderPath as NSString).utf8String,
-            language: ("en" as NSString).utf8String,
-            task: ("transcribe" as NSString).utf8String,
-            tail_paddings: 0
+        // Create NeMo CTC config
+        var nemoConfig = SherpaOnnxOfflineNemoEncDecCtcModelConfig(
+            model: (modelFilePath as NSString).utf8String
         )
 
         // Create model config
@@ -64,10 +58,14 @@ actor WordAlignmentService {
             paraformer: SherpaOnnxOfflineParaformerModelConfig(
                 model: nil
             ),
-            nemo_ctc: SherpaOnnxOfflineNemoEncDecCtcModelConfig(
-                model: nil
+            nemo_ctc: nemoConfig,
+            whisper: SherpaOnnxOfflineWhisperModelConfig(
+                encoder: nil,
+                decoder: nil,
+                language: nil,
+                task: nil,
+                tail_paddings: 0
             ),
-            whisper: whisperConfig,
             tdnn: SherpaOnnxOfflineTdnnModelConfig(
                 model: nil
             ),
@@ -226,12 +224,17 @@ actor WordAlignmentService {
         print("Transcribed text: '\(transcribedText)'")
         print("Token count: \(result.count)")
 
-        // Extract timestamps and durations
+        let tokenCount = Int(result.count)
+        guard tokenCount > 0 else {
+            throw AlignmentError.recognitionFailed("No tokens recognized")
+        }
+
+        // Extract timestamps - NeMo CTC provides them
         guard let timestamps = result.timestamps else {
             throw AlignmentError.noTimestamps
         }
 
-        let tokenCount = Int(result.count)
+        print("✅ Got \(tokenCount) tokens with timestamps from NeMo CTC model")
 
         // Get VoxPDF words for this paragraph
         let voxPDFWords = wordMap.words(for: paragraphIndex)
@@ -247,7 +250,8 @@ actor WordAlignmentService {
         )
 
         // Calculate total duration from last word or estimate from audio
-        let totalDuration = wordTimings.last?.endTime ?? TimeInterval(timestamps[tokenCount - 1] + 0.2)
+        let audioDuration = TimeInterval(samples.count) / TimeInterval(sampleRate)
+        let totalDuration = wordTimings.last?.endTime ?? audioDuration
 
         // Create alignment result
         let alignmentResult = AlignmentResult(

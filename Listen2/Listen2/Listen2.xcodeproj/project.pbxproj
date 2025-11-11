@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0DCA29804E27AFF558375A37 /* ASRModels in Resources */ = {isa = PBXBuildFile; fileRef = 14CF40110A795C1127CE6A5F /* ASRModels */; };
 		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		797626B6E36E7AF4C8143D1B /* tokens.txt in Resources */ = {isa = PBXBuildFile; fileRef = 8A2FB61A5372FF44B121F203 /* tokens.txt */; };
 		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 		A6E030292EBEF943005E8935 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030272EBEF943005E8935 /* sherpa-onnx.xcframework */; };
@@ -16,6 +17,7 @@
 		A6E0302B2EBEF943005E8935 /* onnxruntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; };
 		A6E0302C2EBEF943005E8935 /* onnxruntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; };
+		CC40CA2E0378C4F2E5ACC837 /* model.int8.onnx in Resources */ = {isa = PBXBuildFile; fileRef = D0B940AE256D7608CF740994 /* model.int8.onnx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -53,6 +55,7 @@
 
 /* Begin PBXFileReference section */
 		14CF40110A795C1127CE6A5F /* ASRModels */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder; name = ASRModels; path = Listen2/Resources/ASRModels; sourceTree = "<group>"; };
+		8A2FB61A5372FF44B121F203 /* tokens.txt */ = {isa = PBXFileReference; includeInIndex = 1; name = tokens.txt; path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small/tokens.txt"; sourceTree = "<group>"; };
 		A6E02F032EBD6692005E8935 /* Listen2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listen2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F152EBD6693005E8935 /* Listen2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F1F2EBD6693005E8935 /* Listen2UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -385,22 +388,29 @@
 		A6E039BE2EBF0455005E8935 /* mb-us2 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mb-us2"; sourceTree = "<group>"; };
 		A6E039BF2EBF0455005E8935 /* mb-us3 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mb-us3"; sourceTree = "<group>"; };
 		A6E039C02EBF0455005E8935 /* mb-vz1 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mb-vz1"; sourceTree = "<group>"; };
+		D0B940AE256D7608CF740994 /* model.int8.onnx */ = {isa = PBXFileReference; includeInIndex = 1; name = model.int8.onnx; path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small/model.int8.onnx"; sourceTree = "<group>"; };
 		DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = VoxPDFCore.xcframework; path = ../../Frameworks/VoxPDFCore.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
 		A6E02F182EBD6693005E8935 /* Listen2Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2Tests;
 			sourceTree = "<group>";
 		};
 		A6E02F222EBD6693005E8935 /* Listen2UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2UITests;
 			sourceTree = "<group>";
 		};
@@ -436,12 +446,32 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1610B4E35A19B56B82D9ED2B /* ASRModels */ = {
+			isa = PBXGroup;
+			children = (
+				4595CA6DBF77BEAE255D89AE /* nemo-ctc-conformer-small */,
+			);
+			name = ASRModels;
+			path = Listen2/Listen2/Listen2/Resources/ASRModels;
+			sourceTree = "<group>";
+		};
 		2C9E4BD48FB17CEB71571BFB /* Resources */ = {
 			isa = PBXGroup;
 			children = (
 				14CF40110A795C1127CE6A5F /* ASRModels */,
+				1610B4E35A19B56B82D9ED2B /* ASRModels */,
 			);
 			name = Resources;
+			sourceTree = "<group>";
+		};
+		4595CA6DBF77BEAE255D89AE /* nemo-ctc-conformer-small */ = {
+			isa = PBXGroup;
+			children = (
+				D0B940AE256D7608CF740994 /* model.int8.onnx */,
+				8A2FB61A5372FF44B121F203 /* tokens.txt */,
+			);
+			name = "nemo-ctc-conformer-small";
+			path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small";
 			sourceTree = "<group>";
 		};
 		A6E02EFA2EBD6692005E8935 = {
@@ -1233,6 +1263,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				0DCA29804E27AFF558375A37 /* ASRModels in Resources */,
+				CC40CA2E0378C4F2E5ACC837 /* model.int8.onnx in Resources */,
+				797626B6E36E7AF4C8143D1B /* tokens.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
