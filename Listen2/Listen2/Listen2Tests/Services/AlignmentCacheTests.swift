@@ -261,6 +261,130 @@ final class AlignmentCacheTests: XCTestCase {
         }
     }
 
+    // MARK: - Persistence Tests
+
+    /// Test that cache survives app restart by simulating cache recreation
+    /// This verifies the requirement from plan Section 8.3: "Cache survives app restart"
+    func testCachePersistenceAcrossRestart() async throws {
+        // Given: Alignments saved to cache
+        let alignment1 = createTestAlignment(paragraphIndex: 0, duration: 5.0)
+        let alignment2 = createTestAlignment(paragraphIndex: 1, duration: 3.5)
+        let alignment3 = createTestAlignment(paragraphIndex: 2, duration: 7.2)
+
+        try await cache.save(alignment1, for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment2, for: testDocumentID, paragraph: 1)
+        try await cache.save(alignment3, for: testDocumentID, paragraph: 2)
+
+        // Verify files exist on disk
+        let cacheURL = try cache.getCacheDirectoryURL()
+        let documentDir = cacheURL.appendingPathComponent(testDocumentID.uuidString)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: documentDir.path), "Document cache directory should exist")
+
+        // Simulate app restart by creating a new cache instance
+        // This mimics what happens when the app is killed and relaunched
+        let newCache = AlignmentCache()
+
+        // Verify all alignments can be loaded from disk with new cache instance
+        let loaded0 = try await newCache.load(for: testDocumentID, paragraph: 0)
+        let loaded1 = try await newCache.load(for: testDocumentID, paragraph: 1)
+        let loaded2 = try await newCache.load(for: testDocumentID, paragraph: 2)
+
+        // Verify all alignments were persisted correctly
+        XCTAssertNotNil(loaded0, "Alignment 0 should persist across restart")
+        XCTAssertNotNil(loaded1, "Alignment 1 should persist across restart")
+        XCTAssertNotNil(loaded2, "Alignment 2 should persist across restart")
+
+        XCTAssertEqual(loaded0?.paragraphIndex, 0)
+        XCTAssertEqual(loaded0?.totalDuration, 5.0)
+
+        XCTAssertEqual(loaded1?.paragraphIndex, 1)
+        XCTAssertEqual(loaded1?.totalDuration, 3.5)
+
+        XCTAssertEqual(loaded2?.paragraphIndex, 2)
+        XCTAssertEqual(loaded2?.totalDuration, 7.2)
+
+        print("✅ Cache persistence across restart verified")
+
+        // Cleanup new cache instance
+        try await newCache.clear(for: testDocumentID)
+    }
+
+    /// Test that cache persists complex word timings with string ranges
+    func testComplexAlignmentPersistence() async throws {
+        // Create alignment with detailed word timings
+        let text = "The quick brown fox"
+        let dummyRange = text.startIndex..<text.endIndex
+
+        let wordTimings = [
+            AlignmentResult.WordTiming(
+                wordIndex: 0,
+                startTime: 0.0,
+                duration: 0.35,
+                text: "The",
+                stringRange: dummyRange
+            ),
+            AlignmentResult.WordTiming(
+                wordIndex: 1,
+                startTime: 0.35,
+                duration: 0.42,
+                text: "quick",
+                stringRange: dummyRange
+            ),
+            AlignmentResult.WordTiming(
+                wordIndex: 2,
+                startTime: 0.77,
+                duration: 0.48,
+                text: "brown",
+                stringRange: dummyRange
+            ),
+            AlignmentResult.WordTiming(
+                wordIndex: 3,
+                startTime: 1.25,
+                duration: 0.40,
+                text: "fox",
+                stringRange: dummyRange
+            )
+        ]
+
+        let alignment = AlignmentResult(
+            paragraphIndex: 5,
+            totalDuration: 1.65,
+            wordTimings: wordTimings
+        )
+
+        // Save alignment
+        try await cache.save(alignment, for: testDocumentID, paragraph: 5)
+
+        // Create new cache instance to simulate app restart
+        let newCache = AlignmentCache()
+
+        // Load alignment
+        let loaded = try await newCache.load(for: testDocumentID, paragraph: 5)
+
+        // Verify all details persisted
+        XCTAssertNotNil(loaded, "Complex alignment should persist")
+        XCTAssertEqual(loaded?.paragraphIndex, 5)
+        XCTAssertEqual(loaded?.totalDuration, 1.65, accuracy: 0.001)
+        XCTAssertEqual(loaded?.wordTimings.count, 4)
+
+        // Verify each word timing persisted correctly
+        if let loadedTimings = loaded?.wordTimings {
+            for (index, timing) in loadedTimings.enumerated() {
+                let original = wordTimings[index]
+                XCTAssertEqual(timing.wordIndex, original.wordIndex)
+                XCTAssertEqual(timing.startTime, original.startTime, accuracy: 0.001)
+                XCTAssertEqual(timing.duration, original.duration, accuracy: 0.001)
+                XCTAssertEqual(timing.text, original.text)
+            }
+        }
+
+        print("✅ Complex alignment persistence verified")
+
+        // Cleanup
+        try await newCache.clear(for: testDocumentID)
+    }
+
     // MARK: - Performance Tests
 
     func testSavePerformance() async throws {
