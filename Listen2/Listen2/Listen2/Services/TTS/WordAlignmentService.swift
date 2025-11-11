@@ -454,15 +454,30 @@ actor WordAlignmentService {
         let m = asrTokens.count
         let n = voxWords.count
 
+        // Memoization cache for edit distance calculations
+        // Key: "token|word", Value: edit distance
+        var editDistanceCache: [String: Int] = [:]
+
+        // Helper function to get cached edit distance
+        func getCachedEditDistance(_ s1: String, _ s2: String) -> Int {
+            let cacheKey = "\(s1)|\(s2)"
+            if let cached = editDistanceCache[cacheKey] {
+                return cached
+            }
+            let distance = editDistance(s1, s2)
+            editDistanceCache[cacheKey] = distance
+            return distance
+        }
+
         // DTW cost matrix
         var cost = Array(repeating: Array(repeating: Double.infinity, count: n + 1), count: m + 1)
         cost[0][0] = 0
 
-        // Compute DTW costs
+        // Compute DTW costs with memoized edit distance
         for i in 1...m {
             for j in 1...n {
-                // Cost of matching token i-1 to word j-1
-                let matchCost = Double(editDistance(asrTokens[i-1], voxWords[j-1]))
+                // Cost of matching token i-1 to word j-1 (memoized)
+                let matchCost = Double(getCachedEditDistance(asrTokens[i-1], voxWords[j-1]))
 
                 // DTW allows staying on same word (many tokens -> one word)
                 // or skipping words (one token -> many words, less common)

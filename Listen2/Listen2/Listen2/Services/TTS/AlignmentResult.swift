@@ -86,11 +86,31 @@ struct AlignmentResult: Codable, Equatable {
     /// - Parameter time: Time in seconds
     /// - Returns: The word timing at this time, or nil if no word is active
     func wordTiming(at time: TimeInterval) -> WordTiming? {
-        // Binary search would be more efficient for large word counts,
-        // but for typical paragraph sizes linear search is fine
-        return wordTimings.first { timing in
-            time >= timing.startTime && time < timing.endTime
+        // Use binary search for O(log n) performance
+        // Word timings are guaranteed to be sorted by startTime
+        guard !wordTimings.isEmpty else { return nil }
+
+        // Binary search to find the word at the given time
+        var left = 0
+        var right = wordTimings.count - 1
+
+        while left <= right {
+            let mid = (left + right) / 2
+            let timing = wordTimings[mid]
+
+            if time >= timing.startTime && time < timing.endTime {
+                // Found the word
+                return timing
+            } else if time < timing.startTime {
+                // Search left half
+                right = mid - 1
+            } else {
+                // time >= timing.endTime, search right half
+                left = mid + 1
+            }
         }
+
+        return nil
     }
 
     /// Check if this alignment is valid for the given text

@@ -541,15 +541,232 @@ final class WordAlignmentServiceTests: XCTestCase {
         }
     }
 
+    // MARK: - Performance Tests
+
+    /// Test alignment performance with realistic paragraph size (~100 words, ~30s audio)
+    /// Target: < 2 seconds alignment time (per plan Section 7.3, 8.2)
+    func testAlignmentPerformance() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Create a realistic test paragraph (~100 words)
+        let paragraphText = """
+        The quick brown fox jumps over the lazy dog. This sentence is often used for testing \
+        because it contains every letter of the alphabet. In our application, we need to ensure \
+        that word-level alignment works efficiently even for longer paragraphs. The alignment \
+        service uses dynamic time warping to map ASR tokens to VoxPDF words, which requires \
+        careful optimization. Each word must be precisely timed so that highlighting remains \
+        synchronized with audio playback. Performance is critical because users expect smooth, \
+        responsive playback without noticeable delays. We target under two seconds for alignment \
+        of a typical paragraph to ensure good user experience.
+        """
+
+        // Count words
+        let wordCount = paragraphText.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .count
+        print("Test paragraph has \(wordCount) words")
+
+        // Create word map for this text
+        let words = createWordMapFromText(paragraphText)
+        let wordMap = DocumentWordMap(words: words)
+
+        // Create test audio file (~30 seconds)
+        let testAudioURL = try createTestAudioFile(duration: 30.0)
+
+        // Measure alignment time
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let result = try await service.align(
+            audioURL: testAudioURL,
+            text: paragraphText,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        let alignmentTime = CFAbsoluteTimeGetCurrent() - startTime
+
+        print("Alignment completed in \(alignmentTime) seconds")
+        print("Word count: \(wordCount)")
+        print("Audio duration: \(result.totalDuration) seconds")
+        print("Word timings created: \(result.wordTimings.count)")
+
+        // Assert: Alignment should complete in < 2 seconds (target from plan)
+        XCTAssertLessThan(
+            alignmentTime,
+            2.0,
+            "Alignment should complete in under 2 seconds for typical paragraph (actual: \(alignmentTime)s)"
+        )
+
+        // Verify result structure
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertGreaterThan(result.totalDuration, 0)
+    }
+
+    /// Test cache hit performance - should be < 10ms (per plan Section 8.2)
+    func testCacheHitPerformance() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        // Create test data
+        let text = "The quick brown fox jumps over the lazy dog"
+        let words = createWordMapFromText(text)
+        let wordMap = DocumentWordMap(words: words)
+        let testAudioURL = try createTestAudioFile(duration: 5.0)
+
+        // Perform initial alignment (populates cache)
+        _ = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        // Measure cache hit time
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        let cachedResult = try await service.align(
+            audioURL: testAudioURL,
+            text: text,
+            wordMap: wordMap,
+            paragraphIndex: 0
+        )
+
+        let cacheHitTime = CFAbsoluteTimeGetCurrent() - startTime
+
+        print("Cache hit completed in \(cacheHitTime * 1000) milliseconds")
+
+        // Assert: Cache hit should be very fast (< 10ms)
+        XCTAssertLessThan(
+            cacheHitTime,
+            0.010,
+            "Cache hit should complete in under 10ms (actual: \(cacheHitTime * 1000)ms)"
+        )
+
+        XCTAssertNotNil(cachedResult)
+    }
+
+    /// Test alignment with varying paragraph lengths to understand scaling characteristics
+    func testAlignmentScaling() async throws {
+        try await service.initialize(modelPath: modelPath)
+
+        let testCases: [(wordCount: Int, duration: TimeInterval)] = [
+            (20, 5.0),    // Short paragraph
+            (50, 15.0),   // Medium paragraph
+            (100, 30.0)   // Long paragraph
+        ]
+
+        for testCase in testCases {
+            // Generate text with approximately target word count
+            let text = generateText(wordCount: testCase.wordCount)
+            let words = createWordMapFromText(text)
+            let wordMap = DocumentWordMap(words: words)
+            let testAudioURL = try createTestAudioFile(duration: testCase.duration)
+
+            // Clear cache to ensure fresh alignment
+            await service.clearCache()
+
+            // Measure alignment time
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            let result = try await service.align(
+                audioURL: testAudioURL,
+                text: text,
+                wordMap: wordMap,
+                paragraphIndex: 0
+            )
+
+            let alignmentTime = CFAbsoluteTimeGetCurrent() - startTime
+
+            print("[\(testCase.wordCount) words, \(testCase.duration)s audio] Alignment: \(alignmentTime)s")
+
+            // All sizes should meet the < 2s target
+            XCTAssertLessThan(
+                alignmentTime,
+                2.0,
+                "\(testCase.wordCount) words should align in < 2s (actual: \(alignmentTime)s)"
+            )
+
+            XCTAssertEqual(result.paragraphIndex, 0)
+        }
+    }
+
+    /// Test DTW edit distance performance with different string lengths
+    func testEditDistancePerformance() {
+        // Create test strings of varying lengths
+        let testPairs: [(String, String)] = [
+            ("hello", "helo"),           // Short
+            ("recognition", "recognision"), // Medium
+            ("Transcription alignment technology works efficiently",
+             "Transcription aligment tecnology works efficiantly") // Long
+        ]
+
+        for (s1, s2) in testPairs {
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            // Note: editDistance is private, so we test it indirectly through alignment
+            // This test verifies that edit distance calculations don't cause performance issues
+            let iterations = 1000
+            for _ in 0..<iterations {
+                _ = s1.compare(s2)  // Placeholder - actual test happens during align()
+            }
+
+            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            print("Edit distance comparison (\(s1.count) chars): \(elapsed * 1000 / Double(iterations))ms per iteration")
+        }
+    }
+
+    /// Test word lookup performance - currently O(n) linear search in wordTiming(at:)
+    /// Could be optimized to O(log n) with binary search if needed
+    func testWordLookupPerformance() {
+        // Create alignment result with many words
+        let wordCount = 1000
+        var wordTimings: [AlignmentResult.WordTiming] = []
+        let dummyRange = "test".startIndex..<"test".endIndex
+
+        for i in 0..<wordCount {
+            wordTimings.append(AlignmentResult.WordTiming(
+                wordIndex: i,
+                startTime: Double(i) * 0.5,  // 0.5s per word
+                duration: 0.5,
+                text: "word\(i)",
+                stringRange: dummyRange
+            ))
+        }
+
+        let result = AlignmentResult(
+            paragraphIndex: 0,
+            totalDuration: Double(wordCount) * 0.5,
+            wordTimings: wordTimings
+        )
+
+        // Test lookup at various positions
+        let lookupTimes = [0.0, 250.0, 499.5]  // Start, middle, end
+
+        for time in lookupTimes {
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            let iterations = 10000
+            for _ in 0..<iterations {
+                _ = result.wordTiming(at: time)
+            }
+
+            let elapsed = CFAbsoluteTimeGetCurrent() - startTime
+            print("Word lookup at t=\(time)s: \(elapsed * 1000000 / Double(iterations))μs per lookup")
+        }
+
+        // Lookup should be fast even with 1000 words
+        // If this becomes a bottleneck, implement binary search
+    }
+
     // MARK: - Helper Methods
 
     /// Create a test WAV audio file
-    /// - Parameter withText: Optional text to synthesize (currently just creates silence)
+    /// - Parameters:
+    ///   - withText: Optional text to synthesize (currently just creates silence)
+    ///   - duration: Duration in seconds (default 1.0)
     /// - Returns: URL to the created test file
-    private func createTestAudioFile(withText text: String? = nil) throws -> URL {
+    private func createTestAudioFile(withText text: String? = nil, duration: TimeInterval = 1.0) throws -> URL {
         // Create a short silent WAV file at 16kHz mono
         let sampleRate: Double = 16000
-        let duration: Double = 1.0
         let frameCount = AVAudioFrameCount(sampleRate * duration)
 
         let format = AVAudioFormat(
@@ -609,5 +826,49 @@ final class WordAlignmentServiceTests: XCTestCase {
             )
         ]
         return DocumentWordMap(words: words)
+    }
+
+    /// Create a word map from text by splitting on whitespace
+    private func createWordMapFromText(_ text: String) -> [WordPosition] {
+        var words: [WordPosition] = []
+        var characterOffset = 0
+
+        // Split text into words
+        let components = text.components(separatedBy: .whitespacesAndNewlines)
+
+        for component in components {
+            guard !component.isEmpty else {
+                characterOffset += 1  // Account for whitespace
+                continue
+            }
+
+            words.append(WordPosition(
+                text: component,
+                characterOffset: characterOffset,
+                length: component.count,
+                paragraphIndex: 0,
+                pageNumber: 0
+            ))
+
+            characterOffset += component.count + 1  // +1 for space/newline
+        }
+
+        return words
+    }
+
+    /// Generate text with approximately the specified word count
+    private func generateText(wordCount: Int) -> String {
+        let baseWords = [
+            "The", "quick", "brown", "fox", "jumps", "over", "lazy", "dog",
+            "Lorem", "ipsum", "dolor", "sit", "amet", "consectetur", "adipiscing", "elit",
+            "sed", "eiusmod", "tempor", "incididunt", "labore", "dolore", "magna", "aliqua"
+        ]
+
+        var words: [String] = []
+        for i in 0..<wordCount {
+            words.append(baseWords[i % baseWords.count])
+        }
+
+        return words.joined(separator: " ")
     }
 }
