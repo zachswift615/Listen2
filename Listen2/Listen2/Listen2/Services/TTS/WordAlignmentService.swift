@@ -65,10 +65,7 @@ actor WordAlignmentService {
                 model: nil
             ),
             nemo_ctc: SherpaOnnxOfflineNemoEncDecCtcModelConfig(
-                model: nil,
-                num_threads: 0,
-                debug: 0,
-                provider: nil
+                model: nil
             ),
             whisper: whisperConfig,
             tdnn: SherpaOnnxOfflineTdnnModelConfig(
@@ -230,8 +227,7 @@ actor WordAlignmentService {
         print("Token count: \(result.count)")
 
         // Extract timestamps and durations
-        guard let timestamps = result.timestamps,
-              let tokensPtr = result.tokens else {
+        guard let timestamps = result.timestamps else {
             throw AlignmentError.noTimestamps
         }
 
@@ -242,7 +238,7 @@ actor WordAlignmentService {
 
         // Map tokens to words using DTW alignment
         let wordTimings = mapTokensToWords(
-            asrTokens: tokensPtr,
+            asrTokens: result.tokens_arr,
             timestamps: timestamps,
             durations: result.durations,
             tokenCount: tokenCount,
