@@ -119,7 +119,7 @@ final class TTSService: NSObject, ObservableObject {
             print("[TTSService] 🔍 ASR model path: \(asrModelPath)")
 
             // Check if model file exists
-            let modelPath = (asrModelPath as NSString).appendingPathComponent("model.int8.onnx")
+            let modelPath = (asrModelPath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
             let fileManager = FileManager.default
             if !fileManager.fileExists(atPath: modelPath) {
                 throw AlignmentError.recognitionFailed("ASR model files not found at: \(asrModelPath)")

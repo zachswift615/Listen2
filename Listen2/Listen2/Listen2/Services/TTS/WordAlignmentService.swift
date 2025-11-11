@@ -33,8 +33,8 @@ actor WordAlignmentService {
         }
 
         // Build paths to model files
-        let modelFilePath = (modelPath as NSString).appendingPathComponent("model.int8.onnx")
-        let tokensPath = (modelPath as NSString).appendingPathComponent("tokens.txt")
+        let modelFilePath = (modelPath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
+        let tokensPath = (modelPath as NSString).appendingPathComponent("nemo-ctc-tokens.txt")
 
         // Verify files exist
         let fileManager = FileManager.default
