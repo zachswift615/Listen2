@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Listen2 Logo - Dark</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #f0f0f0;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        }
+
+        .logo-container {
+            width: 1024px;
+            height: 1024px;
+            background: linear-gradient(135deg, #1c1c1e 0%, #2c2c2e 100%);
+            border-radius: 227px; /* iOS app icon corner radius for 1024px */
+            box-shadow: 0 40px 100px rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .logo-svg {
+            width: 700px;
+            height: 700px;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <svg class="logo-svg" viewBox="0 0 700 700" xmlns="http://www.w3.org/2000/svg">
+            <!-- Bold L with uniform stroke -->
+            <path d="M 120 140
+                     L 240 140
+                     L 240 480
+                     L 400 480
+                     L 400 600
+                     L 120 600
+                     Z"
+                  fill="#FFFFFF"
+                  stroke="none"/>
+
+            <!-- Bold 2 with better proportions and uniform stroke -->
+            <path d="M 440 200
+                     C 440 170, 465 140, 520 140
+                     C 575 140, 600 170, 600 210
+                     C 600 245, 580 270, 550 295
+                     L 470 360
+                     C 455 373, 450 385, 450 400
+                     L 450 420
+                     L 600 420
+                     L 600 540
+                     L 330 540
+                     L 330 390
+                     C 330 355, 345 330, 375 305
+                     L 455 245
+                     C 470 233, 478 220, 478 205
+                     C 478 190, 468 180, 450 180
+                     C 432 180, 422 190, 422 205
+                     L 440 205
+                     Z"
+                  fill="#FFFFFF"
+                  stroke="none"
+                  transform="translate(20, 0)"/>
+
+            <!-- Audio waveform bars - positioned below the 2 -->
+            <g id="waveform">
+                <!-- Bar 1 -->
+                <rect x="390" y="570" width="35" height="50" rx="6" fill="#007AFF"/>
+
+                <!-- Bar 2 (tallest) -->
+                <rect x="440" y="545" width="35" height="85" rx="6" fill="#007AFF"/>
+
+                <!-- Bar 3 -->
+                <rect x="490" y="555" width="35" height="65" rx="6" fill="#007AFF"/>
+
+                <!-- Bar 4 -->
+                <rect x="540" y="575" width="35" height="45" rx="6" fill="#007AFF"/>
+            </g>
+        </svg>
+    </div>
+</body>
+</html>

@@ -74,24 +74,14 @@ actor WordAlignmentService {
             tdnn: SherpaOnnxOfflineTdnnModelConfig(
                 model: nil
             ),
-            zipformer_ctc: SherpaOnnxOfflineZipformerCtcModelConfig(
-                model: nil
-            ),
-            wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
-                model: nil,
-                chunk_size: 0,
-                num_left_chunks: 0
-            ),
-            telespeech_ctc: ("" as NSString).utf8String,
-            tokens: ("" as NSString).utf8String,
+            tokens: (tokensPath as NSString).utf8String,
             num_threads: 1,
             debug: 0,  // Set to 1 for debugging
             provider: ("cpu" as NSString).utf8String,
             model_type: ("" as NSString).utf8String,
             modeling_unit: ("" as NSString).utf8String,
             bpe_vocab: ("" as NSString).utf8String,
-            tokens_buf: nil,
-            tokens_buf_size: 0,
+            telespeech_ctc: ("" as NSString).utf8String,
             sense_voice: SherpaOnnxOfflineSenseVoiceModelConfig(
                 model: nil,
                 language: nil,
@@ -102,6 +92,26 @@ actor WordAlignmentService {
                 encoder: nil,
                 uncached_decoder: nil,
                 cached_decoder: nil
+            ),
+            fire_red_asr: SherpaOnnxOfflineFireRedAsrModelConfig(
+                encoder: nil,
+                decoder: nil
+            ),
+            dolphin: SherpaOnnxOfflineDolphinModelConfig(
+                model: nil
+            ),
+            zipformer_ctc: SherpaOnnxOfflineZipformerCtcModelConfig(
+                model: nil
+            ),
+            canary: SherpaOnnxOfflineCanaryModelConfig(
+                encoder: nil,
+                decoder: nil,
+                src_lang: nil,
+                tgt_lang: nil,
+                use_pnc: 0
+            ),
+            wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
+                model: nil
             )
         )
 
@@ -116,18 +126,18 @@ actor WordAlignmentService {
                 model: ("" as NSString).utf8String,
                 scale: 0.5
             ),
-            ctc_fst_decoder_config: SherpaOnnxOfflineCtcFstDecoderConfig(
-                graph: ("" as NSString).utf8String,
-                max_active: 3000
-            ),
-            rule_fsts: ("" as NSString).utf8String,
-            rule_fars: ("" as NSString).utf8String,
             decoding_method: ("greedy_search" as NSString).utf8String,
             max_active_paths: 4,
-            hotwords_score: 1.5,
             hotwords_file: ("" as NSString).utf8String,
+            hotwords_score: 1.5,
+            rule_fsts: ("" as NSString).utf8String,
+            rule_fars: ("" as NSString).utf8String,
             blank_penalty: 0.0,
-            model_name: ("" as NSString).utf8String
+            hr: SherpaOnnxHomophoneReplacerConfig(
+                dict_dir: nil,
+                lexicon: nil,
+                rule_fsts: nil
+            )
         )
 
         // Create recognizer

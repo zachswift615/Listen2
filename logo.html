@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Listen2 Logo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+        }
+
+        .logo-container {
+            width: 1024px;
+            height: 1024px;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .logo-svg {
+            width: 820px;
+            height: 820px;
+        }
+
+        /* Variations display */
+        .variations {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .variant-box {
+            width: 120px;
+            height: 120px;
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .variant-box:hover {
+            transform: scale(1.05);
+        }
+
+        .variant-box.light {
+            background: white;
+        }
+
+        .variant-box.dark {
+            background: #1c1c1e;
+        }
+
+        .variant-box svg {
+            width: 80px;
+            height: 80px;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <svg class="logo-svg" viewBox="0 0 820 820" xmlns="http://www.w3.org/2000/svg">
+            <!-- L letterform -->
+            <path d="M 180 160 L 280 160 L 280 580 L 480 580 L 480 660 L 180 660 Z"
+                  fill="#2C3E50"
+                  stroke="none"/>
+
+            <!-- 2 letterform with page curl -->
+            <path d="M 520 240
+                     C 520 190, 560 160, 620 160
+                     C 680 160, 720 190, 720 240
+                     C 720 280, 700 310, 660 340
+                     L 560 420
+                     C 540 435, 530 450, 530 470
+                     L 530 500
+                     L 710 500
+                     L 710 580
+                     L 440 580
+                     L 440 470
+                     C 440 420, 460 390, 500 360
+                     L 600 280
+                     C 620 265, 630 250, 630 230
+                     C 630 210, 615 195, 590 195
+                     C 565 195, 550 210, 550 230
+                     L 520 230
+                     Z"
+                  fill="#2C3E50"
+                  stroke="none"/>
+
+            <!-- Audio waveform bars integrated into the 2 -->
+            <g id="waveform">
+                <!-- Bar 1 -->
+                <rect x="560" y="600" width="28" height="48" rx="4" fill="#007AFF"/>
+
+                <!-- Bar 2 -->
+                <rect x="600" y="585" width="28" height="78" rx="4" fill="#007AFF"/>
+
+                <!-- Bar 3 -->
+                <rect x="640" y="595" width="28" height="58" rx="4" fill="#007AFF"/>
+
+                <!-- Bar 4 -->
+                <rect x="680" y="610" width="28" height="38" rx="4" fill="#007AFF"/>
+            </g>
+
+            <!-- Subtle page curl effect on the top of the 2 -->
+            <path d="M 680 160
+                     C 690 158, 695 162, 693 170
+                     C 692 175, 688 178, 683 178
+                     C 678 178, 675 175, 675 170
+                     Z"
+                  fill="#007AFF"
+                  opacity="0.3"/>
+        </svg>
+    </div>
+
+    <!-- Icon variations -->
+    <div class="variations">
+        <div class="variant-box light" title="Light Mode">
+            <svg viewBox="0 0 820 820" xmlns="http://www.w3.org/2000/svg">
+                <path d="M 180 160 L 280 160 L 280 580 L 480 580 L 480 660 L 180 660 Z" fill="#2C3E50"/>
+                <path d="M 520 240 C 520 190, 560 160, 620 160 C 680 160, 720 190, 720 240 C 720 280, 700 310, 660 340 L 560 420 C 540 435, 530 450, 530 470 L 530 500 L 710 500 L 710 580 L 440 580 L 440 470 C 440 420, 460 390, 500 360 L 600 280 C 620 265, 630 250, 630 230 C 630 210, 615 195, 590 195 C 565 195, 550 210, 550 230 L 520 230 Z" fill="#2C3E50"/>
+                <rect x="560" y="600" width="28" height="48" rx="4" fill="#007AFF"/>
+                <rect x="600" y="585" width="28" height="78" rx="4" fill="#007AFF"/>
+                <rect x="640" y="595" width="28" height="58" rx="4" fill="#007AFF"/>
+                <rect x="680" y="610" width="28" height="38" rx="4" fill="#007AFF"/>
+            </svg>
+        </div>
+
+        <div class="variant-box dark" title="Dark Mode">
+            <svg viewBox="0 0 820 820" xmlns="http://www.w3.org/2000/svg">
+                <path d="M 180 160 L 280 160 L 280 580 L 480 580 L 480 660 L 180 660 Z" fill="#FFFFFF"/>
+                <path d="M 520 240 C 520 190, 560 160, 620 160 C 680 160, 720 190, 720 240 C 720 280, 700 310, 660 340 L 560 420 C 540 435, 530 450, 530 470 L 530 500 L 710 500 L 710 580 L 440 580 L 440 470 C 440 420, 460 390, 500 360 L 600 280 C 620 265, 630 250, 630 230 C 630 210, 615 195, 590 195 C 565 195, 550 210, 550 230 L 520 230 Z" fill="#FFFFFF"/>
+                <rect x="560" y="600" width="28" height="48" rx="4" fill="#0A84FF"/>
+                <rect x="600" y="585" width="28" height="78" rx="4" fill="#0A84FF"/>
+                <rect x="640" y="595" width="28" height="58" rx="4" fill="#0A84FF"/>
+                <rect x="680" y="610" width="28" height="38" rx="4" fill="#0A84FF"/>
+            </svg>
+        </div>
+    </div>
+</body>
+</html>
