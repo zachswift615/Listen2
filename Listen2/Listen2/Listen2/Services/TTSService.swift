@@ -108,22 +108,40 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func initializeAlignmentService() async {
+        print("[TTSService] 🚀 Starting alignment service initialization...")
         do {
             // Get path to ASR model - Bundle.main.resourcePath already points to Resources folder
             guard let resourcePath = Bundle.main.resourcePath else {
+                print("[TTSService] ❌ Cannot find app bundle resource path")
                 throw AlignmentError.recognitionFailed("Cannot find app bundle")
             }
 
             print("[TTSService] 🔍 Resource path: \(resourcePath)")
+
+            // List what's in the resource directory
+            let fileManager = FileManager.default
+            if let contents = try? fileManager.contentsOfDirectory(atPath: resourcePath) {
+                print("[TTSService] 📂 Contents of resource path: \(contents)")
+            }
+
             let asrModelPath = (resourcePath as NSString).appendingPathComponent("ASRModels/nemo-ctc-conformer-small")
             print("[TTSService] 🔍 ASR model path: \(asrModelPath)")
 
+            // Check what's in ASRModels directory
+            let asrModelsDir = (resourcePath as NSString).appendingPathComponent("ASRModels")
+            if let asrContents = try? fileManager.contentsOfDirectory(atPath: asrModelsDir) {
+                print("[TTSService] 📂 Contents of ASRModels: \(asrContents)")
+            } else {
+                print("[TTSService] ⚠️ ASRModels directory not found or not readable")
+            }
+
             // Check if model file exists
             let modelPath = (asrModelPath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
-            let fileManager = FileManager.default
             if !fileManager.fileExists(atPath: modelPath) {
+                print("[TTSService] ❌ Model file not found at: \(modelPath)")
                 throw AlignmentError.recognitionFailed("ASR model files not found at: \(asrModelPath)")
             }
+            print("[TTSService] ✅ Model file found at: \(modelPath)")
 
             // Initialize alignment service
             try await alignmentService.initialize(modelPath: asrModelPath)

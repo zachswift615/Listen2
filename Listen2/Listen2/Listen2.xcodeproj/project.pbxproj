@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		78E23F492AF1625068648C04 /* nemo-ctc-model.int8.onnx in Resources */ = {isa = PBXBuildFile; fileRef = C7E4FB93BC17805118994288 /* nemo-ctc-model.int8.onnx */; };
-		8A7EC6476CD2BBB758754C26 /* nemo-ctc-tokens.txt in Resources */ = {isa = PBXBuildFile; fileRef = 219E59D4C90A0CB069422890 /* nemo-ctc-tokens.txt */; };
 		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 		A6E030292EBEF943005E8935 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030272EBEF943005E8935 /* sherpa-onnx.xcframework */; };
@@ -1259,8 +1257,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				78E23F492AF1625068648C04 /* nemo-ctc-model.int8.onnx in Resources */,
-				8A7EC6476CD2BBB758754C26 /* nemo-ctc-tokens.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
