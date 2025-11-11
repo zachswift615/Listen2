@@ -38,6 +38,11 @@ final class TTSService: NSObject, ObservableObject {
     private var currentTitle: String = "Document"
     private var shouldAutoAdvance = true // Track whether to auto-advance
     private var wordMap: DocumentWordMap? // Word map for precise highlighting
+    private var currentDocumentID: UUID? // Current document ID for alignment caching
+
+    // Alignment services
+    private let alignmentService = WordAlignmentService()
+    private let alignmentCache = AlignmentCache()
 
     // MARK: - Initialization
 
@@ -50,9 +55,10 @@ final class TTSService: NSObject, ObservableObject {
             self.audioPlayer = AudioPlayer()
         }
 
-        // Try to initialize Piper TTS
+        // Try to initialize Piper TTS and alignment service
         Task {
             await initializePiperProvider()
+            await initializeAlignmentService()
         }
 
         // Setup now playing manager
@@ -78,8 +84,12 @@ final class TTSService: NSObject, ObservableObject {
             try await piperProvider.initialize()
             self.provider = piperProvider
 
-            // Initialize synthesis queue with provider
-            self.synthesisQueue = await SynthesisQueue(provider: piperProvider)
+            // Initialize synthesis queue with provider and alignment services
+            self.synthesisQueue = await SynthesisQueue(
+                provider: piperProvider,
+                alignmentService: alignmentService,
+                alignmentCache: alignmentCache
+            )
 
             print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
         } catch {
@@ -90,6 +100,23 @@ final class TTSService: NSObject, ObservableObject {
 
         await MainActor.run {
             isInitializing = false
+        }
+    }
+
+    private func initializeAlignmentService() async {
+        do {
+            // Get path to ASR model
+            guard let modelPath = Bundle.main.resourcePath else {
+                throw AlignmentError.recognitionFailed("Cannot find app bundle")
+            }
+            let asrModelPath = (modelPath as NSString).appendingPathComponent("ASRModels/whisper-tiny")
+
+            // Initialize alignment service
+            try await alignmentService.initialize(modelPath: asrModelPath)
+            print("[TTSService] ✅ Word alignment service initialized")
+        } catch {
+            print("[TTSService] ⚠️ Alignment service initialization failed: \(error)")
+            // Continue without alignment - it's optional
         }
     }
 
@@ -230,8 +257,12 @@ final class TTSService: NSObject, ObservableObject {
                         self.provider = piperProvider
                     }
 
-                    // Update synthesis queue
-                    self.synthesisQueue = await SynthesisQueue(provider: piperProvider)
+                    // Update synthesis queue with new provider and alignment services
+                    self.synthesisQueue = await SynthesisQueue(
+                        provider: piperProvider,
+                        alignmentService: alignmentService,
+                        alignmentCache: alignmentCache
+                    )
 
                     print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
                 } catch {
@@ -246,19 +277,25 @@ final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Playback Control
 
-    func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil) {
+    func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil, documentID: UUID? = nil) {
         // Configure audio session on first playback (lazy initialization)
         configureAudioSession()
 
         currentText = paragraphs
         currentTitle = title
         self.wordMap = wordMap
+        self.currentDocumentID = documentID
 
         guard index < paragraphs.count else { return }
 
         // Initialize synthesis queue with new content
         Task { @MainActor in
-            synthesisQueue?.setContent(paragraphs: paragraphs, speed: playbackRate)
+            synthesisQueue?.setContent(
+                paragraphs: paragraphs,
+                speed: playbackRate,
+                documentID: documentID,
+                wordMap: wordMap
+            )
         }
 
         // Stop auto-advance temporarily when jumping to specific paragraph
@@ -322,6 +359,7 @@ final class TTSService: NSObject, ObservableObject {
         currentText = []
         currentProgress = .initial
         wordMap = nil
+        currentDocumentID = nil
 
         nowPlayingManager.clearNowPlayingInfo()
     }

@@ -72,12 +72,13 @@ final class ReaderViewModel: ObservableObject {
             ttsService.pause()
         } else {
             if ttsService.currentProgress.paragraphIndex == 0 && ttsService.currentProgress.wordRange == nil {
-                // First play - pass word map if available
+                // First play - pass word map and document ID if available
                 ttsService.startReading(
                     paragraphs: document.extractedText,
                     from: currentParagraphIndex,
                     title: document.title,
-                    wordMap: document.wordMap
+                    wordMap: document.wordMap,
+                    documentID: document.id
                 )
             } else {
                 ttsService.resume()

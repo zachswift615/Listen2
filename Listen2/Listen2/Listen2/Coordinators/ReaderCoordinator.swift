@@ -98,7 +98,9 @@ final class ReaderCoordinator: ObservableObject {
             viewModel.ttsService.startReading(
                 paragraphs: viewModel.document.extractedText,
                 from: currentParagraph,
-                title: viewModel.document.title
+                title: viewModel.document.title,
+                wordMap: viewModel.document.wordMap,
+                documentID: viewModel.document.id
             )
         }
 
@@ -126,7 +128,9 @@ final class ReaderCoordinator: ObservableObject {
             viewModel.ttsService.startReading(
                 paragraphs: viewModel.document.extractedText,
                 from: entry.paragraphIndex,
-                title: viewModel.document.title
+                title: viewModel.document.title,
+                wordMap: viewModel.document.wordMap,
+                documentID: viewModel.document.id
             )
         }
 
