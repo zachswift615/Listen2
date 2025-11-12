@@ -486,6 +486,10 @@ actor WordAlignmentService {
         let m = s1Array.count
         let n = s2Array.count
 
+        // Handle empty strings (can happen when normalizing punctuation-only words)
+        if m == 0 { return n }
+        if n == 0 { return m }
+
         // Create DP table
         var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
 
@@ -676,8 +680,40 @@ actor WordAlignmentService {
         print("🔧 Normalized ASR: \(normalizedASR)")
         print("🔧 Normalized VoxPDF: \(normalizedWords)")
 
-        // 3. Align sequences using DTW
-        let alignment = alignSequences(normalizedASR, normalizedWords)
+        // Filter out empty normalized strings (punctuation-only words)
+        // Keep track of original indices for mapping back
+        var filteredASR: [String] = []
+        var filteredASRIndices: [Int] = []
+        for (idx, normalized) in normalizedASR.enumerated() {
+            if !normalized.isEmpty {
+                filteredASR.append(normalized)
+                filteredASRIndices.append(idx)
+            } else {
+                print("⚠️  Skipping empty ASR token at index \(idx): '\(asrTokenStrings[idx])'")
+            }
+        }
+
+        var filteredWords: [String] = []
+        var filteredWordIndices: [Int] = []
+        for (idx, normalized) in normalizedWords.enumerated() {
+            if !normalized.isEmpty {
+                filteredWords.append(normalized)
+                filteredWordIndices.append(idx)
+            } else {
+                print("⚠️  Skipping empty VoxPDF word at index \(idx): '\(voxWordStrings[idx])'")
+            }
+        }
+
+        // 3. Align sequences using DTW (with filtered, non-empty strings)
+        let filteredAlignment = alignSequences(filteredASR, filteredWords)
+
+        // Map filtered indices back to original indices
+        var alignment: [(wordIndex: Int, tokenIndices: [Int])] = []
+        for (filteredWordIdx, filteredTokenIdxs) in filteredAlignment {
+            let originalWordIdx = filteredWordIndices[filteredWordIdx]
+            let originalTokenIdxs = filteredTokenIdxs.map { filteredASRIndices[$0] }
+            alignment.append((wordIndex: originalWordIdx, tokenIndices: originalTokenIdxs))
+        }
 
         print("🔗 DTW Alignment (\(alignment.count) words mapped):")
         for (wordIdx, tokenIdxs) in alignment.prefix(10) {
