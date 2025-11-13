@@ -160,6 +160,17 @@ struct GeneratedAudio {
 
             print("[SherpaOnnx] Extracting \(phonemeCount) phonemes from C API")
 
+            // DIAGNOSTIC: Log first 5 phonemes' position data to verify correctness
+            if phonemeCount > 0 {
+                let sampleCount = min(5, phonemeCount)
+                print("[SherpaOnnx] First \(sampleCount) phonemes' raw position data:")
+                for i in 0..<sampleCount {
+                    let start = startsPtr[i]
+                    let length = lengthsPtr[i]
+                    print("  [\(i)]: char_start=\(start), char_length=\(length) -> range[\(start)..<\(start+length)]")
+                }
+            }
+
             // Check if durations are available (may be null for position-only tracking)
             let durationsPtr = audio.pointee.phoneme_durations
 
