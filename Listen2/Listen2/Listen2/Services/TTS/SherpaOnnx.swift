@@ -146,13 +146,22 @@ struct GeneratedAudio {
         let phonemeCount = Int(audio.pointee.num_phonemes)
         var phonemes: [PhonemeInfo] = []
 
+        // DIAGNOSTIC: Log what we received from C API
+        print("[SherpaOnnx] C API returned: num_phonemes=\(phonemeCount), " +
+              "symbols=\(audio.pointee.phoneme_symbols != nil ? "✓" : "✗"), " +
+              "durations=\(audio.pointee.phoneme_durations != nil ? "✓" : "✗"), " +
+              "char_start=\(audio.pointee.phoneme_char_start != nil ? "✓" : "✗"), " +
+              "char_length=\(audio.pointee.phoneme_char_length != nil ? "✓" : "✗")")
+
         if phonemeCount > 0,
            let symbolsPtr = audio.pointee.phoneme_symbols,
-           let durationsPtr = audio.pointee.phoneme_durations,
            let startsPtr = audio.pointee.phoneme_char_start,
            let lengthsPtr = audio.pointee.phoneme_char_length {
 
             print("[SherpaOnnx] Extracting \(phonemeCount) phonemes from C API")
+
+            // Check if durations are available (may be null for position-only tracking)
+            let durationsPtr = audio.pointee.phoneme_durations
 
             for i in 0..<phonemeCount {
                 // Extract symbol string
@@ -162,9 +171,15 @@ struct GeneratedAudio {
                 }
                 let symbol = String(cString: symbolCStr)
 
-                // Calculate duration from sample count
-                let sampleCount = durationsPtr[i]
-                let duration = TimeInterval(sampleCount) / TimeInterval(audio.pointee.sample_rate)
+                // Calculate duration from sample count if available, otherwise use 0
+                let duration: TimeInterval
+                if let durations = durationsPtr {
+                    let sampleCount = durations[i]
+                    duration = TimeInterval(sampleCount) / TimeInterval(audio.pointee.sample_rate)
+                } else {
+                    // No duration data available (position-only tracking)
+                    duration = 0
+                }
 
                 // Extract character position
                 let charStart = Int(startsPtr[i])
@@ -180,7 +195,7 @@ struct GeneratedAudio {
 
             print("[SherpaOnnx] Extracted phonemes: \(phonemes.map { $0.symbol }.joined(separator: " "))")
         } else {
-            print("⚠️  [SherpaOnnx] No phoneme data available from C API")
+            print("⚠️  [SherpaOnnx] No phoneme data available from C API (count=\(phonemeCount))")
         }
 
         self.phonemes = phonemes
