@@ -7,12 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2FB9209EA2A613038B0E7A21 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = D766464AD8A812B0E233C708 /* sherpa-onnx.xcframework */; };
 		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 		A6E0302B2EBEF943005E8935 /* onnxruntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; };
 		A6E0302C2EBEF943005E8935 /* onnxruntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
-		C60604EF80A11ECAD1A62DD6 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 217BC018F6C82FCE639087EC /* sherpa-onnx.xcframework */; };
 		C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; };
 /* End PBXBuildFile section */
 
@@ -49,7 +49,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		217BC018F6C82FCE639087EC /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "../../../sherpa-onnx/build-ios/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
 		219E59D4C90A0CB069422890 /* nemo-ctc-tokens.txt */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = "nemo-ctc-tokens.txt"; path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small/nemo-ctc-tokens.txt"; sourceTree = "<group>"; };
 		A6E02F032EBD6692005E8935 /* Listen2.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Listen2.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A6E02F152EBD6693005E8935 /* Listen2Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = Listen2Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -383,22 +382,29 @@
 		A6E039BF2EBF0455005E8935 /* mb-us3 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mb-us3"; sourceTree = "<group>"; };
 		A6E039C02EBF0455005E8935 /* mb-vz1 */ = {isa = PBXFileReference; lastKnownFileType = text; path = "mb-vz1"; sourceTree = "<group>"; };
 		C7E4FB93BC17805118994288 /* nemo-ctc-model.int8.onnx */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; name = "nemo-ctc-model.int8.onnx"; path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small/nemo-ctc-model.int8.onnx"; sourceTree = "<group>"; };
+		D766464AD8A812B0E233C708 /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "../../../sherpa-onnx/build-ios/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
 		DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = VoxPDFCore.xcframework; path = ../../Frameworks/VoxPDFCore.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
 		A6E02F182EBD6693005E8935 /* Listen2Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2Tests;
 			sourceTree = "<group>";
 		};
 		A6E02F222EBD6693005E8935 /* Listen2UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = Listen2UITests;
 			sourceTree = "<group>";
 		};
@@ -413,7 +419,7 @@
 				A6E0302B2EBEF943005E8935 /* onnxruntime.xcframework in Frameworks */,
 				A64206B12EC14F1500305522 /* SWCompression in Frameworks */,
 				C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */,
-				C60604EF80A11ECAD1A62DD6 /* sherpa-onnx.xcframework in Frameworks */,
+				2FB9209EA2A613038B0E7A21 /* sherpa-onnx.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -461,7 +467,7 @@
 				A6E030242EBEED0E005E8935 /* Frameworks */,
 				A6E02F042EBD6692005E8935 /* Products */,
 				2C9E4BD48FB17CEB71571BFB /* Resources */,
-				217BC018F6C82FCE639087EC /* sherpa-onnx.xcframework */,
+				D766464AD8A812B0E233C708 /* sherpa-onnx.xcframework */,
 			);
 			sourceTree = "<group>";
 		};
