@@ -8,6 +8,21 @@
 import Foundation
 import AVFoundation
 
+/// Result of TTS synthesis including audio and phoneme timing
+struct SynthesisResult {
+    /// WAV audio data
+    let audioData: Data
+
+    /// Phoneme sequence with durations and character positions
+    let phonemes: [PhonemeInfo]
+
+    /// Original text that was synthesized (for debugging/validation)
+    let text: String
+
+    /// Sample rate of the audio
+    let sampleRate: Int32
+}
+
 /// Piper TTS provider using sherpa-onnx inference
 final class PiperTTSProvider: TTSProvider {
 
@@ -70,7 +85,7 @@ final class PiperTTSProvider: TTSProvider {
         print("[PiperTTS] Initialized with voice: \(voiceID)")
     }
 
-    func synthesize(_ text: String, speed: Float) async throws -> Data {
+    func synthesize(_ text: String, speed: Float) async throws -> SynthesisResult {
         guard isInitialized, let tts = tts else {
             throw TTSError.notInitialized
         }
@@ -91,15 +106,27 @@ final class PiperTTSProvider: TTSProvider {
         // Clamp speed to valid range
         let clampedSpeed = max(0.5, min(2.0, speed))
 
-        // Generate audio (sid = 0 for single-speaker models)
+        // Generate audio with phoneme sequence
         let audio = tts.generate(text: text, sid: 0, speed: clampedSpeed)
 
         // Convert to WAV data
         let wavData = createWAVData(samples: audio.samples, sampleRate: Int(audio.sampleRate))
 
         print("[PiperTTS] Synthesized \(audio.samples.count) samples at \(audio.sampleRate) Hz")
+        print("[PiperTTS] Received \(audio.phonemes.count) phonemes from sherpa-onnx")
 
-        return wavData
+        // Log first few phonemes for debugging
+        if !audio.phonemes.isEmpty {
+            let preview = audio.phonemes.prefix(5).map { "\($0.symbol)[\($0.textRange)]" }.joined(separator: " ")
+            print("[PiperTTS] First phonemes: \(preview)...")
+        }
+
+        return SynthesisResult(
+            audioData: wavData,
+            phonemes: audio.phonemes,
+            text: text,
+            sampleRate: audio.sampleRate
+        )
     }
 
     func cleanup() {
