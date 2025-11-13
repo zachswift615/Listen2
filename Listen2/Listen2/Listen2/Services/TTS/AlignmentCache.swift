@@ -42,9 +42,10 @@ actor AlignmentCache {
     ///   - alignment: The alignment result to save
     ///   - documentID: UUID of the document
     ///   - paragraph: Paragraph index
+    ///   - speed: Playback speed (alignments are speed-specific)
     /// - Throws: AlignmentError.cacheWriteFailed if save fails
-    func save(_ alignment: AlignmentResult, for documentID: UUID, paragraph: Int) async throws {
-        let fileURL = getFileURL(for: documentID, paragraph: paragraph)
+    func save(_ alignment: AlignmentResult, for documentID: UUID, paragraph: Int, speed: Float) async throws {
+        let fileURL = getFileURL(for: documentID, paragraph: paragraph, speed: speed)
 
         // Create document directory if needed
         let documentDir = fileURL.deletingLastPathComponent()
@@ -72,10 +73,11 @@ actor AlignmentCache {
     /// - Parameters:
     ///   - documentID: UUID of the document
     ///   - paragraph: Paragraph index
+    ///   - speed: Playback speed (alignments are speed-specific)
     /// - Returns: The cached alignment, or nil if not found
     /// - Throws: AlignmentError.cacheReadFailed if file exists but cannot be decoded
-    func load(for documentID: UUID, paragraph: Int) async throws -> AlignmentResult? {
-        let fileURL = getFileURL(for: documentID, paragraph: paragraph)
+    func load(for documentID: UUID, paragraph: Int, speed: Float) async throws -> AlignmentResult? {
+        let fileURL = getFileURL(for: documentID, paragraph: paragraph, speed: speed)
 
         // Check if file exists
         guard fileManager.fileExists(atPath: fileURL.path) else {
@@ -148,10 +150,11 @@ actor AlignmentCache {
     /// - Parameters:
     ///   - documentID: UUID of the document
     ///   - paragraph: Paragraph index
+    ///   - speed: Playback speed
     /// - Returns: URL to the cache file
-    private func getFileURL(for documentID: UUID, paragraph: Int) -> URL {
+    private func getFileURL(for documentID: UUID, paragraph: Int, speed: Float) -> URL {
         let documentDir = getDocumentDirectoryURL(for: documentID)
-        return documentDir.appendingPathComponent("\(paragraph).json")
+        return documentDir.appendingPathComponent("\(paragraph)_\(speed).json")
     }
 
     /// Get the directory URL for a document's cache

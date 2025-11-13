@@ -207,7 +207,8 @@ final class SynthesisQueue {
         if let documentID = documentID,
            let cachedAlignment = try? await alignmentCache.load(
                for: documentID,
-               paragraph: index
+               paragraph: index,
+               speed: speed
            ) {
             print("[SynthesisQueue] Loaded alignment from disk cache for paragraph \(index)")
             alignments[index] = cachedAlignment
@@ -232,7 +233,8 @@ final class SynthesisQueue {
                     try await alignmentCache.save(
                         alignment,
                         for: documentID,
-                        paragraph: index
+                        paragraph: index,
+                        speed: speed
                     )
                     print("[SynthesisQueue] Saved alignment to disk cache for paragraph \(index)")
                 } catch {
