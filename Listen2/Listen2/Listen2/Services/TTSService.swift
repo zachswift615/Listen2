@@ -41,7 +41,7 @@ final class TTSService: NSObject, ObservableObject {
     private var currentDocumentID: UUID? // Current document ID for alignment caching
 
     // Alignment services
-    private let alignmentService = WordAlignmentService()
+    private let alignmentService = PhonemeAlignmentService()
     private let alignmentCache = AlignmentCache()
 
     // Word highlighting for Piper playback
@@ -113,39 +113,9 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func initializeAlignmentService() async {
-        print("[TTSService] 🚀 Starting alignment service initialization...")
-        do {
-            // Get path to ASR model - Bundle.main.resourcePath already points to Resources folder
-            guard let resourcePath = Bundle.main.resourcePath else {
-                print("[TTSService] ❌ Cannot find app bundle resource path")
-                throw AlignmentError.recognitionFailed("Cannot find app bundle")
-            }
-
-            print("[TTSService] 🔍 Resource path: \(resourcePath)")
-
-            // NeMo model files are at the root of the bundle (flattened by Xcode)
-            let fileManager = FileManager.default
-            let modelPath = (resourcePath as NSString).appendingPathComponent("nemo-ctc-model.int8.onnx")
-            let tokensPath = (resourcePath as NSString).appendingPathComponent("nemo-ctc-tokens.txt")
-
-            // Check if model files exist at root
-            if !fileManager.fileExists(atPath: modelPath) {
-                print("[TTSService] ❌ Model file not found at: \(modelPath)")
-                throw AlignmentError.recognitionFailed("ASR model files not found at root of bundle")
-            }
-            if !fileManager.fileExists(atPath: tokensPath) {
-                print("[TTSService] ❌ Tokens file not found at: \(tokensPath)")
-                throw AlignmentError.recognitionFailed("ASR tokens file not found at root of bundle")
-            }
-            print("[TTSService] ✅ Model files found at bundle root")
-
-            // Initialize alignment service with resource path (files are at root)
-            try await alignmentService.initialize(modelPath: resourcePath)
-            print("[TTSService] ✅ Word alignment service initialized")
-        } catch {
-            print("[TTSService] ⚠️ Alignment service initialization failed: \(error)")
-            // Continue without alignment - it's optional
-        }
+        // PhonemeAlignmentService doesn't require initialization
+        // It works directly with phoneme data from TTS synthesis
+        print("[TTSService] ✅ Phoneme alignment service ready (no initialization needed)")
     }
 
     // MARK: - Audio Session Configuration

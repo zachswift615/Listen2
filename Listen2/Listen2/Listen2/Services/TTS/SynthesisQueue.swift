@@ -39,8 +39,8 @@ final class SynthesisQueue {
     /// Current playback rate
     private var speed: Float = 1.0
 
-    /// Word alignment service for performing ASR-based alignment
-    private let alignmentService: WordAlignmentService
+    /// Phoneme alignment service for performing phoneme-based alignment
+    private let alignmentService: PhonemeAlignmentService
 
     /// Disk cache for persistent alignment storage
     private let alignmentCache: AlignmentCache
@@ -53,7 +53,7 @@ final class SynthesisQueue {
 
     // MARK: - Initialization
 
-    init(provider: TTSProvider, alignmentService: WordAlignmentService, alignmentCache: AlignmentCache) {
+    init(provider: TTSProvider, alignmentService: PhonemeAlignmentService, alignmentCache: AlignmentCache) {
         self.provider = provider
         self.alignmentService = alignmentService
         self.alignmentCache = alignmentCache
@@ -110,18 +110,18 @@ final class SynthesisQueue {
         }
 
         let text = paragraphs[index]
-        let data = try await provider.synthesize(text, speed: speed)
+        let result = try await provider.synthesize(text, speed: speed)
 
-        // Cache result
-        cache[index] = data
+        // Cache audio data
+        cache[index] = result.audioData
 
         // Perform alignment if word map is available
-        await performAlignment(for: index, audioData: data, text: text)
+        await performAlignment(for: index, result: result)
 
         // Start pre-synthesizing upcoming paragraphs
         preSynthesizeAhead(from: index)
 
-        return data
+        return result.audioData
     }
 
     /// Clear cached data for a specific paragraph
@@ -168,17 +168,17 @@ final class SynthesisQueue {
             let task = Task {
                 do {
                     let text = paragraphs[index]
-                    let data = try await provider.synthesize(text, speed: speed)
+                    let result = try await provider.synthesize(text, speed: speed)
 
-                    // Cache result
+                    // Cache audio data
                     await MainActor.run {
-                        cache[index] = data
+                        cache[index] = result.audioData
                         synthesizing.remove(index)
                         activeTasks.removeValue(forKey: index)
                     }
 
-                    // Perform alignment in background
-                    await performAlignment(for: index, audioData: data, text: text)
+                    // Perform alignment
+                    await performAlignment(for: index, result: result)
                 } catch {
                     // Remove from synthesizing set on error
                     await MainActor.run {
@@ -193,57 +193,58 @@ final class SynthesisQueue {
         }
     }
 
-    /// Perform alignment for synthesized audio
+    /// Perform word-level alignment using phoneme sequence
     /// - Parameters:
     ///   - index: Paragraph index
-    ///   - audioData: Synthesized WAV audio data
-    ///   - text: Paragraph text
-    private func performAlignment(for index: Int, audioData: Data, text: String) async {
-        // Check if we have the required context for alignment
-        guard let wordMap = wordMap, let documentID = documentID else {
-            // No word map or document ID - skip alignment gracefully
-            print("[SynthesisQueue] Skipping alignment for paragraph \(index): No word map or document ID")
+    ///   - result: Synthesis result containing phonemes
+    private func performAlignment(for index: Int, result: SynthesisResult) async {
+        guard let wordMap = wordMap else {
+            print("[SynthesisQueue] No word map available for alignment")
             return
         }
 
+        // Check disk cache first (if documentID is set)
+        if let documentID = documentID,
+           let cachedAlignment = try? await alignmentCache.load(
+               for: documentID,
+               paragraph: index
+           ) {
+            print("[SynthesisQueue] Loaded alignment from disk cache for paragraph \(index)")
+            alignments[index] = cachedAlignment
+            return
+        }
+
+        // Perform phoneme-based alignment
         do {
-            // Check disk cache first
-            if let cachedAlignment = try await alignmentCache.load(for: documentID, paragraph: index) {
-                await MainActor.run {
-                    alignments[index] = cachedAlignment
-                }
-                print("[SynthesisQueue] Loaded cached alignment for paragraph \(index)")
-                return
-            }
-
-            // Write audio data to temporary file for ASR
-            let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("synthesis_\(index)_\(UUID().uuidString).wav")
-            try audioData.write(to: tempURL)
-
-            // Perform alignment using ASR
             let alignment = try await alignmentService.align(
-                audioURL: tempURL,
-                text: text,
+                phonemes: result.phonemes,
+                text: result.text,
                 wordMap: wordMap,
                 paragraphIndex: index
             )
 
             // Store in memory cache
-            await MainActor.run {
-                alignments[index] = alignment
+            alignments[index] = alignment
+
+            // Store in disk cache (if documentID is set)
+            if let documentID = documentID {
+                do {
+                    try await alignmentCache.save(
+                        alignment,
+                        for: documentID,
+                        paragraph: index
+                    )
+                    print("[SynthesisQueue] Saved alignment to disk cache for paragraph \(index)")
+                } catch {
+                    print("[SynthesisQueue] Failed to save alignment to disk: \(error)")
+                    // Non-fatal - we have the alignment in memory
+                }
             }
 
-            // Save to disk cache
-            try await alignmentCache.save(alignment, for: documentID, paragraph: index)
-
-            // Clean up temporary file
-            try? FileManager.default.removeItem(at: tempURL)
-
-            print("[SynthesisQueue] ✅ Alignment complete for paragraph \(index): \(alignment.wordTimings.count) words")
+            print("[SynthesisQueue] ✅ Alignment completed for paragraph \(index): \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s")
         } catch {
-            // Log error but don't fail - alignment is optional
-            print("[SynthesisQueue] ⚠️ Alignment failed for paragraph \(index): \(error)")
+            print("[SynthesisQueue] ❌ Alignment failed for paragraph \(index): \(error)")
+            // Don't throw - alignment is optional for playback
         }
     }
 

@@ -15,12 +15,12 @@ protocol TTSProvider {
     /// Initialize the TTS provider (load models, configure session)
     func initialize() async throws
 
-    /// Synthesize text to WAV audio data
+    /// Synthesize text to WAV audio data with phoneme sequence
     /// - Parameters:
     ///   - text: Text to synthesize
     ///   - speed: Playback speed (0.5-2.0, default 1.0)
-    /// - Returns: WAV audio data
-    func synthesize(_ text: String, speed: Float) async throws -> Data
+    /// - Returns: Synthesis result containing audio data and phoneme sequence
+    func synthesize(_ text: String, speed: Float) async throws -> SynthesisResult
 
     /// Clean up resources (unload models, release memory)
     func cleanup()
