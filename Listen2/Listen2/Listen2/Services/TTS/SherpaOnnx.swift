@@ -7,6 +7,27 @@
 
 import Foundation
 
+// MARK: - Phoneme Info
+
+/// Information about a single phoneme with its position in the original text
+struct PhonemeInfo: Equatable {
+    /// IPA phoneme symbol (e.g., "h", "ə", "l", "oʊ")
+    let symbol: String
+
+    /// Duration of this phoneme in seconds
+    let duration: TimeInterval
+
+    /// Character range in the original text that this phoneme represents
+    /// Example: "ough" in "thought" might be represented by character range 2..<6
+    let textRange: Range<Int>
+
+    init(symbol: String, duration: TimeInterval, textRange: Range<Int>) {
+        self.symbol = symbol
+        self.duration = duration
+        self.textRange = textRange
+    }
+}
+
 // MARK: - Helper Functions for Config Creation
 
 /// Create a VITS model configuration
@@ -108,6 +129,7 @@ func sherpaOnnxOfflineTtsConfig(
 struct GeneratedAudio {
     let samples: [Float]
     let sampleRate: Int32
+    let phonemes: [PhonemeInfo]  // Complete phoneme data with positions
 
     init(audio: UnsafePointer<SherpaOnnxGeneratedAudio>) {
         self.sampleRate = audio.pointee.sample_rate
@@ -119,6 +141,49 @@ struct GeneratedAudio {
         } else {
             self.samples = []
         }
+
+        // Extract phoneme data
+        let phonemeCount = Int(audio.pointee.num_phonemes)
+        var phonemes: [PhonemeInfo] = []
+
+        if phonemeCount > 0,
+           let symbolsPtr = audio.pointee.phoneme_symbols,
+           let durationsPtr = audio.pointee.phoneme_durations,
+           let startsPtr = audio.pointee.phoneme_char_start,
+           let lengthsPtr = audio.pointee.phoneme_char_length {
+
+            print("[SherpaOnnx] Extracting \(phonemeCount) phonemes from C API")
+
+            for i in 0..<phonemeCount {
+                // Extract symbol string
+                guard let symbolCStr = symbolsPtr[i] else {
+                    print("⚠️  [SherpaOnnx] Null phoneme symbol at index \(i)")
+                    continue
+                }
+                let symbol = String(cString: symbolCStr)
+
+                // Calculate duration from sample count
+                let sampleCount = durationsPtr[i]
+                let duration = TimeInterval(sampleCount) / TimeInterval(audio.pointee.sample_rate)
+
+                // Extract character position
+                let charStart = Int(startsPtr[i])
+                let charLength = Int(lengthsPtr[i])
+                let textRange = charStart..<(charStart + charLength)
+
+                phonemes.append(PhonemeInfo(
+                    symbol: symbol,
+                    duration: duration,
+                    textRange: textRange
+                ))
+            }
+
+            print("[SherpaOnnx] Extracted phonemes: \(phonemes.map { $0.symbol }.joined(separator: " "))")
+        } else {
+            print("⚠️  [SherpaOnnx] No phoneme data available from C API")
+        }
+
+        self.phonemes = phonemes
     }
 }
 
@@ -169,7 +234,7 @@ final class SherpaOnnxOfflineTtsWrapper {
     func generate(text: String, sid: Int32, speed: Float) -> GeneratedAudio {
         guard let tts = tts else {
             print("[SherpaOnnx] TTS not initialized")
-            return GeneratedAudio(samples: [], sampleRate: 22050)
+            return GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [])
         }
 
         // Generate audio
@@ -200,8 +265,9 @@ final class SherpaOnnxOfflineTtsWrapper {
 // MARK: - GeneratedAudio Convenience Initializer
 
 extension GeneratedAudio {
-    init(samples: [Float], sampleRate: Int32) {
+    init(samples: [Float], sampleRate: Int32, phonemes: [PhonemeInfo] = []) {
         self.samples = samples
         self.sampleRate = sampleRate
+        self.phonemes = phonemes
     }
 }
