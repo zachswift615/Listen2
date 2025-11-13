@@ -184,7 +184,11 @@ struct GeneratedAudio {
                 // Extract character position
                 let charStart = Int(startsPtr[i])
                 let charLength = Int(lengthsPtr[i])
-                let textRange = charStart..<(charStart + charLength)
+
+                // SAFETY: Ensure we don't create invalid ranges
+                // (espeak can give us duplicate or overlapping positions)
+                let rangeEnd = max(charStart, charStart + charLength)
+                let textRange = charStart..<rangeEnd
 
                 phonemes.append(PhonemeInfo(
                     symbol: symbol,
