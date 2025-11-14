@@ -185,8 +185,15 @@ struct GeneratedAudio {
                 // Calculate duration from sample count if available, otherwise use 0
                 let duration: TimeInterval
                 if let durations = durationsPtr {
-                    let sampleCount = durations[i]
+                    // Read sample count from C API (int32_t)
+                    let sampleCount = Int32(durations[i])
+                    // Convert samples to seconds: duration = samples / sample_rate
                     duration = TimeInterval(sampleCount) / TimeInterval(audio.pointee.sample_rate)
+
+                    // Log first phoneme's duration for verification
+                    if i == 0 {
+                        print("[SherpaOnnx] First phoneme duration: \(sampleCount) samples = \(String(format: "%.4f", duration))s @ \(audio.pointee.sample_rate)Hz")
+                    }
                 } else {
                     // No duration data available (position-only tracking)
                     duration = 0
@@ -208,7 +215,11 @@ struct GeneratedAudio {
                 ))
             }
 
-            print("[SherpaOnnx] Extracted phonemes: \(phonemes.map { $0.symbol }.joined(separator: " "))")
+            // Log summary of extraction
+            let hasDurations = durationsPtr != nil
+            let totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
+            print("[SherpaOnnx] Extracted \(phonemes.count) phonemes (durations: \(hasDurations ? "✓" : "✗"), total: \(String(format: "%.3f", totalDuration))s)")
+            print("[SherpaOnnx] Phoneme symbols: \(phonemes.map { $0.symbol }.joined(separator: " "))")
         } else {
             print("⚠️  [SherpaOnnx] No phoneme data available from C API (count=\(phonemeCount))")
         }
