@@ -119,14 +119,14 @@ final class PiperTTSIntegrationTests: XCTestCase {
 
         // When: Synthesizing simple text
         let text = "Hello, world!"
-        let wavData = try await provider.synthesize(text, speed: 1.0)
+        let result = try await provider.synthesize(text, speed: 1.0)
 
         // Then: Should return valid WAV data
-        XCTAssertGreaterThan(wavData.count, 0, "WAV data should not be empty")
-        XCTAssertGreaterThan(wavData.count, 100, "WAV data should be substantial (>100 bytes)")
+        XCTAssertGreaterThan(result.audioData.count, 0, "WAV data should not be empty")
+        XCTAssertGreaterThan(result.audioData.count, 100, "WAV data should be substantial (>100 bytes)")
 
         // Verify WAV header
-        let wavHeader = wavData.prefix(4)
+        let wavHeader = result.audioData.prefix(4)
         let headerString = String(data: wavHeader, encoding: .ascii)
         XCTAssertEqual(headerString, "RIFF", "Should have valid WAV header")
     }
@@ -137,13 +137,13 @@ final class PiperTTSIntegrationTests: XCTestCase {
 
         // When: Synthesizing longer text (paragraph)
         let text = "This is a longer piece of text to test the synthesis of a full paragraph. It contains multiple sentences and should produce a reasonable amount of audio data."
-        let wavData = try await provider.synthesize(text, speed: 1.0)
+        let result = try await provider.synthesize(text, speed: 1.0)
 
         // Then: Should return substantial WAV data
-        XCTAssertGreaterThan(wavData.count, 1000, "Long text should produce substantial audio data")
+        XCTAssertGreaterThan(result.audioData.count, 1000, "Long text should produce substantial audio data")
 
         // Verify WAV header
-        let wavHeader = wavData.prefix(4)
+        let wavHeader = result.audioData.prefix(4)
         let headerString = String(data: wavHeader, encoding: .ascii)
         XCTAssertEqual(headerString, "RIFF", "Should have valid WAV header")
     }
@@ -155,9 +155,9 @@ final class PiperTTSIntegrationTests: XCTestCase {
         // When/Then: Synthesizing empty text should either return minimal data or throw
         // (Implementation-dependent behavior)
         do {
-            let wavData = try await provider.synthesize("", speed: 1.0)
+            let result = try await provider.synthesize("", speed: 1.0)
             // If it doesn't throw, data should be minimal
-            XCTAssertLessThan(wavData.count, 1000, "Empty text should produce minimal audio")
+            XCTAssertLessThan(result.audioData.count, 1000, "Empty text should produce minimal audio")
         } catch {
             // It's acceptable to throw for empty text
             XCTAssertTrue(true, "Empty text synthesis threw error (acceptable)")
@@ -171,18 +171,18 @@ final class PiperTTSIntegrationTests: XCTestCase {
         let text = "Testing different playback speeds."
 
         // When: Synthesizing at different speeds
-        let slowData = try await provider.synthesize(text, speed: 0.5)
-        let normalData = try await provider.synthesize(text, speed: 1.0)
-        let fastData = try await provider.synthesize(text, speed: 2.0)
+        let slowResult = try await provider.synthesize(text, speed: 0.5)
+        let normalResult = try await provider.synthesize(text, speed: 1.0)
+        let fastResult = try await provider.synthesize(text, speed: 2.0)
 
         // Then: All should produce valid data
-        XCTAssertGreaterThan(slowData.count, 0, "Slow speed should produce audio")
-        XCTAssertGreaterThan(normalData.count, 0, "Normal speed should produce audio")
-        XCTAssertGreaterThan(fastData.count, 0, "Fast speed should produce audio")
+        XCTAssertGreaterThan(slowResult.audioData.count, 0, "Slow speed should produce audio")
+        XCTAssertGreaterThan(normalResult.audioData.count, 0, "Normal speed should produce audio")
+        XCTAssertGreaterThan(fastResult.audioData.count, 0, "Fast speed should produce audio")
 
         // Slower speeds typically produce more data (longer duration)
         // Note: This may vary based on implementation
-        XCTAssertTrue(slowData.count >= normalData.count || slowData.count >= fastData.count,
+        XCTAssertTrue(slowResult.audioData.count >= normalResult.audioData.count || slowResult.audioData.count >= fastResult.audioData.count,
                      "Speed affects audio data size")
     }
 
@@ -191,7 +191,9 @@ final class PiperTTSIntegrationTests: XCTestCase {
     func testSynthesisQueueCaching() async throws {
         // Given: An initialized provider and synthesis queue
         try await initializeProviderOrSkip()
-        let queue = SynthesisQueue(provider: provider)
+        let alignmentService = PhonemeAlignmentService()
+        let alignmentCache = AlignmentCache()
+        let queue = SynthesisQueue(provider: provider, alignmentService: alignmentService, alignmentCache: alignmentCache)
 
         let paragraphs = [
             "First paragraph to synthesize.",
@@ -220,7 +222,9 @@ final class PiperTTSIntegrationTests: XCTestCase {
     func testSynthesisQueuePreSynthesis() async throws {
         // Given: An initialized provider and synthesis queue
         try await initializeProviderOrSkip()
-        let queue = SynthesisQueue(provider: provider)
+        let alignmentService = PhonemeAlignmentService()
+        let alignmentCache = AlignmentCache()
+        let queue = SynthesisQueue(provider: provider, alignmentService: alignmentService, alignmentCache: alignmentCache)
 
         let paragraphs = [
             "First paragraph.",
@@ -249,7 +253,9 @@ final class PiperTTSIntegrationTests: XCTestCase {
     func testSynthesisQueueSpeedChange() async throws {
         // Given: An initialized provider and synthesis queue
         try await initializeProviderOrSkip()
-        let queue = SynthesisQueue(provider: provider)
+        let alignmentService = PhonemeAlignmentService()
+        let alignmentCache = AlignmentCache()
+        let queue = SynthesisQueue(provider: provider, alignmentService: alignmentService, alignmentCache: alignmentCache)
 
         let paragraphs = ["Test paragraph for speed change."]
 

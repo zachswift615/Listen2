@@ -40,10 +40,10 @@ final class AlignmentCacheTests: XCTestCase {
         let alignment = createTestAlignment(paragraphIndex: 0, duration: 5.0)
 
         // Save it
-        try await cache.save(alignment, for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment, for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Load it back
-        let loaded = try await cache.load(for: testDocumentID, paragraph: 0)
+        let loaded = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Verify it matches
         XCTAssertNotNil(loaded)
@@ -54,7 +54,7 @@ final class AlignmentCacheTests: XCTestCase {
 
     func testLoadNonExistentAlignment() async throws {
         // Try to load an alignment that doesn't exist
-        let loaded = try await cache.load(for: testDocumentID, paragraph: 99)
+        let loaded = try await cache.load(for: testDocumentID, paragraph: 99, speed: 1.0)
 
         // Should return nil, not throw
         XCTAssertNil(loaded)
@@ -62,7 +62,7 @@ final class AlignmentCacheTests: XCTestCase {
 
     func testLoadFromNonExistentDocument() async throws {
         let nonExistentID = UUID()
-        let loaded = try await cache.load(for: nonExistentID, paragraph: 0)
+        let loaded = try await cache.load(for: nonExistentID, paragraph: 0, speed: 1.0)
 
         // Should return nil, not throw
         XCTAssertNil(loaded)
@@ -76,14 +76,14 @@ final class AlignmentCacheTests: XCTestCase {
         let alignment1 = createTestAlignment(paragraphIndex: 1, duration: 3.0)
         let alignment2 = createTestAlignment(paragraphIndex: 2, duration: 7.0)
 
-        try await cache.save(alignment0, for: testDocumentID, paragraph: 0)
-        try await cache.save(alignment1, for: testDocumentID, paragraph: 1)
-        try await cache.save(alignment2, for: testDocumentID, paragraph: 2)
+        try await cache.save(alignment0, for: testDocumentID, paragraph: 0, speed: 1.0)
+        try await cache.save(alignment1, for: testDocumentID, paragraph: 1, speed: 1.0)
+        try await cache.save(alignment2, for: testDocumentID, paragraph: 2, speed: 1.0)
 
         // Load each one back
-        let loaded0 = try await cache.load(for: testDocumentID, paragraph: 0)
-        let loaded1 = try await cache.load(for: testDocumentID, paragraph: 1)
-        let loaded2 = try await cache.load(for: testDocumentID, paragraph: 2)
+        let loaded0 = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
+        let loaded1 = try await cache.load(for: testDocumentID, paragraph: 1, speed: 1.0)
+        let loaded2 = try await cache.load(for: testDocumentID, paragraph: 2, speed: 1.0)
 
         // Verify they match
         XCTAssertEqual(loaded0?.paragraphIndex, 0)
@@ -99,14 +99,14 @@ final class AlignmentCacheTests: XCTestCase {
     func testOverwriteExistingAlignment() async throws {
         // Save an alignment
         let alignment1 = createTestAlignment(paragraphIndex: 0, duration: 5.0)
-        try await cache.save(alignment1, for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment1, for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Overwrite with new alignment (voice change scenario)
         let alignment2 = createTestAlignment(paragraphIndex: 0, duration: 7.5)
-        try await cache.save(alignment2, for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment2, for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Load and verify it's the new one
-        let loaded = try await cache.load(for: testDocumentID, paragraph: 0)
+        let loaded = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
         XCTAssertEqual(loaded?.totalDuration, 7.5)
     }
 
@@ -114,17 +114,20 @@ final class AlignmentCacheTests: XCTestCase {
 
     func testClearDocument() async throws {
         // Save alignments for multiple paragraphs
-        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 5.0), for: testDocumentID, paragraph: 0)
-        try await cache.save(createTestAlignment(paragraphIndex: 1, duration: 3.0), for: testDocumentID, paragraph: 1)
-        try await cache.save(createTestAlignment(paragraphIndex: 2, duration: 7.0), for: testDocumentID, paragraph: 2)
+        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 5.0), for: testDocumentID, paragraph: 0, speed: 1.0)
+        try await cache.save(createTestAlignment(paragraphIndex: 1, duration: 3.0), for: testDocumentID, paragraph: 1, speed: 1.0)
+        try await cache.save(createTestAlignment(paragraphIndex: 2, duration: 7.0), for: testDocumentID, paragraph: 2, speed: 1.0)
 
         // Clear all alignments for this document
         try await cache.clear(for: testDocumentID)
 
         // Verify all are gone
-        XCTAssertNil(try await cache.load(for: testDocumentID, paragraph: 0))
-        XCTAssertNil(try await cache.load(for: testDocumentID, paragraph: 1))
-        XCTAssertNil(try await cache.load(for: testDocumentID, paragraph: 2))
+        let loaded0 = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
+        let loaded1 = try await cache.load(for: testDocumentID, paragraph: 1, speed: 1.0)
+        let loaded2 = try await cache.load(for: testDocumentID, paragraph: 2, speed: 1.0)
+        XCTAssertNil(loaded0)
+        XCTAssertNil(loaded1)
+        XCTAssertNil(loaded2)
     }
 
     func testClearNonExistentDocument() async throws {
@@ -140,15 +143,17 @@ final class AlignmentCacheTests: XCTestCase {
         let doc1 = UUID()
         let doc2 = UUID()
 
-        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 5.0), for: doc1, paragraph: 0)
-        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 3.0), for: doc2, paragraph: 0)
+        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 5.0), for: doc1, paragraph: 0, speed: 1.0)
+        try await cache.save(createTestAlignment(paragraphIndex: 0, duration: 3.0), for: doc2, paragraph: 0, speed: 1.0)
 
         // Clear all cache
         try await cache.clearAll()
 
         // Verify all are gone
-        XCTAssertNil(try await cache.load(for: doc1, paragraph: 0))
-        XCTAssertNil(try await cache.load(for: doc2, paragraph: 0))
+        let loaded1 = try await cache.load(for: doc1, paragraph: 0, speed: 1.0)
+        let loaded2 = try await cache.load(for: doc2, paragraph: 0, speed: 1.0)
+        XCTAssertNil(loaded1)
+        XCTAssertNil(loaded2)
 
         // Cleanup
         try await cache.clear(for: doc1)
@@ -160,10 +165,10 @@ final class AlignmentCacheTests: XCTestCase {
     func testCacheFileStructure() async throws {
         // Save an alignment
         let alignment = createTestAlignment(paragraphIndex: 5, duration: 5.0)
-        try await cache.save(alignment, for: testDocumentID, paragraph: 5)
+        try await cache.save(alignment, for: testDocumentID, paragraph: 5, speed: 1.0)
 
         // Verify the file structure exists
-        let cacheURL = try cache.getCacheDirectoryURL()
+        let cacheURL = try await cache.getCacheDirectoryURL()
         let documentDir = cacheURL.appendingPathComponent(testDocumentID.uuidString)
         let fileURL = documentDir.appendingPathComponent("5.json")
 
@@ -178,12 +183,12 @@ final class AlignmentCacheTests: XCTestCase {
         let alignment1 = createTestAlignment(paragraphIndex: 0, duration: 5.0)
         let alignment2 = createTestAlignment(paragraphIndex: 0, duration: 8.0)
 
-        try await cache.save(alignment1, for: doc1, paragraph: 0)
-        try await cache.save(alignment2, for: doc2, paragraph: 0)
+        try await cache.save(alignment1, for: doc1, paragraph: 0, speed: 1.0)
+        try await cache.save(alignment2, for: doc2, paragraph: 0, speed: 1.0)
 
         // Load and verify they're separate
-        let loaded1 = try await cache.load(for: doc1, paragraph: 0)
-        let loaded2 = try await cache.load(for: doc2, paragraph: 0)
+        let loaded1 = try await cache.load(for: doc1, paragraph: 0, speed: 1.0)
+        let loaded2 = try await cache.load(for: doc2, paragraph: 0, speed: 1.0)
 
         XCTAssertEqual(loaded1?.totalDuration, 5.0)
         XCTAssertEqual(loaded2?.totalDuration, 8.0)
@@ -223,8 +228,8 @@ final class AlignmentCacheTests: XCTestCase {
         )
 
         // Save and load
-        try await cache.save(alignment, for: testDocumentID, paragraph: 0)
-        let loaded = try await cache.load(for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment, for: testDocumentID, paragraph: 0, speed: 1.0)
+        let loaded = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Verify word timings are preserved
         XCTAssertEqual(loaded?.wordTimings.count, 2)
@@ -240,7 +245,7 @@ final class AlignmentCacheTests: XCTestCase {
 
     func testCorruptedCacheFileHandling() async throws {
         // Create a corrupted cache file
-        let cacheURL = try cache.getCacheDirectoryURL()
+        let cacheURL = try await cache.getCacheDirectoryURL()
         let documentDir = cacheURL.appendingPathComponent(testDocumentID.uuidString)
         try FileManager.default.createDirectory(at: documentDir, withIntermediateDirectories: true)
 
@@ -249,7 +254,7 @@ final class AlignmentCacheTests: XCTestCase {
 
         // Try to load - should throw error
         do {
-            _ = try await cache.load(for: testDocumentID, paragraph: 0)
+            _ = try await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
             XCTFail("Should throw error for corrupted cache file")
         } catch let error as AlignmentError {
             // Verify correct error type
@@ -271,12 +276,12 @@ final class AlignmentCacheTests: XCTestCase {
         let alignment2 = createTestAlignment(paragraphIndex: 1, duration: 3.5)
         let alignment3 = createTestAlignment(paragraphIndex: 2, duration: 7.2)
 
-        try await cache.save(alignment1, for: testDocumentID, paragraph: 0)
-        try await cache.save(alignment2, for: testDocumentID, paragraph: 1)
-        try await cache.save(alignment3, for: testDocumentID, paragraph: 2)
+        try await cache.save(alignment1, for: testDocumentID, paragraph: 0, speed: 1.0)
+        try await cache.save(alignment2, for: testDocumentID, paragraph: 1, speed: 1.0)
+        try await cache.save(alignment3, for: testDocumentID, paragraph: 2, speed: 1.0)
 
         // Verify files exist on disk
-        let cacheURL = try cache.getCacheDirectoryURL()
+        let cacheURL = try await cache.getCacheDirectoryURL()
         let documentDir = cacheURL.appendingPathComponent(testDocumentID.uuidString)
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: documentDir.path), "Document cache directory should exist")
@@ -286,9 +291,9 @@ final class AlignmentCacheTests: XCTestCase {
         let newCache = AlignmentCache()
 
         // Verify all alignments can be loaded from disk with new cache instance
-        let loaded0 = try await newCache.load(for: testDocumentID, paragraph: 0)
-        let loaded1 = try await newCache.load(for: testDocumentID, paragraph: 1)
-        let loaded2 = try await newCache.load(for: testDocumentID, paragraph: 2)
+        let loaded0 = try await newCache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
+        let loaded1 = try await newCache.load(for: testDocumentID, paragraph: 1, speed: 1.0)
+        let loaded2 = try await newCache.load(for: testDocumentID, paragraph: 2, speed: 1.0)
 
         // Verify all alignments were persisted correctly
         XCTAssertNotNil(loaded0, "Alignment 0 should persist across restart")
@@ -354,18 +359,18 @@ final class AlignmentCacheTests: XCTestCase {
         )
 
         // Save alignment
-        try await cache.save(alignment, for: testDocumentID, paragraph: 5)
+        try await cache.save(alignment, for: testDocumentID, paragraph: 5, speed: 1.0)
 
         // Create new cache instance to simulate app restart
         let newCache = AlignmentCache()
 
         // Load alignment
-        let loaded = try await newCache.load(for: testDocumentID, paragraph: 5)
+        let loaded = try await newCache.load(for: testDocumentID, paragraph: 5, speed: 1.0)
 
         // Verify all details persisted
         XCTAssertNotNil(loaded, "Complex alignment should persist")
         XCTAssertEqual(loaded?.paragraphIndex, 5)
-        XCTAssertEqual(loaded?.totalDuration, 1.65, accuracy: 0.001)
+        XCTAssertEqual(loaded!.totalDuration, 1.65, accuracy: 0.001)
         XCTAssertEqual(loaded?.wordTimings.count, 4)
 
         // Verify each word timing persisted correctly
@@ -392,7 +397,7 @@ final class AlignmentCacheTests: XCTestCase {
 
         measure {
             Task {
-                try? await cache.save(alignment, for: testDocumentID, paragraph: 0)
+                try? await cache.save(alignment, for: testDocumentID, paragraph: 0, speed: 1.0)
             }
         }
     }
@@ -400,11 +405,11 @@ final class AlignmentCacheTests: XCTestCase {
     func testLoadPerformance() async throws {
         // Save first
         let alignment = createTestAlignment(paragraphIndex: 0, duration: 5.0)
-        try await cache.save(alignment, for: testDocumentID, paragraph: 0)
+        try await cache.save(alignment, for: testDocumentID, paragraph: 0, speed: 1.0)
 
         measure {
             Task {
-                _ = try? await cache.load(for: testDocumentID, paragraph: 0)
+                _ = try? await cache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
             }
         }
     }
