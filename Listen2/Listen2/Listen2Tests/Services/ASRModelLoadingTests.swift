@@ -130,24 +130,12 @@ final class ASRModelLoadingTests: XCTestCase {
                 model: nil
             ),
             nemo_ctc: SherpaOnnxOfflineNemoEncDecCtcModelConfig(
-                model: nil,
-                num_threads: 0,
-                debug: 0,
-                provider: nil
+                model: nil
             ),
             whisper: whisperConfig,
             tdnn: SherpaOnnxOfflineTdnnModelConfig(
                 model: nil
             ),
-            zipformer_ctc: SherpaOnnxOfflineZipformerCtcModelConfig(
-                model: nil
-            ),
-            wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
-                model: nil,
-                chunk_size: 0,
-                num_left_chunks: 0
-            ),
-            telespeech_ctc: ("" as NSString).utf8String,
             tokens: ("" as NSString).utf8String,
             num_threads: 1,
             debug: 1,
@@ -155,8 +143,7 @@ final class ASRModelLoadingTests: XCTestCase {
             model_type: ("" as NSString).utf8String,
             modeling_unit: ("" as NSString).utf8String,
             bpe_vocab: ("" as NSString).utf8String,
-            tokens_buf: nil,
-            tokens_buf_size: 0,
+            telespeech_ctc: ("" as NSString).utf8String,
             sense_voice: SherpaOnnxOfflineSenseVoiceModelConfig(
                 model: nil,
                 language: nil,
@@ -167,6 +154,26 @@ final class ASRModelLoadingTests: XCTestCase {
                 encoder: nil,
                 uncached_decoder: nil,
                 cached_decoder: nil
+            ),
+            fire_red_asr: SherpaOnnxOfflineFireRedAsrModelConfig(
+                encoder: nil,
+                decoder: nil
+            ),
+            dolphin: SherpaOnnxOfflineDolphinModelConfig(
+                model: nil
+            ),
+            zipformer_ctc: SherpaOnnxOfflineZipformerCtcModelConfig(
+                model: nil
+            ),
+            canary: SherpaOnnxOfflineCanaryModelConfig(
+                encoder: nil,
+                decoder: nil,
+                src_lang: nil,
+                tgt_lang: nil,
+                use_pnc: 0
+            ),
+            wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
+                model: nil
             )
         )
     }
@@ -183,18 +190,18 @@ final class ASRModelLoadingTests: XCTestCase {
                 model: ("" as NSString).utf8String,
                 scale: 0.5
             ),
-            ctc_fst_decoder_config: SherpaOnnxOfflineCtcFstDecoderConfig(
-                graph: ("" as NSString).utf8String,
-                max_active: 3000
-            ),
-            rule_fsts: ("" as NSString).utf8String,
-            rule_fars: ("" as NSString).utf8String,
             decoding_method: ("greedy_search" as NSString).utf8String,
             max_active_paths: 4,
-            hotwords_score: 1.5,
             hotwords_file: ("" as NSString).utf8String,
+            hotwords_score: 1.5,
+            rule_fsts: ("" as NSString).utf8String,
+            rule_fars: ("" as NSString).utf8String,
             blank_penalty: 0.0,
-            model_name: ("" as NSString).utf8String
+            hr: SherpaOnnxHomophoneReplacerConfig(
+                dict_dir: ("" as NSString).utf8String,
+                lexicon: ("" as NSString).utf8String,
+                rule_fsts: ("" as NSString).utf8String
+            )
         )
     }
 }
