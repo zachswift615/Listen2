@@ -131,6 +131,10 @@ struct GeneratedAudio {
     let sampleRate: Int32
     let phonemes: [PhonemeInfo]  // Complete phoneme data with positions
 
+    // NEW: Normalized text and character mapping from espeak-ng
+    let normalizedText: String
+    let charMapping: [(originalPos: Int, normalizedPos: Int)]
+
     init(audio: UnsafePointer<SherpaOnnxGeneratedAudio>) {
         self.sampleRate = audio.pointee.sample_rate
 
@@ -225,6 +229,41 @@ struct GeneratedAudio {
         }
 
         self.phonemes = phonemes
+
+        // NEW: Extract normalized text
+        if let normalized = audio.pointee.normalized_text {
+            self.normalizedText = String(cString: normalized)
+            print("[SherpaOnnx] Extracted normalized text: '\(self.normalizedText)'")
+        } else {
+            self.normalizedText = ""
+            print("[SherpaOnnx] No normalized text available from C API")
+        }
+
+        // NEW: Extract character mapping
+        var charMapping: [(Int, Int)] = []
+        if let mapping = audio.pointee.char_mapping {
+            let mapCount = Int(audio.pointee.char_mapping_count)
+            print("[SherpaOnnx] Extracting \(mapCount) character mapping entries")
+
+            for i in 0..<mapCount {
+                let origPos = Int(mapping[i * 2])
+                let normPos = Int(mapping[i * 2 + 1])
+                charMapping.append((origPos, normPos))
+            }
+
+            // Log first few mappings for verification
+            if mapCount > 0 {
+                let sampleCount = min(3, mapCount)
+                print("[SherpaOnnx] First \(sampleCount) char mappings:")
+                for i in 0..<sampleCount {
+                    print("  [\(i)]: orig_pos=\(charMapping[i].0), norm_pos=\(charMapping[i].1)")
+                }
+            }
+        } else {
+            print("[SherpaOnnx] No character mapping available from C API")
+        }
+
+        self.charMapping = charMapping
     }
 }
 
@@ -275,7 +314,7 @@ final class SherpaOnnxOfflineTtsWrapper {
     func generate(text: String, sid: Int32, speed: Float) -> GeneratedAudio {
         guard let tts = tts else {
             print("[SherpaOnnx] TTS not initialized")
-            return GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [])
+            return GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [], normalizedText: "", charMapping: [])
         }
 
         // Generate audio
@@ -306,9 +345,11 @@ final class SherpaOnnxOfflineTtsWrapper {
 // MARK: - GeneratedAudio Convenience Initializer
 
 extension GeneratedAudio {
-    init(samples: [Float], sampleRate: Int32, phonemes: [PhonemeInfo] = []) {
+    init(samples: [Float], sampleRate: Int32, phonemes: [PhonemeInfo] = [], normalizedText: String = "", charMapping: [(Int, Int)] = []) {
         self.samples = samples
         self.sampleRate = sampleRate
         self.phonemes = phonemes
+        self.normalizedText = normalizedText
+        self.charMapping = charMapping
     }
 }

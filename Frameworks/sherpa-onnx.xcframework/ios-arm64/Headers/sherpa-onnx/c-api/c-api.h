@@ -1099,6 +1099,11 @@ SHERPA_ONNX_API typedef struct SherpaOnnxGeneratedAudio {
   const char **phoneme_symbols;       // Array of IPA symbol strings
   const int32_t *phoneme_char_start;  // Character offset for each phoneme
   const int32_t *phoneme_char_length; // Character count for each phoneme
+
+  // NEW: Normalized text and character mapping from espeak-ng
+  const char *normalized_text;        // Text after espeak normalization (e.g., "Dr." -> "Doctor")
+  const int32_t *char_mapping;        // Pairs of [original_pos, normalized_pos]
+  int32_t char_mapping_count;         // Number of mapping pairs
 } SherpaOnnxGeneratedAudio;
 
 // If the callback returns 0, then it stops generating
