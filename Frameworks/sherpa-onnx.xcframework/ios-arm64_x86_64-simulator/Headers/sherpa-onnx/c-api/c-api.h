@@ -1092,6 +1092,13 @@ SHERPA_ONNX_API typedef struct SherpaOnnxGeneratedAudio {
   const float *samples;  // in the range [-1, 1]
   int32_t n;             // number of samples
   int32_t sample_rate;
+  const int32_t *phoneme_durations;  // sample count per phoneme (w_ceil tensor)
+  int32_t num_phonemes;              // number of phonemes
+
+  // Phoneme sequence data (aligned with phoneme_durations)
+  const char **phoneme_symbols;       // Array of IPA symbol strings
+  const int32_t *phoneme_char_start;  // Character offset for each phoneme
+  const int32_t *phoneme_char_length; // Character count for each phoneme
 } SherpaOnnxGeneratedAudio;
 
 // If the callback returns 0, then it stops generating

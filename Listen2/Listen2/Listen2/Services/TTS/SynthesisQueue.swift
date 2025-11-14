@@ -193,16 +193,11 @@ final class SynthesisQueue {
         }
     }
 
-    /// Perform word-level alignment using phoneme sequence
+    /// Perform word-level alignment using phoneme sequence from espeak
     /// - Parameters:
     ///   - index: Paragraph index
     ///   - result: Synthesis result containing phonemes
     private func performAlignment(for index: Int, result: SynthesisResult) async {
-        guard let wordMap = wordMap else {
-            print("[SynthesisQueue] No word map available for alignment")
-            return
-        }
-
         // Check disk cache first (if documentID is set)
         if let documentID = documentID,
            let cachedAlignment = try? await alignmentCache.load(
@@ -216,11 +211,13 @@ final class SynthesisQueue {
         }
 
         // Perform phoneme-based alignment
+        // - PDF: Uses VoxPDF words + espeak timing
+        // - EPUB/Clipboard: Uses text splitting + espeak timing
         do {
             let alignment = try await alignmentService.align(
                 phonemes: result.phonemes,
                 text: result.text,
-                wordMap: wordMap,
+                wordMap: wordMap,  // Optional - used for PDF word extraction
                 paragraphIndex: index
             )
 
