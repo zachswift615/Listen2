@@ -14,15 +14,15 @@
     },
     {
       "id": "en_US-lessac-high",
-      "name": "Lessac",
+      "name": "Lessac (High Quality)",
       "language": "en_US",
       "gender": "female",
       "quality": "high",
-      "size_mb": 80,
+      "size_mb": 109,
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-high.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": false
+      "is_bundled": true
     },
     {
       "id": "en_US-hfc_female-medium",
@@ -30,11 +30,11 @@
       "language": "en_US",
       "gender": "female",
       "quality": "medium",
-      "size_mb": 63,
+      "size_mb": 61,
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_female-medium.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": false
+      "is_bundled": true
     },
     {
       "id": "en_US-hfc_male-medium",
@@ -42,11 +42,11 @@
       "language": "en_US",
       "gender": "male",
       "quality": "medium",
-      "size_mb": 63,
+      "size_mb": 61,
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_male-medium.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": false
+      "is_bundled": true
     },
     {
       "id": "en_US-ryan-high",
