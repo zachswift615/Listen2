@@ -210,13 +210,15 @@ final class SynthesisQueue {
             return
         }
 
-        // Perform phoneme-based alignment
-        // - PDF: Uses VoxPDF words + espeak timing
-        // - EPUB/Clipboard: Uses text splitting + espeak timing
+        // Perform phoneme-based alignment with normalized text mapping
+        // - PDF: Maps VoxPDF words (original text) to phonemes (normalized text)
+        // - EPUB/Clipboard: Uses espeak word grouping in normalized text
         do {
             let alignment = try await alignmentService.align(
                 phonemes: result.phonemes,
                 text: result.text,
+                normalizedText: result.normalizedText,
+                charMapping: result.charMapping,
                 wordMap: wordMap,  // Optional - used for PDF word extraction
                 paragraphIndex: index
             )

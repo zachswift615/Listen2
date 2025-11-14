@@ -21,6 +21,13 @@ struct SynthesisResult {
 
     /// Sample rate of the audio
     let sampleRate: Int32
+
+    /// Normalized text from espeak (e.g., "Dr." -> "Doctor")
+    let normalizedText: String
+
+    /// Character position mapping: [(originalPos, normalizedPos)]
+    /// Maps positions in original text to positions in normalized text
+    let charMapping: [(originalPos: Int, normalizedPos: Int)]
 }
 
 /// Piper TTS provider using sherpa-onnx inference
@@ -125,7 +132,9 @@ final class PiperTTSProvider: TTSProvider {
             audioData: wavData,
             phonemes: audio.phonemes,
             text: text,
-            sampleRate: audio.sampleRate
+            sampleRate: audio.sampleRate,
+            normalizedText: audio.normalizedText,
+            charMapping: audio.charMapping
         )
     }
 
