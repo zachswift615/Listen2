@@ -17,18 +17,20 @@ actor PhonemeAlignmentService {
 
     // MARK: - Public Methods
 
-    /// Align phoneme sequence to VoxPDF words using character positions
+    /// Align phoneme sequence to words using espeak word groupings
+    /// This works for ALL document types (PDF, EPUB, clipboard) by using espeak's
+    /// built-in word grouping instead of external word extraction.
     /// - Parameters:
-    ///   - phonemes: Array of phonemes with character positions from Piper
-    ///   - text: The text that was synthesized
-    ///   - wordMap: Document word map containing word positions
+    ///   - phonemes: Array of phonemes with character positions from espeak
+    ///   - text: The text that was synthesized (espeak's normalized text)
+    ///   - wordMap: Ignored (kept for API compatibility)
     ///   - paragraphIndex: Index of the paragraph being aligned
     /// - Returns: AlignmentResult with precise word timings
     /// - Throws: AlignmentError if alignment fails
     func align(
         phonemes: [PhonemeInfo],
         text: String,
-        wordMap: DocumentWordMap,
+        wordMap: DocumentWordMap? = nil,
         paragraphIndex: Int
     ) async throws -> AlignmentResult {
         // Check cache first (keyed by text + paragraph)
@@ -40,33 +42,15 @@ actor PhonemeAlignmentService {
 
         print("[PhonemeAlign] Aligning \(phonemes.count) phonemes to text (length: \(text.count))")
 
-        // Get VoxPDF words for this paragraph
-        let voxPDFWords = wordMap.words(for: paragraphIndex)
-
-        guard !voxPDFWords.isEmpty else {
-            throw AlignmentError.recognitionFailed("No words found for paragraph \(paragraphIndex)")
-        }
-
-        print("[PhonemeAlign] Found \(voxPDFWords.count) VoxPDF words")
-
-        // Map phonemes to words using character position overlaps
-        let wordTimings = try mapPhonemesToWords(
+        // Use espeak phoneme counts for timing + document words for what to highlight
+        let alignmentResult = try alignWithEspeakWords(
             phonemes: phonemes,
             text: text,
-            voxPDFWords: voxPDFWords
+            wordMap: wordMap,
+            paragraphIndex: paragraphIndex
         )
 
-        // Calculate total duration from phoneme durations
-        let totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
-
-        // Create alignment result
-        let alignmentResult = AlignmentResult(
-            paragraphIndex: paragraphIndex,
-            totalDuration: totalDuration,
-            wordTimings: wordTimings
-        )
-
-        print("[PhonemeAlign] ✅ Created alignment with \(wordTimings.count) word timings, total duration: \(String(format: "%.2f", totalDuration))s")
+        print("[PhonemeAlign] ✅ Created alignment with \(alignmentResult.wordTimings.count) word timings, total duration: \(String(format: "%.2f", alignmentResult.totalDuration))s")
 
         // Cache the result
         alignmentCache[cacheKey] = alignmentResult
@@ -87,135 +71,275 @@ actor PhonemeAlignmentService {
 
     // MARK: - Private Methods
 
-    /// Map phoneme sequence to VoxPDF words using character position overlaps
+    /// Align using text splitting + espeak phoneme counts for timing
+    /// - What to highlight: Words from splitting synthesized text by whitespace
+    /// - When to highlight: Timing distributed proportionally by espeak phoneme count
+    ///
+    /// This avoids VoxPDF position mismatches by using espeak's actual synthesized text
+    /// for word boundaries. Works for ALL document types (PDF, EPUB, clipboard).
+    ///
     /// - Parameters:
-    ///   - phonemes: Array of phonemes with character positions
-    ///   - text: Full paragraph text
-    ///   - voxPDFWords: Array of word positions
-    /// - Returns: Array of word timings
-    /// - Throws: AlignmentError if mapping fails
-    private func mapPhonemesToWords(
+    ///   - phonemes: Array of phonemes with character positions from espeak
+    ///   - text: The synthesized text (normalized by espeak)
+    ///   - wordMap: Ignored (kept for API compatibility)
+    ///   - paragraphIndex: Paragraph index
+    /// - Returns: AlignmentResult with word timings
+    /// - Throws: AlignmentError if alignment fails
+    private func alignWithEspeakWords(
         phonemes: [PhonemeInfo],
         text: String,
-        voxPDFWords: [WordPosition]
-    ) throws -> [AlignmentResult.WordTiming] {
+        wordMap: DocumentWordMap?,
+        paragraphIndex: Int
+    ) throws -> AlignmentResult {
         guard !phonemes.isEmpty else {
-            throw AlignmentError.recognitionFailed("No phonemes to map")
+            throw AlignmentError.recognitionFailed("No phonemes to align")
         }
 
+        // Step 1: Split synthesized text by whitespace to get words
+        let documentWords = extractWordsFromText(text)
+        print("[PhonemeAlign] Text splitting: \(documentWords.count) words from synthesized text")
+
+        guard !documentWords.isEmpty else {
+            throw AlignmentError.recognitionFailed("No words found in text")
+        }
+
+        // Step 2: Group espeak phonemes by textRange (word groupings)
+        let phonemeGroups = groupPhonemesByWord(phonemes)
+        print("[PhonemeAlign] Espeak grouped: \(phonemeGroups.count) phoneme groups")
+
+        // Step 3: Calculate timing proportionally
+        let hasPhonemeDurations = phonemes.contains { $0.duration > 0 }
+        let totalDuration: TimeInterval
+
+        if hasPhonemeDurations {
+            totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
+        } else {
+            // Estimate: 50ms per phoneme
+            totalDuration = Double(phonemes.count) * 0.05
+            print("[PhonemeAlign] ⚠️ No per-phoneme durations, using estimate: \(String(format: "%.2f", totalDuration))s")
+        }
+
+        let durationPerPhoneme = totalDuration / Double(phonemes.count)
+
+        // Step 4: Match text words to phoneme groups sequentially and assign timing
         var wordTimings: [AlignmentResult.WordTiming] = []
         var currentTime: TimeInterval = 0
 
-        // Build index of phonemes by their character ranges for fast lookup
-        let phonemesByChar = buildPhonemeIndex(phonemes: phonemes)
+        // Match sequentially (espeak processes linearly, word order preserved)
+        let matchCount = min(documentWords.count, phonemeGroups.count)
 
-        for (wordIndex, word) in voxPDFWords.enumerated() {
-            // Word's character range
-            let wordCharRange = word.characterOffset..<(word.characterOffset + word.length)
+        for i in 0..<matchCount {
+            let (wordText, wordRange) = documentWords[i]
+            let phonemeGroup = phonemeGroups[i]
 
-            // Find all phonemes that overlap with this word's character range
-            let wordPhonemes = findPhonemesForCharRange(
-                charRange: wordCharRange,
-                phonemeIndex: phonemesByChar
-            )
-
-            if wordPhonemes.isEmpty {
-                print("⚠️  [PhonemeAlign] No phonemes found for word '\(word.text)' at chars \(wordCharRange)")
-                // Skip words without phonemes (might be punctuation-only)
-                continue
+            // Calculate duration for this word
+            let duration: TimeInterval
+            if hasPhonemeDurations {
+                duration = phonemeGroup.reduce(0.0) { $0 + $1.duration }
+            } else {
+                duration = durationPerPhoneme * Double(phonemeGroup.count)
             }
 
-            // Calculate timing from phonemes
-            let startTime = currentTime
-            let duration = wordPhonemes.reduce(0.0) { $0 + $1.duration }
-
-            // Convert character offset to String.Index
-            guard let startIndex = text.index(
-                text.startIndex,
-                offsetBy: word.characterOffset,
-                limitedBy: text.endIndex
-            ) else {
-                print("⚠️  [PhonemeAlign] Invalid character offset \(word.characterOffset) for word '\(word.text)'")
-                continue
-            }
-
-            guard let endIndex = text.index(
-                startIndex,
-                offsetBy: word.length,
-                limitedBy: text.endIndex
-            ) else {
-                print("⚠️  [PhonemeAlign] Invalid length \(word.length) for word '\(word.text)'")
-                continue
-            }
-
-            let stringRange = startIndex..<endIndex
-
-            // Validate extracted text matches expected word
-            let extractedText = String(text[stringRange])
-            if extractedText != word.text {
-                print("⚠️  [PhonemeAlign] VoxPDF position mismatch:")
-                print("    Expected: '\(word.text)', Got: '\(extractedText)' at offset \(word.characterOffset)")
-                continue
-            }
-
-            // Create word timing
             wordTimings.append(AlignmentResult.WordTiming(
-                wordIndex: wordIndex,
-                startTime: startTime,
+                wordIndex: i,
+                startTime: currentTime,
                 duration: duration,
-                text: word.text,
-                stringRange: stringRange
+                text: wordText,
+                stringRange: wordRange
             ))
 
             // Debug log for first few words
-            if wordIndex < 5 {
-                let phonemeList = wordPhonemes.map { $0.symbol }.joined(separator: " ")
-                print("   Word[\(wordIndex)] '\(word.text)' = [\(phonemeList)] @ \(String(format: "%.3f", startTime))s for \(String(format: "%.3f", duration))s")
+            if i < 5 {
+                let phonemeList = phonemeGroup.map { $0.symbol }.joined(separator: " ")
+                print("   Word[\(i)] '\(wordText)' = [\(phonemeList)] @ \(String(format: "%.3f", currentTime))s for \(String(format: "%.3f", duration))s")
             }
 
             currentTime += duration
         }
 
-        print("[PhonemeAlign] Mapped \(wordTimings.count) words from \(voxPDFWords.count) VoxPDF words")
-        return wordTimings
+        if documentWords.count != phonemeGroups.count {
+            print("⚠️  [PhonemeAlign] Word count mismatch: \(documentWords.count) text words vs \(phonemeGroups.count) phoneme groups")
+        }
+
+        print("[PhonemeAlign] ✅ Aligned \(wordTimings.count) words, total duration: \(String(format: "%.2f", currentTime))s")
+
+        return AlignmentResult(
+            paragraphIndex: paragraphIndex,
+            totalDuration: currentTime,
+            wordTimings: wordTimings
+        )
     }
 
-    /// Build an index mapping character positions to phonemes for fast lookup
-    private func buildPhonemeIndex(phonemes: [PhonemeInfo]) -> [Int: [PhonemeInfo]] {
-        var index: [Int: [PhonemeInfo]] = [:]
+    /// Group consecutive phonemes that share the same textRange (espeak word groupings)
+    private func groupPhonemesByWord(_ phonemes: [PhonemeInfo]) -> [[PhonemeInfo]] {
+        var groups: [[PhonemeInfo]] = []
+        var i = 0
 
-        for phoneme in phonemes {
-            for charPos in phoneme.textRange {
-                index[charPos, default: []].append(phoneme)
+        while i < phonemes.count {
+            let wordRange = phonemes[i].textRange
+
+            // Skip invalid positions
+            guard wordRange.lowerBound >= 0 else {
+                i += 1
+                continue
+            }
+
+            // Collect all consecutive phonemes with same range
+            var group: [PhonemeInfo] = []
+            while i < phonemes.count && phonemes[i].textRange == wordRange {
+                group.append(phonemes[i])
+                i += 1
+            }
+
+            if !group.isEmpty {
+                groups.append(group)
             }
         }
 
-        return index
+        return groups
     }
 
-    /// Find all phonemes that overlap with a character range
-    private func findPhonemesForCharRange(
-        charRange: Range<Int>,
-        phonemeIndex: [Int: [PhonemeInfo]]
-    ) -> [PhonemeInfo] {
-        var foundPhonemes: Set<PhonemeInfo> = []
+    /// Extract words from text by splitting on whitespace
+    private func extractWordsFromText(_ text: String) -> [(text: String, range: Range<String.Index>)] {
+        var words: [(String, Range<String.Index>)] = []
+        var currentIndex = text.startIndex
 
-        for charPos in charRange {
-            if let phonemes = phonemeIndex[charPos] {
-                foundPhonemes.formUnion(phonemes)
+        while currentIndex < text.endIndex {
+            // Skip whitespace
+            while currentIndex < text.endIndex && text[currentIndex].isWhitespace {
+                currentIndex = text.index(after: currentIndex)
+            }
+
+            guard currentIndex < text.endIndex else { break }
+
+            // Collect word characters
+            let wordStart = currentIndex
+            while currentIndex < text.endIndex && !text[currentIndex].isWhitespace {
+                currentIndex = text.index(after: currentIndex)
+            }
+
+            let wordRange = wordStart..<currentIndex
+            let wordText = String(text[wordRange])
+            words.append((wordText, wordRange))
+        }
+
+        return words
+    }
+
+    // MARK: - Premium Alignment (Task 9)
+
+    /// Premium alignment using real durations and intelligent normalization mapping
+    ///
+    /// This method integrates all components from the premium word highlighting plan:
+    /// - Real phoneme durations from w_ceil tensor (Task 6)
+    /// - Text normalization mapping for Dr./couldn't/TCP/IP (Task 7)
+    /// - Dynamic alignment engine (Task 8)
+    ///
+    /// - Parameters:
+    ///   - phonemes: Array of phonemes with real durations from w_ceil
+    ///   - displayText: Original text that user sees (e.g., "Dr. Smith's")
+    ///   - synthesizedText: Normalized text from espeak (e.g., "Doctor Smith s")
+    ///   - paragraphIndex: Index of the paragraph being aligned
+    /// - Returns: AlignmentResult with precise word timings
+    /// - Throws: AlignmentError if alignment fails
+    func alignPremium(
+        phonemes: [PhonemeInfo],
+        displayText: String,
+        synthesizedText: String,
+        paragraphIndex: Int
+    ) async throws -> AlignmentResult {
+
+        print("[PhonemeAlign] Premium alignment with \(phonemes.count) phonemes")
+        print("[PhonemeAlign] Display text: '\(displayText)'")
+        print("[PhonemeAlign] Synthesized text: '\(synthesizedText)'")
+
+        // Check if we have real durations
+        let hasRealDurations = phonemes.contains { $0.duration > 0 }
+        print("[PhonemeAlign] Using \(hasRealDurations ? "real" : "estimated") durations")
+
+        // Step 1: Extract words from both texts
+        let displayWords = extractWords(from: displayText)
+        let synthesizedWords = extractWords(from: synthesizedText)
+
+        print("[PhonemeAlign] Display words: \(displayWords)")
+        print("[PhonemeAlign] Synthesized words: \(synthesizedWords)")
+
+        // Step 2: Build normalization mapping
+        let mapper = TextNormalizationMapper()
+        let wordMapping = mapper.buildMapping(
+            display: displayWords,
+            synthesized: synthesizedWords
+        )
+
+        print("[PhonemeAlign] Created \(wordMapping.count) word mappings")
+
+        // Step 3: Group phonemes by espeak word boundaries
+        let phonemeGroups = groupPhonemesByWord(phonemes)
+        print("[PhonemeAlign] Grouped into \(phonemeGroups.count) phoneme groups")
+
+        // Step 4: Align using dynamic programming
+        let engine = DynamicAlignmentEngine()
+        let alignedWords = engine.align(
+            phonemeGroups: phonemeGroups,
+            displayWords: displayWords,
+            wordMapping: wordMapping
+        )
+
+        // Step 5: Convert to AlignmentResult format
+        var wordTimings: [AlignmentResult.WordTiming] = []
+        var searchStartIndex: String.Index? = nil
+
+        for (index, aligned) in alignedWords.enumerated() {
+            // Find string range in display text
+            let range = findWordRange(for: aligned.text, in: displayText, afterIndex: searchStartIndex)
+
+            wordTimings.append(AlignmentResult.WordTiming(
+                wordIndex: index,
+                startTime: aligned.startTime,
+                duration: aligned.duration,
+                text: aligned.text,
+                stringRange: range ?? displayText.startIndex..<displayText.startIndex
+            ))
+
+            // Update search start for next word
+            if let wordRange = range {
+                searchStartIndex = wordRange.upperBound
             }
         }
 
-        // Return in original order (sorted by text position)
-        return foundPhonemes.sorted { $0.textRange.lowerBound < $1.textRange.lowerBound }
-    }
-}
+        let totalDuration = alignedWords.last.map { $0.startTime + $0.duration } ?? 0
 
-// Make PhonemeInfo Hashable for Set operations
-extension PhonemeInfo: Hashable {
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(symbol)
-        hasher.combine(textRange.lowerBound)
-        hasher.combine(textRange.upperBound)
+        print("[PhonemeAlign] ✅ Premium alignment complete: \(wordTimings.count) words, \(String(format: "%.3f", totalDuration))s")
+
+        return AlignmentResult(
+            paragraphIndex: paragraphIndex,
+            totalDuration: totalDuration,
+            wordTimings: wordTimings
+        )
     }
+
+    /// Extract words from text (just the text, no ranges)
+    private func extractWords(from text: String) -> [String] {
+        text.split(separator: " ")
+            .map { String($0) }
+    }
+
+    /// Find the range of a word in the display text
+    private func findWordRange(
+        for word: String,
+        in text: String,
+        afterIndex: String.Index?
+    ) -> Range<String.Index>? {
+
+        let searchStart = afterIndex ?? text.startIndex
+
+        // Search for the word after the given index
+        if let range = text.range(of: word, options: [], range: searchStart..<text.endIndex) {
+            return range
+        }
+
+        // Fallback: search from beginning
+        return text.range(of: word)
+    }
+
 }
