@@ -543,9 +543,25 @@ actor PhonemeAlignmentService {
     // MARK: - Normalized Text Mapping
 
     /// Map a position in original text to normalized text using character mapping
+    ///
+    /// Character mappings define SEGMENT BOUNDARIES, not interpolation points.
+    /// Each mapping entry (origPos, normPos) marks where a segment starts.
+    /// The segment extends from this mapping to the next one.
+    ///
+    /// Example:
+    ///   Mapping: [(0, 0), (4, 7)]
+    ///   Creates segment: orig[0,4) → norm[0,7)
+    ///   - orig[0] → norm[0] (start boundary)
+    ///   - orig[1] → norm[1] (proportional within segment)
+    ///   - orig[3] → norm[6] (proportional, 3/4 through orig segment = 6/7 through norm segment)
+    ///   - orig[4] → norm[7] (end boundary = start of next segment)
+    ///
+    /// For word-level highlighting, we typically map word start/end boundaries:
+    ///   Word at orig[start, end) → find segment → map both boundaries
+    ///
     /// - Parameters:
     ///   - originalPos: Position in original text
-    ///   - mapping: Array of (originalPos, normalizedPos) tuples
+    ///   - mapping: Array of (originalPos, normalizedPos) tuples defining segment starts
     /// - Returns: Position in normalized text
     private func mapToNormalized(originalPos: Int, mapping: [(Int, Int)]) -> Int {
         // Handle empty mapping - return position as-is
@@ -553,32 +569,43 @@ actor PhonemeAlignmentService {
             return originalPos
         }
 
-        // Find the mapping entry that covers this position
-        for (i, map) in mapping.enumerated() {
-            let (origStart, normStart) = map
+        // Find the segment this position falls in
+        for i in 0..<mapping.count {
+            let (origStart, normStart) = mapping[i]
 
-            // Check if this position falls within this mapping segment
-            if originalPos >= origStart {
-                // Find the next mapping entry to determine segment bounds
-                if i + 1 < mapping.count {
-                    let nextMap = mapping[i + 1]
-                    let (nextOrigStart, _) = nextMap
+            // Exact boundary match
+            if originalPos == origStart {
+                return normStart
+            }
 
-                    // Position is between map[i] and map[i+1]
-                    if originalPos < nextOrigStart {
-                        let offset = originalPos - origStart
-                        return normStart + offset
-                    }
-                } else {
-                    // Last mapping entry - apply offset from last known point
-                    let offset = originalPos - origStart
-                    return normStart + offset
+            // Check if position is before this mapping point
+            if originalPos < origStart {
+                // Position is before the first mapping - use identity mapping
+                if i == 0 {
+                    return originalPos
                 }
+
+                // Position is in the segment between mapping[i-1] and mapping[i]
+                let (prevOrigStart, prevNormStart) = mapping[i - 1]
+                let origLength = origStart - prevOrigStart
+                let normLength = normStart - prevNormStart
+                let offset = originalPos - prevOrigStart
+
+                // Proportional mapping within the segment
+                // Use ceiling division to ensure we capture the full expanded text
+                // Example: orig[0,4) → norm[0,7), position 3 → (3*7+3)/4 = 6 (not 5)
+                let normalizedOffset = (offset * normLength + origLength - 1) / origLength
+                return prevNormStart + normalizedOffset
             }
         }
 
-        // Fallback: position before first mapping entry
-        return originalPos
+        // Position is after the last mapping point
+        let (lastOrigStart, lastNormStart) = mapping[mapping.count - 1]
+
+        // If there's a next mapping, we're in the last segment
+        // Otherwise, extend proportionally
+        let offset = originalPos - lastOrigStart
+        return lastNormStart + offset
     }
 
     // MARK: - Cache Management
