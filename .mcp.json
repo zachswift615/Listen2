@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "jility": {
+      "command": "/Users/zachswift/projects/Jility/target/release/jility-mcp",
+      "args": [],
+      "env": {
+        "JILITY_API_URL": "http://localhost:3900/api",
+        "JILITY_PROJECT_ID": "67e0b9e0-18e7-4e83-9364-2c671ede832a",
+        "JILITY_API_TOKEN": "jil_live_eE0mfOFWFocRba2Sx93dIVba8ZILGIjP"
+      }
+    },
+  }
+}
+
