@@ -15,6 +15,16 @@ actor PhonemeAlignmentService {
     /// Cache of alignments by text hash
     private var alignmentCache: [String: AlignmentResult] = [:]
 
+    /// LRU cache: tracks access order for eviction
+    private var cacheAccessOrder: [String] = []
+
+    /// Maximum cache size (prevents unbounded memory growth)
+    private let maxCacheSize = 100
+
+    /// Cache statistics
+    private var cacheHits = 0
+    private var cacheMisses = 0
+
     // MARK: - Public Methods
 
     /// Align phoneme sequence to words using espeak word groupings
@@ -36,9 +46,13 @@ actor PhonemeAlignmentService {
         // Check cache first (keyed by text + paragraph)
         let cacheKey = "\(paragraphIndex):\(text)"
         if let cached = alignmentCache[cacheKey] {
-            print("[PhonemeAlign] Using cached alignment for paragraph \(paragraphIndex)")
+            cacheHits += 1
+            updateCacheAccessOrder(key: cacheKey)
+            print("[PhonemeAlign] ✅ Cache hit for paragraph \(paragraphIndex) (hits: \(cacheHits), misses: \(cacheMisses), rate: \(String(format: "%.1f", Double(cacheHits) / Double(cacheHits + cacheMisses) * 100))%)")
             return cached
         }
+
+        cacheMisses += 1
 
         print("[PhonemeAlign] Aligning \(phonemes.count) phonemes to text (length: \(text.count))")
 
@@ -52,8 +66,8 @@ actor PhonemeAlignmentService {
 
         print("[PhonemeAlign] ✅ Created alignment with \(alignmentResult.wordTimings.count) word timings, total duration: \(String(format: "%.2f", alignmentResult.totalDuration))s")
 
-        // Cache the result
-        alignmentCache[cacheKey] = alignmentResult
+        // Cache the result with LRU eviction
+        updateCache(key: cacheKey, result: alignmentResult)
 
         return alignmentResult
     }
@@ -64,9 +78,13 @@ actor PhonemeAlignmentService {
         return alignmentCache[cacheKey]
     }
 
-    /// Clear the alignment cache
+    /// Clear the alignment cache and reset statistics
     func clearCache() {
         alignmentCache.removeAll()
+        cacheAccessOrder.removeAll()
+        cacheHits = 0
+        cacheMisses = 0
+        print("[PhonemeAlign] Cache cleared")
     }
 
     // MARK: - Private Methods
@@ -340,6 +358,40 @@ actor PhonemeAlignmentService {
 
         // Fallback: search from beginning
         return text.range(of: word)
+    }
+
+    // MARK: - Cache Management
+
+    /// Update cache with LRU eviction policy
+    private func updateCache(key: String, result: AlignmentResult) {
+        // Add to cache
+        alignmentCache[key] = result
+
+        // Update access order
+        updateCacheAccessOrder(key: key)
+
+        // Evict oldest if over limit
+        if cacheAccessOrder.count > maxCacheSize {
+            let oldestKey = cacheAccessOrder.removeFirst()
+            alignmentCache.removeValue(forKey: oldestKey)
+            print("[PhonemeAlign] 🗑️ Evicted cache entry (size: \(cacheAccessOrder.count)/\(maxCacheSize))")
+        }
+    }
+
+    /// Update cache access order for LRU tracking
+    private func updateCacheAccessOrder(key: String) {
+        // Remove existing entry if present
+        cacheAccessOrder.removeAll { $0 == key }
+
+        // Add to end (most recently used)
+        cacheAccessOrder.append(key)
+    }
+
+    /// Get cache statistics
+    func getCacheStats() -> (hits: Int, misses: Int, size: Int, hitRate: Double) {
+        let total = cacheHits + cacheMisses
+        let hitRate = total > 0 ? Double(cacheHits) / Double(total) : 0.0
+        return (cacheHits, cacheMisses, alignmentCache.count, hitRate)
     }
 
 }
