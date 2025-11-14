@@ -161,7 +161,7 @@ struct AlignmentResult: Codable, Equatable {
 }
 
 /// Errors that can occur during alignment
-enum AlignmentError: Error, LocalizedError {
+enum AlignmentError: Error, LocalizedError, Equatable {
     case modelNotInitialized
     case audioLoadFailed(String)
     case audioConversionFailed(String)
