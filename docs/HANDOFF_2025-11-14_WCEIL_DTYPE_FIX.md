@@ -102,6 +102,30 @@ Durations: [0.023s, 0.012s, 0.023s, ...]  ✅
 
 ## 🔴 Current Issues (To Address Next Session)
 
+### Issue #0: CRITICAL - CPU Overload (476% CPU Usage!)
+
+**Symptom:** App is using 476% CPU and 3.23 GB RAM, causing thermal throttling
+
+**Evidence:** Xcode Activity Monitor screenshot shows:
+- CPU: 476% (using ~4.76 cores simultaneously!)
+- Memory: 3.23 GB
+- This explains the multi-minute pauses and hangs
+
+**Likely Causes:**
+1. Multiple paragraphs synthesizing simultaneously (no queue throttling)
+2. Synthesis running on too many threads
+3. ONNX inference creating thread pool explosion
+4. No CPU budget or rate limiting
+
+**CRITICAL Next Steps:**
+1. Check how many synthesis tasks run concurrently
+2. Add queue with maxConcurrentOperationCount = 1
+3. Profile thread count during synthesis
+4. Check ONNX Runtime thread settings
+5. Add CPU usage monitoring/logging
+
+**This must be fixed FIRST** - nothing else matters if the phone is unusable.
+
 ### Issue #1: Synthesis Performance - Long Pauses
 
 **Symptom:** Audio stops for minutes between paragraphs with no feedback
