@@ -202,22 +202,22 @@ final class AlignmentCacheTests: XCTestCase {
 
     func testWordTimingsPersistence() async throws {
         // Create alignment with word timings
-        let dummyRange = "test text".startIndex..<"test".endIndex
-
         let wordTimings = [
             AlignmentResult.WordTiming(
                 wordIndex: 0,
                 startTime: 0.0,
                 duration: 0.5,
                 text: "Hello",
-                stringRange: dummyRange
+                rangeLocation: 0,
+                rangeLength: 5
             ),
             AlignmentResult.WordTiming(
                 wordIndex: 1,
                 startTime: 0.5,
                 duration: 0.7,
                 text: "world",
-                stringRange: dummyRange
+                rangeLocation: 6,
+                rangeLength: 5
             )
         ]
 
@@ -318,37 +318,38 @@ final class AlignmentCacheTests: XCTestCase {
     /// Test that cache persists complex word timings with string ranges
     func testComplexAlignmentPersistence() async throws {
         // Create alignment with detailed word timings
-        let text = "The quick brown fox"
-        let dummyRange = text.startIndex..<text.endIndex
-
         let wordTimings = [
             AlignmentResult.WordTiming(
                 wordIndex: 0,
                 startTime: 0.0,
                 duration: 0.35,
                 text: "The",
-                stringRange: dummyRange
+                rangeLocation: 0,
+                rangeLength: 3
             ),
             AlignmentResult.WordTiming(
                 wordIndex: 1,
                 startTime: 0.35,
                 duration: 0.42,
                 text: "quick",
-                stringRange: dummyRange
+                rangeLocation: 4,
+                rangeLength: 5
             ),
             AlignmentResult.WordTiming(
                 wordIndex: 2,
                 startTime: 0.77,
                 duration: 0.48,
                 text: "brown",
-                stringRange: dummyRange
+                rangeLocation: 10,
+                rangeLength: 5
             ),
             AlignmentResult.WordTiming(
                 wordIndex: 3,
                 startTime: 1.25,
                 duration: 0.40,
                 text: "fox",
-                stringRange: dummyRange
+                rangeLocation: 16,
+                rangeLength: 3
             )
         ]
 

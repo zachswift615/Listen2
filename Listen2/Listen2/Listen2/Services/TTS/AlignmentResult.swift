@@ -47,18 +47,15 @@ struct AlignmentResult: Codable, Equatable {
             startTime: TimeInterval,
             duration: TimeInterval,
             text: String,
-            stringRange: Range<String.Index>
+            rangeLocation: Int,
+            rangeLength: Int
         ) {
             self.wordIndex = wordIndex
             self.startTime = startTime
             self.duration = duration
             self.text = text
-
-            // Store the offsets from a dummy string
-            // These will be used to reconstruct the range from actual paragraph text
-            let dummyString = String(repeating: " ", count: 1000)
-            self.rangeLocation = dummyString.distance(from: dummyString.startIndex, to: stringRange.lowerBound)
-            self.rangeLength = dummyString.distance(from: stringRange.lowerBound, to: stringRange.upperBound)
+            self.rangeLocation = rangeLocation
+            self.rangeLength = rangeLength
         }
 
         /// Reconstruct string range from paragraph text

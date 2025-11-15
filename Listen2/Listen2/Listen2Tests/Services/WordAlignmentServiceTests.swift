@@ -250,22 +250,22 @@ final class WordAlignmentServiceTests: XCTestCase {
     }
 
     func testWordTimingAtTime() {
-        let dummyRange = "test".startIndex..<"test".endIndex
-
         let timings = [
             AlignmentResult.WordTiming(
                 wordIndex: 0,
                 startTime: 0.0,
                 duration: 0.5,
                 text: "Hello",
-                stringRange: dummyRange
+                rangeLocation: 0,
+                rangeLength: 5
             ),
             AlignmentResult.WordTiming(
                 wordIndex: 1,
                 startTime: 0.5,
                 duration: 0.5,
                 text: "world",
-                stringRange: dummyRange
+                rangeLocation: 6,
+                rangeLength: 5
             )
         ]
 
@@ -720,7 +720,6 @@ final class WordAlignmentServiceTests: XCTestCase {
         // Create alignment result with many words
         let wordCount = 1000
         var wordTimings: [AlignmentResult.WordTiming] = []
-        let dummyRange = "test".startIndex..<"test".endIndex
 
         for i in 0..<wordCount {
             wordTimings.append(AlignmentResult.WordTiming(
@@ -728,7 +727,8 @@ final class WordAlignmentServiceTests: XCTestCase {
                 startTime: Double(i) * 0.5,  // 0.5s per word
                 duration: 0.5,
                 text: "word\(i)",
-                stringRange: dummyRange
+                rangeLocation: i * 5,
+                rangeLength: 5
             ))
         }
 

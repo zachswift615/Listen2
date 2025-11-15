@@ -182,12 +182,16 @@ actor PhonemeAlignmentService {
                 duration = durationPerPhoneme * Double(phonemeGroup.count)
             }
 
+            let rangeLocation = text.distance(from: text.startIndex, to: wordRange.lowerBound)
+            let rangeLength = text.distance(from: wordRange.lowerBound, to: wordRange.upperBound)
+
             wordTimings.append(AlignmentResult.WordTiming(
                 wordIndex: i,
                 startTime: currentTime,
                 duration: duration,
                 text: wordText,
-                stringRange: wordRange
+                rangeLocation: rangeLocation,
+                rangeLength: rangeLength
             ))
 
             // Debug log for first few words
@@ -222,6 +226,8 @@ actor PhonemeAlignmentService {
 
                 // Get the original string range from documentWords
                 let (_, lastWordRange) = documentWords[matchCount - 1]
+                let rangeLocation = text.distance(from: text.startIndex, to: lastWordRange.lowerBound)
+                let rangeLength = text.distance(from: lastWordRange.lowerBound, to: lastWordRange.upperBound)
 
                 // Create new WordTiming with extended duration (struct is immutable)
                 let extendedTiming = AlignmentResult.WordTiming(
@@ -229,7 +235,8 @@ actor PhonemeAlignmentService {
                     startTime: lastTiming.startTime,
                     duration: lastTiming.duration + extraDuration,
                     text: lastTiming.text,
-                    stringRange: lastWordRange
+                    rangeLocation: rangeLocation,
+                    rangeLength: rangeLength
                 )
 
                 wordTimings.append(extendedTiming)
@@ -373,12 +380,23 @@ actor PhonemeAlignmentService {
             // Find string range in display text
             let range = findWordRange(for: aligned.text, in: displayText, afterIndex: searchStartIndex)
 
+            let rangeLocation: Int
+            let rangeLength: Int
+            if let range = range {
+                rangeLocation = displayText.distance(from: displayText.startIndex, to: range.lowerBound)
+                rangeLength = displayText.distance(from: range.lowerBound, to: range.upperBound)
+            } else {
+                rangeLocation = 0
+                rangeLength = 0
+            }
+
             wordTimings.append(AlignmentResult.WordTiming(
                 wordIndex: index,
                 startTime: aligned.startTime,
                 duration: aligned.duration,
                 text: aligned.text,
-                stringRange: range ?? displayText.startIndex..<displayText.startIndex
+                rangeLocation: rangeLocation,
+                rangeLength: rangeLength
             ))
 
             // Update search start for next word
@@ -516,16 +534,13 @@ actor PhonemeAlignmentService {
                 print("[PhonemeAlign]     -> ⚠️ No phonemes found, using estimate")
             }
 
-            // Convert character offset/length to String.Index range for AlignmentResult
-            let startIndex = originalText.index(originalText.startIndex, offsetBy: originalStart, limitedBy: originalText.endIndex) ?? originalText.startIndex
-            let endIndex = originalText.index(startIndex, offsetBy: voxWord.length, limitedBy: originalText.endIndex) ?? originalText.endIndex
-
             wordTimings.append(AlignmentResult.WordTiming(
                 wordIndex: index,
                 startTime: startTime,
                 duration: duration,
                 text: voxWord.text,
-                stringRange: startIndex..<endIndex
+                rangeLocation: originalStart,
+                rangeLength: voxWord.length
             ))
         }
 

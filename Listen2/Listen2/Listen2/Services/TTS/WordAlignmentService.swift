@@ -803,12 +803,16 @@ actor WordAlignmentService {
                 ) {
                     print("   ✅ CORRECTED: Found word at corrected position")
                     // Use corrected range instead
+                    let rangeLocation = paragraphText.distance(from: paragraphText.startIndex, to: correctedRange.lowerBound)
+                    let rangeLength = paragraphText.distance(from: correctedRange.lowerBound, to: correctedRange.upperBound)
+
                     wordTimings.append(AlignmentResult.WordTiming(
                         wordIndex: wordIndex,
                         startTime: startTime,
                         duration: duration,
                         text: voxWord.text,
-                        stringRange: correctedRange
+                        rangeLocation: rangeLocation,
+                        rangeLength: rangeLength
                     ))
                     continue
                 } else {
@@ -826,12 +830,16 @@ actor WordAlignmentService {
                 print("       Tokens: \(tokenIndices)")
             }
 
+            let rangeLocation = paragraphText.distance(from: paragraphText.startIndex, to: stringRange.lowerBound)
+            let rangeLength = paragraphText.distance(from: stringRange.lowerBound, to: stringRange.upperBound)
+
             wordTimings.append(AlignmentResult.WordTiming(
                 wordIndex: wordIndex,
                 startTime: startTime,
                 duration: duration,
                 text: voxWord.text,
-                stringRange: stringRange
+                rangeLocation: rangeLocation,
+                rangeLength: rangeLength
             ))
         }
 
