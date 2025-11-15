@@ -29,6 +29,7 @@ final class TTSService: NSObject, ObservableObject {
     private var fallbackSynthesizer = AVSpeechSynthesizer()
     private let voiceManager = VoiceManager()
     private var usePiper: Bool = true  // Feature flag
+    private var useFallback: Bool = false  // Disable fallback during testing
     private let audioSessionManager = AudioSessionManager()
     private let nowPlayingManager = NowPlayingInfoManager()
     private var audioPlayer: AudioPlayer!
@@ -439,12 +440,17 @@ final class TTSService: NSObject, ObservableObject {
                     try await playAudio(wavData)
                 } catch {
                     print("[TTSService] ⚠️ Piper synthesis failed: \(error)")
-                    // TEMPORARY: iOS fallback disabled for testing
-                    // await MainActor.run {
-                    //     self.fallbackToAVSpeech(text: text)
-                    // }
-                    await MainActor.run {
-                        self.isPlaying = false
+
+                    if useFallback {
+                        print("[TTSService] Falling back to AVSpeech")
+                        await MainActor.run {
+                            self.fallbackToAVSpeech(text: text)
+                        }
+                    } else {
+                        print("[TTSService] Fallback disabled - stopping playback")
+                        await MainActor.run {
+                            self.isPlaying = false
+                        }
                     }
                 }
             }
