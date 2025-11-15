@@ -42,3 +42,34 @@ Workshop can import context from past Claude Code sessions stored in JSONL trans
 - **Location:** By default, imports from the current project's JSONL files in `~/.claude/projects/`
 
 **Important:** You have permission to run `workshop import --execute`, but always ask the user first, especially if import has never been run in this project. Let them decide if they want to import historical context.
+
+## Framework Updates
+
+**IMPORTANT:** The Listen2 app uses a custom-built sherpa-onnx.xcframework. When sherpa-onnx C++ code changes, you MUST update the framework.
+
+**Quick update:**
+```bash
+./scripts/update-frameworks.sh
+```
+
+**Rebuild + update:**
+```bash
+./scripts/update-frameworks.sh --build
+```
+
+**After updating:**
+1. Clean build folder (⇧⌘K)
+2. Build and run (⌘R)
+
+See [docs/FRAMEWORK_UPDATE_GUIDE.md](../docs/FRAMEWORK_UPDATE_GUIDE.md) for complete documentation.
+
+**Why this matters:** Stale frameworks cause:
+- ❌ Stale normalized text bugs
+- ❌ Corrupt phoneme durations
+- ❌ Missing new features
+- ❌ Hours of debugging time wasted
+
+**Always check** after modifying:
+- sherpa-onnx C++ code
+- espeak-ng modifications
+- piper-phonemize changes
