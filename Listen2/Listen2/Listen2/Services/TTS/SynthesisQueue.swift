@@ -79,7 +79,7 @@ actor SynthesisQueue {
     // MARK: - Public Methods
 
     /// Update the content and reset the queue
-    func setContent(paragraphs: [String], speed: Float, documentID: UUID? = nil, wordMap: DocumentWordMap? = nil) {
+    func setContent(paragraphs: [String], speed: Float, documentID: UUID? = nil, wordMap: DocumentWordMap? = nil, autoPreSynthesize: Bool = true) {
         // Cancel all active tasks
         cancelAll()
 
@@ -93,6 +93,57 @@ actor SynthesisQueue {
         self.synthesizing.removeAll()
         self.synthesisProgress.removeAll()
         self.currentlySynthesizing = nil
+
+        // Auto-start pre-synthesis for first paragraph if enabled
+        if autoPreSynthesize && !paragraphs.isEmpty {
+            startPreSynthesis(count: 1)
+        }
+    }
+
+    /// Start pre-synthesizing first N paragraphs immediately
+    /// - Parameter count: Number of paragraphs to pre-synthesize (default 1)
+    func startPreSynthesis(count: Int = 1) {
+        let endIndex = min(count - 1, paragraphs.count - 1)
+
+        for index in 0...endIndex {
+            // Skip if already cached or synthesizing
+            guard cache[index] == nil && !synthesizing.contains(index) else {
+                continue
+            }
+
+            // Mark as synthesizing
+            synthesizing.insert(index)
+
+            // Start synthesis task
+            let task = Task {
+                do {
+                    synthesisProgress[index] = 0.0
+
+                    let text = paragraphs[index]
+
+                    synthesisProgress[index] = 0.5
+
+                    let result = try await provider.synthesize(text, speed: speed)
+
+                    // Cache audio data
+                    cache[index] = result.audioData
+                    synthesisProgress[index] = 1.0
+                    synthesizing.remove(index)
+                    activeTasks.removeValue(forKey: index)
+
+                    // Perform alignment
+                    await performAlignment(for: index, result: result)
+
+                } catch {
+                    synthesizing.remove(index)
+                    synthesisProgress.removeValue(forKey: index)
+                    activeTasks.removeValue(forKey: index)
+                    print("[SynthesisQueue] ⚠️ Pre-synthesis failed for paragraph \(index): \(error)")
+                }
+            }
+
+            activeTasks[index] = task
+        }
     }
 
     /// Update playback speed (clears cache as audio needs re-synthesis)
