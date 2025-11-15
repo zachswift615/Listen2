@@ -14,6 +14,8 @@
 		A6E0302C2EBEF943005E8935 /* onnxruntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B5E1952BF8ABC674E37C9244 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B2EBB9FC5ED1A582D8C83799 /* sherpa-onnx.xcframework */; };
 		C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; };
+		2C91A72303D145A286DD688E /* SentenceSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2322EB5C1384B0EB3C5ADB3 /* SentenceSplitter.swift */; };
+		B48C8219652942B484F787C9 /* SentenceSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080755C4D74441E3ACF62C0F /* SentenceSplitterTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -384,6 +386,8 @@
 		B2EBB9FC5ED1A582D8C83799 /* sherpa-onnx.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = "sherpa-onnx.xcframework"; path = "../../../sherpa-onnx/build-ios/sherpa-onnx.xcframework"; sourceTree = "<group>"; };
 		C7E4FB93BC17805118994288 /* nemo-ctc-model.int8.onnx */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = file; name = "nemo-ctc-model.int8.onnx"; path = "Listen2/Listen2/Listen2/Resources/ASRModels/nemo-ctc-conformer-small/nemo-ctc-model.int8.onnx"; sourceTree = "<group>"; };
 		DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = VoxPDFCore.xcframework; path = ../../Frameworks/VoxPDFCore.xcframework; sourceTree = "<group>"; };
+		D2322EB5C1384B0EB3C5ADB3 /* SentenceSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SentenceSplitter.swift; path = Listen2/Services/TTS/SentenceSplitter.swift; sourceTree = "<group>"; };
+		080755C4D74441E3ACF62C0F /* SentenceSplitterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SentenceSplitterTests.swift; path = Listen2Tests/Services/TTS/SentenceSplitterTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -421,6 +425,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2C91A72303D145A286DD688E /* SentenceSplitter.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1302,6 +1307,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B48C8219652942B484F787C9 /* SentenceSplitterTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
