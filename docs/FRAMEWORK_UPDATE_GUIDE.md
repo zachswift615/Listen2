@@ -1,14 +1,18 @@
 # Framework Update Guide
 
-This guide explains how to keep the sherpa-onnx framework up-to-date in the Listen2 project.
+This guide explains how to keep the frameworks (sherpa-onnx and VoxPDF) up-to-date in the Listen2 project.
 
 ## The Problem
 
-The Listen2 app uses a custom-built `sherpa-onnx.xcframework` that includes modifications for normalized text and phoneme alignment. When changes are made to the sherpa-onnx source code, the framework needs to be rebuilt and copied into the Listen2 project.
+The Listen2 app uses two custom-built frameworks:
+- **sherpa-onnx.xcframework** - TTS engine with normalized text and phoneme alignment
+- **VoxPDFCore.xcframework** - PDF text extraction with paragraph detection
+
+When changes are made to either framework's source code, they need to be rebuilt and copied into the Listen2 project.
 
 **Previous workflow problems:**
 - ❌ Manually copying frameworks is error-prone
-- ❌ Easy to forget to update after sherpa-onnx changes
+- ❌ Easy to forget to update after source changes
 - ❌ Stale frameworks cause hard-to-debug issues
 - ❌ No visibility into which framework version is deployed
 
@@ -20,18 +24,27 @@ Use the `update-frameworks.sh` script to automate framework updates.
 
 ### Manual Update (Recommended)
 
-When you've made changes to sherpa-onnx and want to use them in Listen2:
+When you've made changes to source code and want to use them in Listen2:
 
 ```bash
 cd /Users/zachswift/projects/Listen2
 
-# Option 1: Just copy the already-built framework
+# Update both frameworks (default)
 ./scripts/update-frameworks.sh
 
-# Option 2: Rebuild sherpa-onnx AND copy the framework
+# Update only VoxPDF
+./scripts/update-frameworks.sh --framework voxpdf
+
+# Update only sherpa-onnx
+./scripts/update-frameworks.sh --framework sherpa
+
+# Rebuild + update both frameworks
 ./scripts/update-frameworks.sh --build
 
-# Option 3: Force copy even if timestamps match
+# Rebuild + update VoxPDF only
+./scripts/update-frameworks.sh --build --framework voxpdf
+
+# Force copy even if timestamps match
 ./scripts/update-frameworks.sh --force
 ```
 
@@ -84,7 +97,7 @@ Add the automatic build phase to ensure everyone uses the correct framework.
 ## Script Options
 
 ### `update-frameworks.sh`
-Copies the framework from sherpa-onnx build directory to Listen2.
+Copies frameworks from their build directories to Listen2.
 
 **Checks:**
 - ✅ Framework exists at source location
@@ -94,20 +107,26 @@ Copies the framework from sherpa-onnx build directory to Listen2.
 
 **Usage:**
 ```bash
-./scripts/update-frameworks.sh          # Normal update
-./scripts/update-frameworks.sh --force  # Force copy
-./scripts/update-frameworks.sh --build  # Rebuild + copy
+./scripts/update-frameworks.sh                    # Update all frameworks
+./scripts/update-frameworks.sh --framework voxpdf # Update VoxPDF only
+./scripts/update-frameworks.sh --framework sherpa # Update sherpa-onnx only
+./scripts/update-frameworks.sh --force            # Force copy
+./scripts/update-frameworks.sh --build            # Rebuild + copy
 ```
 
 ### `update-frameworks.sh --build`
-Rebuilds the sherpa-onnx iOS framework AND copies it.
+Rebuilds the iOS frameworks AND copies them.
 
 **Use when:**
 - You've modified sherpa-onnx C++ code
 - You've updated espeak-ng or piper-phonemize
+- You've modified VoxPDF Rust code
+- You've updated VoxPDF paragraph detection
 - You want to ensure a clean build
 
-**Time:** ~5-6 minutes (full rebuild)
+**Time:**
+- sherpa-onnx: ~5-6 minutes (full rebuild)
+- VoxPDF: ~1-2 minutes (Rust compile + xcframework)
 
 ### `update-frameworks.sh --force`
 Forces copy even if timestamps suggest destination is up-to-date.
@@ -116,6 +135,14 @@ Forces copy even if timestamps suggest destination is up-to-date.
 - You suspect the framework is corrupted
 - You've manually modified the framework
 - Timestamps are misleading
+
+### `update-frameworks.sh --framework <name>`
+Updates only a specific framework.
+
+**Options:**
+- `all` (default) - Update both sherpa-onnx and VoxPDF
+- `sherpa` - Update sherpa-onnx only
+- `voxpdf` - Update VoxPDF only
 
 ## Troubleshooting
 
@@ -173,7 +200,9 @@ cd ~/projects/Listen2
 
 ## Framework Locations
 
-### Source (sherpa-onnx)
+### sherpa-onnx Framework
+
+**Source:**
 ```
 ~/projects/sherpa-onnx/build-ios/sherpa-onnx.xcframework
 ```
@@ -183,7 +212,7 @@ This is the BUILD OUTPUT from sherpa-onnx. Contains:
 - `ios-arm64_x86_64-simulator/` - Simulator architectures
 - `Info.plist` - Framework metadata
 
-### Destination (Listen2)
+**Destination:**
 ```
 ~/projects/Listen2/Frameworks/sherpa-onnx.xcframework
 ```
@@ -193,19 +222,42 @@ This is what Xcode links against. MUST match the source or you'll get:
 - Corrupt phoneme durations
 - Missing features
 
+### VoxPDF Framework
+
+**Source:**
+```
+~/projects/VoxPDF/voxpdf-core/build/VoxPDFCore.xcframework
+```
+
+This is the BUILD OUTPUT from VoxPDF. Contains:
+- `ios-arm64/` - Device architecture
+- `ios-arm64_x86_64-simulator/` - Simulator architectures (combined fat library)
+- Headers for C FFI interface
+
+**Destination:**
+```
+~/projects/Listen2/Frameworks/VoxPDFCore.xcframework
+```
+
+This is what Xcode links against. MUST match the source or you'll get:
+- Missing paragraph detection improvements
+- Outdated text extraction logic
+- Missing font size tracking
+
 ## Best Practices
 
 ### ✅ DO
-- Run `update-frameworks.sh` after modifying sherpa-onnx
+- Run `update-frameworks.sh` after modifying sherpa-onnx or VoxPDF
 - Clean build folder (`⇧⌘K`) after framework updates
 - Commit framework updates with descriptive messages
-- Document which sherpa-onnx commit you're using
+- Document which framework commits you're using
+- Use `--framework` to update only what changed
 
 ### ❌ DON'T
 - Manually copy frameworks (use the script)
 - Modify frameworks in `Listen2/Frameworks/` directly
-- Skip framework updates after sherpa-onnx changes
-- Assume the framework auto-updates
+- Skip framework updates after source changes
+- Assume the frameworks auto-update
 
 ## Verification
 
