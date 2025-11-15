@@ -352,67 +352,81 @@ final class SherpaOnnxOfflineTtsWrapper {
         sid: Int32,
         speed: Float,
         delegate: SynthesisStreamDelegate?
-    ) -> GeneratedAudio {
-        guard let tts = tts else {
-            print("[SherpaOnnx] TTS not initialized")
-            return GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [], normalizedText: "", charMapping: [])
-        }
-
-        // Create context to pass to C callback
-        class CallbackContext {
-            weak var delegate: SynthesisStreamDelegate?
-            var cancelled: Bool = false
-
-            init(delegate: SynthesisStreamDelegate?) {
-                self.delegate = delegate
+    ) async -> GeneratedAudio {
+        return await withCheckedContinuation { continuation in
+            guard let tts = tts else {
+                print("[SherpaOnnx] TTS not initialized")
+                continuation.resume(returning: GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [], normalizedText: "", charMapping: []))
+                return
             }
-        }
 
-        let context = CallbackContext(delegate: delegate)
-        let contextPtr = Unmanaged.passRetained(context).toOpaque()
+            // Create context to pass to C callback
+            class CallbackContext {
+                weak var delegate: SynthesisStreamDelegate?
+                var cancelled: Bool = false
 
-        // C callback function - matches signature: (const float *samples, int32_t n, float p, void *arg) -> int32_t
-        let callback: @convention(c) (UnsafePointer<Float>?, Int32, Float, UnsafeMutableRawPointer?) -> Int32 = { samples, n, progress, userData in
-            guard let userData = userData else { return 1 }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-            // Convert samples to Data
-            if let samples = samples {
-                let buffer = UnsafeBufferPointer(start: samples, count: Int(n))
-                let floatArray = Array(buffer)
-                let data = Data(bytes: floatArray, count: floatArray.count * MemoryLayout<Float>.stride)
-
-                // Call delegate
-                if let delegate = context.delegate {
-                    let shouldContinue = delegate.didReceiveAudioChunk(data, progress: Double(progress))
-                    if !shouldContinue {
-                        context.cancelled = true
-                        return 0  // Cancel synthesis
-                    }
+                init(delegate: SynthesisStreamDelegate?) {
+                    self.delegate = delegate
                 }
             }
 
-            return 1  // Continue synthesis
+            let context = CallbackContext(delegate: delegate)
+            let contextPtr = Unmanaged.passRetained(context).toOpaque()
+
+            // Ensure cleanup happens even if synthesis fails
+            defer {
+                Unmanaged<CallbackContext>.fromOpaque(contextPtr).release()
+            }
+
+            // C callback function - matches signature: (const float *samples, int32_t n, float p, void *arg) -> int32_t
+            let callback: @convention(c) (UnsafePointer<Float>?, Int32, Float, UnsafeMutableRawPointer?) -> Int32 = { samples, n, progress, userData in
+                guard let userData = userData else { return 1 }
+                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+                // Convert samples to Data
+                if let samples = samples {
+                    let buffer = UnsafeBufferPointer(start: samples, count: Int(n))
+                    let floatArray = Array(buffer)
+                    let data = Data(bytes: floatArray, count: floatArray.count * MemoryLayout<Float>.stride)
+
+                    // Call delegate
+                    if let delegate = context.delegate {
+                        let shouldContinue = delegate.didReceiveAudioChunk(data, progress: Double(progress))
+                        if !shouldContinue {
+                            context.cancelled = true
+                            return 0  // Cancel synthesis
+                        }
+                    }
+                }
+
+                return 1  // Continue synthesis
+            }
+
+            // Call C API with callback using the verified function name
+            let audio = SherpaOnnxOfflineTtsGenerateWithProgressCallbackWithArg(
+                tts,
+                (text as NSString).utf8String,
+                sid,
+                speed,
+                callback,
+                contextPtr
+            )
+
+            // Safely unwrap result
+            guard let audio = audio else {
+                print("[SherpaOnnx] TTS generation failed")
+                continuation.resume(returning: GeneratedAudio(samples: [], sampleRate: 22050, phonemes: [], normalizedText: "", charMapping: []))
+                return
+            }
+
+            // Wrap result
+            let result = GeneratedAudio(audio: audio)
+
+            // Free C struct
+            SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio)
+
+            continuation.resume(returning: result)
         }
-
-        // Call C API with callback using the verified function name
-        let audio = SherpaOnnxOfflineTtsGenerateWithProgressCallbackWithArg(
-            tts,
-            (text as NSString).utf8String,
-            sid,
-            speed,
-            callback,
-            contextPtr
-        )
-
-        // Wrap result
-        let result = GeneratedAudio(audio: audio!)
-
-        // Free C struct and context
-        SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio)
-        Unmanaged<CallbackContext>.fromOpaque(contextPtr).release()
-
-        return result
     }
 }
 
