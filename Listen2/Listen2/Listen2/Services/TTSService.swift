@@ -64,6 +64,17 @@ final class TTSService: NSObject, ObservableObject {
             self.audioPlayer = AudioPlayer()
         }
 
+        // TEMPORARY FIX: Clear corrupt alignment cache from previous sessions
+        // TODO: Remove this after confirmed working - added 2025-11-14
+        Task {
+            do {
+                try await alignmentCache.clearAll()
+                print("[TTSService] 🗑️ Cleared corrupt alignment cache")
+            } catch {
+                print("[TTSService] ⚠️ Failed to clear cache: \(error)")
+            }
+        }
+
         // Try to initialize Piper TTS and alignment service
         Task {
             await initializePiperProvider()
@@ -396,25 +407,27 @@ final class TTSService: NSObject, ObservableObject {
             Task {
                 do {
                     // Get audio from queue (may be pre-synthesized or synthesize on-demand)
+                    // TEMPORARY: Removed timeout - wait indefinitely for synthesis
                     guard let wavData = try await queue.getAudio(for: index) else {
-                        // Audio is being synthesized, wait briefly and retry
-                        try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                        guard let retryData = try await queue.getAudio(for: index) else {
-                            throw TTSError.synthesisFailed(reason: "Synthesis timeout")
-                        }
-                        try await playAudio(retryData)
-                        return
+                        throw TTSError.synthesisFailed(reason: "Synthesis returned nil")
                     }
                     try await playAudio(wavData)
                 } catch {
-                    print("[TTSService] ⚠️ Piper synthesis failed: \(error), falling back to AVSpeech")
+                    print("[TTSService] ⚠️ Piper synthesis failed: \(error)")
+                    // TEMPORARY: iOS fallback disabled for testing
+                    // await MainActor.run {
+                    //     self.fallbackToAVSpeech(text: text)
+                    // }
                     await MainActor.run {
-                        self.fallbackToAVSpeech(text: text)
+                        self.isPlaying = false
                     }
                 }
             }
         } else {
-            fallbackToAVSpeech(text: text)
+            // TEMPORARY: iOS fallback disabled for testing
+            // fallbackToAVSpeech(text: text)
+            print("[TTSService] ⚠️ Synthesis queue unavailable, fallback disabled")
+            isPlaying = false
         }
     }
 

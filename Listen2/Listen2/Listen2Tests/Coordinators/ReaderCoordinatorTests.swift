@@ -34,7 +34,8 @@ final class ReaderCoordinatorTests: XCTestCase {
         let document = createTestDocument()
         let context = createTestModelContext()
         context.insert(document)
-        return ReaderViewModel(document: document, modelContext: context)
+        let ttsService = TTSService()
+        return ReaderViewModel(document: document, modelContext: context, ttsService: ttsService)
     }
 
     private func createTestVoice() -> AVVoice? {

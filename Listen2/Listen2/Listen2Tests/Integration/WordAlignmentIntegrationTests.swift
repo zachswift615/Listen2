@@ -83,7 +83,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
 
         // Step 1: Synthesize audio with Piper TTS
         print("Step 1: Synthesizing audio...")
-        let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
 
         XCTAssertGreaterThan(audioData.count, 0, "TTS should produce audio data")
 
@@ -168,7 +169,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let words = createWordMapFromText(text, paragraphIndex: 0)
         let wordMap = DocumentWordMap(words: words)
 
-        let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
         let audioURL = try createTempAudioFile(from: audioData)
 
         // Step 1: Perform alignment (should not be cached)
@@ -182,10 +184,10 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let time1 = CFAbsoluteTimeGetCurrent() - startTime1
 
         // Step 2: Save to persistent cache
-        try await alignmentCache.save(alignment1, for: testDocumentID, paragraph: 0)
+        try await alignmentCache.save(alignment1, for: testDocumentID, paragraph: 0, speed: 1.0)
 
         // Step 3: Load from persistent cache
-        let cachedAlignment = try await alignmentCache.load(for: testDocumentID, paragraph: 0)
+        let cachedAlignment = try await alignmentCache.load(for: testDocumentID, paragraph: 0, speed: 1.0)
 
         XCTAssertNotNil(cachedAlignment, "Alignment should be cached")
         XCTAssertEqual(cachedAlignment?.paragraphIndex, alignment1.paragraphIndex)
@@ -212,12 +214,12 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let wordMap = DocumentWordMap(words: words)
 
         // Synthesize at slow speed
-        let slowAudio = try await ttsProvider.synthesize(text, speed: 0.5)
-        let slowURL = try createTempAudioFile(from: slowAudio)
+        let slowResult = try await ttsProvider.synthesize(text, speed: 0.5)
+        let slowURL = try createTempAudioFile(from: slowResult.audioData)
 
         // Synthesize at fast speed
-        let fastAudio = try await ttsProvider.synthesize(text, speed: 2.0)
-        let fastURL = try createTempAudioFile(from: fastAudio)
+        let fastResult = try await ttsProvider.synthesize(text, speed: 2.0)
+        let fastURL = try createTempAudioFile(from: fastResult.audioData)
 
         // Align both
         let slowAlignment = try await alignmentService.align(
@@ -261,7 +263,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let wordMap = DocumentWordMap(words: words)
 
         // Synthesize and align
-        let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
         let audioURL = try createTempAudioFile(from: audioData)
 
         let alignment = try await alignmentService.align(
@@ -294,7 +297,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let wordMap = DocumentWordMap(words: words)
 
         // Synthesize and align
-        let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
         let audioURL = try createTempAudioFile(from: audioData)
 
         let alignment = try await alignmentService.align(
@@ -337,7 +341,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let wordMap = DocumentWordMap(words: words)
 
         // Synthesize audio
-        let audioData = try await ttsProvider.synthesize(paragraphText, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(paragraphText, speed: 1.0)
+        let audioData = synthesisResult.audioData
         let audioURL = try createTempAudioFile(from: audioData)
 
         // Measure alignment time
@@ -383,7 +388,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
             let words = createWordMapFromText(text, paragraphIndex: index)
             let wordMap = DocumentWordMap(words: words)
 
-            let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+            let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
             let audioURL = try createTempAudioFile(from: audioData)
 
             let alignment = try await alignmentService.align(
@@ -396,7 +402,7 @@ final class WordAlignmentIntegrationTests: XCTestCase {
             alignments.append(alignment)
 
             // Save to persistent cache
-            try await alignmentCache.save(alignment, for: testDocumentID, paragraph: index)
+            try await alignmentCache.save(alignment, for: testDocumentID, paragraph: index, speed: 1.0)
         }
 
         // Second pass: Load from cache (cache hits)
@@ -405,7 +411,7 @@ final class WordAlignmentIntegrationTests: XCTestCase {
 
         for index in 0..<paragraphs.count {
             let startTime = CFAbsoluteTimeGetCurrent()
-            let cached = try await alignmentCache.load(for: testDocumentID, paragraph: index)
+            let cached = try await alignmentCache.load(for: testDocumentID, paragraph: index, speed: 1.0)
             let loadTime = CFAbsoluteTimeGetCurrent() - startTime
 
             if cached != nil {
@@ -438,7 +444,8 @@ final class WordAlignmentIntegrationTests: XCTestCase {
         let wordMap = DocumentWordMap(words: words)
 
         // Synthesize and align
-        let audioData = try await ttsProvider.synthesize(text, speed: 1.0)
+        let synthesisResult = try await ttsProvider.synthesize(text, speed: 1.0)
+        let audioData = synthesisResult.audioData
         let audioURL = try createTempAudioFile(from: audioData)
 
         let alignment = try await alignmentService.align(

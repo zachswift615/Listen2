@@ -122,19 +122,19 @@ final class ASRModelLoadingTests: XCTestCase {
     private func createOfflineModelConfig(whisperConfig: SherpaOnnxOfflineWhisperModelConfig) -> SherpaOnnxOfflineModelConfig {
         return SherpaOnnxOfflineModelConfig(
             transducer: SherpaOnnxOfflineTransducerModelConfig(
-                encoder: nil,
-                decoder: nil,
-                joiner: nil
+                encoder: ("" as NSString).utf8String,
+                decoder: ("" as NSString).utf8String,
+                joiner: ("" as NSString).utf8String
             ),
             paraformer: SherpaOnnxOfflineParaformerModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             ),
             nemo_ctc: SherpaOnnxOfflineNemoEncDecCtcModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             ),
             whisper: whisperConfig,
             tdnn: SherpaOnnxOfflineTdnnModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             ),
             tokens: ("" as NSString).utf8String,
             num_threads: 1,
@@ -145,35 +145,35 @@ final class ASRModelLoadingTests: XCTestCase {
             bpe_vocab: ("" as NSString).utf8String,
             telespeech_ctc: ("" as NSString).utf8String,
             sense_voice: SherpaOnnxOfflineSenseVoiceModelConfig(
-                model: nil,
-                language: nil,
+                model: ("" as NSString).utf8String,
+                language: ("" as NSString).utf8String,
                 use_itn: 0
             ),
             moonshine: SherpaOnnxOfflineMoonshineModelConfig(
-                preprocessor: nil,
-                encoder: nil,
-                uncached_decoder: nil,
-                cached_decoder: nil
+                preprocessor: ("" as NSString).utf8String,
+                encoder: ("" as NSString).utf8String,
+                uncached_decoder: ("" as NSString).utf8String,
+                cached_decoder: ("" as NSString).utf8String
             ),
             fire_red_asr: SherpaOnnxOfflineFireRedAsrModelConfig(
-                encoder: nil,
-                decoder: nil
+                encoder: ("" as NSString).utf8String,
+                decoder: ("" as NSString).utf8String
             ),
             dolphin: SherpaOnnxOfflineDolphinModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             ),
             zipformer_ctc: SherpaOnnxOfflineZipformerCtcModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             ),
             canary: SherpaOnnxOfflineCanaryModelConfig(
-                encoder: nil,
-                decoder: nil,
-                src_lang: nil,
-                tgt_lang: nil,
+                encoder: ("" as NSString).utf8String,
+                decoder: ("" as NSString).utf8String,
+                src_lang: ("" as NSString).utf8String,
+                tgt_lang: ("" as NSString).utf8String,
                 use_pnc: 0
             ),
             wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
-                model: nil
+                model: ("" as NSString).utf8String
             )
         )
     }
