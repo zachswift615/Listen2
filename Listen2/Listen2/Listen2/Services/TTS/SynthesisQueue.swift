@@ -105,8 +105,7 @@ actor SynthesisQueue {
     func getAudio(for index: Int) async throws -> Data? {
         // Check cache first
         if let cachedData = cache[index] {
-            // Start pre-synthesizing upcoming paragraphs
-            preSynthesizeAhead(from: index)
+            // DON'T call preSynthesizeAhead here - cache hits happen rapidly and create concurrent Tasks
             return cachedData
         }
 
@@ -117,7 +116,7 @@ actor SynthesisQueue {
 
             // Check cache again - pre-synthesis might have completed
             if let cachedData = cache[index] {
-                preSynthesizeAhead(from: index)
+                // DON'T call preSynthesizeAhead here - cache hits happen rapidly and create concurrent Tasks
                 return cachedData
             }
         }
@@ -228,15 +227,19 @@ actor SynthesisQueue {
 
     /// Perform pre-synthesis (actor-isolated, serialized)
     private func doPreSynthesis(from currentIndex: Int) async {
-        // CRITICAL: Only pre-synthesize if no synthesis is currently running
-        guard !isSynthesizing else {
-            print("[SynthesisQueue] ⏭️  Skipping pre-synthesis - another synthesis in progress")
+        // CRITICAL: Don't start pre-synthesis if ANY synthesis is running
+        // This prevents creating multiple concurrent synthesis tasks
+        guard !isSynthesizing && activeTasks.isEmpty else {
+            print("[SynthesisQueue] ⏭️  Skipping pre-synthesis - synthesis already in progress")
             return
         }
 
         // Calculate range of paragraphs to pre-synthesize
         let startIndex = currentIndex + 1
         let endIndex = min(currentIndex + lookaheadCount, paragraphs.count - 1)
+
+        // Early return if no paragraphs to pre-synthesize (e.g., already at last paragraph)
+        guard startIndex <= endIndex else { return }
 
         // Only pre-synthesize ONE paragraph at a time
         for index in startIndex...endIndex {
@@ -291,6 +294,9 @@ actor SynthesisQueue {
             await performAlignment(for: index, result: result)
 
             print("[SynthesisQueue] ✅ Pre-synthesis paragraph \(index) done - \(String(format: "%.2f", totalTime))s, memory: \(String(format: "%.1f", memoryFinal)) MB")
+
+            // Trigger pre-synthesis for NEXT paragraph (ensures serialization - only called after completion, not on cache hits)
+            preSynthesizeAhead(from: index)
         } catch {
             // Remove from synthesizing set on error
             synthesizing.remove(index)

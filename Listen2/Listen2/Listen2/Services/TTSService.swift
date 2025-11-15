@@ -52,6 +52,8 @@ final class TTSService: NSObject, ObservableObject {
     private var lastHighlightedWordIndex: Int?
     private var lastHighlightChangeTime: TimeInterval = 0
     private let maxStuckDuration: TimeInterval = 2.0  // Force move if stuck for > 2 seconds
+    private var minWordIndex: Int = 0  // Minimum word index to prevent going backwards after forcing forward
+    private var stuckWordWarningCount: [Int: Int] = [:]  // Track warning count per word to limit spam
 
     // MARK: - Initialization
 
@@ -461,6 +463,10 @@ final class TTSService: NSObject, ObservableObject {
         try await MainActor.run {
             currentAlignment = alignment
 
+            // Reset word tracking for new paragraph
+            minWordIndex = 0
+            stuckWordWarningCount.removeAll()
+
             try audioPlayer.play(data: data) { [weak self] in
                 self?.handleParagraphComplete()
             }
@@ -544,27 +550,47 @@ final class TTSService: NSObject, ObservableObject {
                let paragraphText = currentText[safe: currentProgress.paragraphIndex],
                let stringRange = wordTiming.stringRange(in: paragraphText) {
 
+                // Enforce minimum word index to prevent going backwards after forcing forward
+                let effectiveWordIndex = max(wordTiming.wordIndex, minWordIndex)
+
+                // If alignment wants to go backwards, skip to the minimum word instead
+                let effectiveTiming: AlignmentResult.WordTiming
+                if effectiveWordIndex != wordTiming.wordIndex && effectiveWordIndex < alignment.wordTimings.count {
+                    effectiveTiming = alignment.wordTimings[effectiveWordIndex]
+                } else {
+                    effectiveTiming = wordTiming
+                }
+
+                guard let effectiveRange = effectiveTiming.stringRange(in: paragraphText) else {
+                    return
+                }
+
                 // Check if we're stuck on the same word for too long
-                let wordChanged = lastHighlightedWordIndex != wordTiming.wordIndex
+                let wordChanged = lastHighlightedWordIndex != effectiveTiming.wordIndex
 
                 if wordChanged {
-                    // Word changed - update tracking
-                    lastHighlightedWordIndex = wordTiming.wordIndex
+                    // Word changed - update tracking and reset stuck counter
+                    lastHighlightedWordIndex = effectiveTiming.wordIndex
                     lastHighlightChangeTime = currentTime
+                    stuckWordWarningCount[effectiveTiming.wordIndex] = 0
                 } else {
                     // Same word - check if we're stuck
                     let stuckDuration = currentTime - lastHighlightChangeTime
                     if stuckDuration > maxStuckDuration {
-                        // We've been stuck on this word too long
-                        // This can happen if alignment has errors or timing issues
-                        print("⚠️  Highlight stuck on word '\(wordTiming.text)' for \(String(format: "%.2f", stuckDuration))s, forcing next word")
+                        // Limit warning spam to 3 times per word
+                        let warningCount = stuckWordWarningCount[effectiveTiming.wordIndex, default: 0]
+                        if warningCount < 3 {
+                            print("⚠️  Highlight stuck on word '\(effectiveTiming.text)' for \(String(format: "%.2f", stuckDuration))s, forcing next word")
+                            stuckWordWarningCount[effectiveTiming.wordIndex] = warningCount + 1
+                        }
 
                         // Try to find the next word in the alignment
-                        let nextWordIndex = wordTiming.wordIndex + 1
+                        let nextWordIndex = effectiveTiming.wordIndex + 1
                         if nextWordIndex < alignment.wordTimings.count {
                             let nextTiming = alignment.wordTimings[nextWordIndex]
                             if let nextRange = nextTiming.stringRange(in: paragraphText) {
-                                // Force move to next word
+                                // Force move to next word and update minimum to prevent going back
+                                minWordIndex = nextWordIndex
                                 currentProgress = ReadingProgress(
                                     paragraphIndex: currentProgress.paragraphIndex,
                                     wordRange: nextRange,
@@ -581,7 +607,7 @@ final class TTSService: NSObject, ObservableObject {
                 // Update progress with word range for highlighting
                 currentProgress = ReadingProgress(
                     paragraphIndex: currentProgress.paragraphIndex,
-                    wordRange: stringRange,
+                    wordRange: effectiveRange,
                     isPlaying: true
                 )
             }
