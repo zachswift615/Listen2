@@ -6,13 +6,18 @@
 import Foundation
 
 /// Manages background pre-synthesis of text paragraphs to maintain low latency playback
-@MainActor
-final class SynthesisQueue {
+/// Uses actor isolation for thread-safe access to synthesis state
+actor SynthesisQueue {
 
     // MARK: - Configuration
 
     /// Number of paragraphs to pre-synthesize ahead of current playback
-    private let lookaheadCount: Int = 3
+    /// REDUCED from 3→1 to prevent memory exhaustion (was causing jetsam kills at 2.46 GB)
+    private let lookaheadCount: Int = 1
+
+    /// Maximum number of paragraphs to keep cached (current + next)
+    /// Prevents unbounded memory growth
+    private let maxCacheSize: Int = 2
 
     // MARK: - State
 
@@ -26,6 +31,12 @@ final class SynthesisQueue {
 
     /// Paragraphs being synthesized in background tasks
     private var synthesizing: Set<Int> = []
+
+    /// Gate to prevent concurrent synthesis operations
+    /// CRITICAL: Only ONE synthesis should run at a time to prevent CPU/memory explosion
+    /// Uses continuation queue for atomic lock acquisition (prevents check-then-set race)
+    private var isSynthesizing: Bool = false
+    private var synthesisWaitQueue: [CheckedContinuation<Void, Never>] = []
 
     /// Currently active synthesis tasks
     private var activeTasks: [Int: Task<Void, Never>] = [:]
@@ -90,7 +101,7 @@ final class SynthesisQueue {
     }
 
     /// Get synthesized audio for a paragraph, synthesizing if not cached
-    /// - Returns: Audio data if available, nil if synthesis is pending
+    /// - Returns: Audio data (waits for ongoing synthesis if needed)
     func getAudio(for index: Int) async throws -> Data? {
         // Check cache first
         if let cachedData = cache[index] {
@@ -99,24 +110,55 @@ final class SynthesisQueue {
             return cachedData
         }
 
-        // If already synthesizing, return nil (caller should wait)
-        guard !synthesizing.contains(index) else {
-            return nil
+        // If pre-synthesis is already in progress for this paragraph, WAIT for it
+        // FIX: Don't return nil - wait for the background synthesis to complete!
+        while synthesizing.contains(index) {
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
+
+            // Check cache again - pre-synthesis might have completed
+            if let cachedData = cache[index] {
+                preSynthesizeAhead(from: index)
+                return cachedData
+            }
         }
 
-        // Synthesize now (blocking)
+        // Still not in cache - synthesize on-demand (blocking)
         guard index < paragraphs.count else {
             throw TTSError.synthesisFailed(reason: "Invalid paragraph index")
         }
 
+        // CRITICAL: Atomically acquire synthesis lock (prevents race condition)
+        await acquireSynthesisLock()
+        defer { releaseSynthesisLock() } // Always release lock
+
+        let startTime = Date()
+        let memoryBefore = getMemoryUsageMB()
+        print("[SynthesisQueue] 🔄 Starting on-demand synthesis for paragraph \(index), memory: \(String(format: "%.1f", memoryBefore)) MB")
+
         let text = paragraphs[index]
+
+        // Perform synthesis (serialized by isSynthesizing gate)
         let result = try await provider.synthesize(text, speed: speed)
+
+        let synthesisTime = Date().timeIntervalSince(startTime)
+        let memoryAfter = getMemoryUsageMB()
+        let memoryDelta = memoryAfter - memoryBefore
+        print("[SynthesisQueue] ✅ On-demand synthesis for paragraph \(index) completed in \(String(format: "%.2f", synthesisTime))s, memory: \(String(format: "%.1f", memoryAfter)) MB (+\(String(format: "%.1f", memoryDelta)) MB)")
 
         // Cache audio data
         cache[index] = result.audioData
 
+        // Evict old cache entries to prevent memory buildup
+        evictOldCacheEntries(currentIndex: index)
+
         // Perform alignment if word map is available
+        let alignmentStart = Date()
         await performAlignment(for: index, result: result)
+        let alignmentTime = Date().timeIntervalSince(alignmentStart)
+
+        let totalTime = Date().timeIntervalSince(startTime)
+        let memoryFinal = getMemoryUsageMB()
+        print("[SynthesisQueue] 📊 Total time for paragraph \(index): \(String(format: "%.2f", totalTime))s (synthesis: \(String(format: "%.2f", synthesisTime))s, alignment: \(String(format: "%.2f", alignmentTime))s), final memory: \(String(format: "%.1f", memoryFinal)) MB")
 
         // Start pre-synthesizing upcoming paragraphs
         preSynthesizeAhead(from: index)
@@ -149,12 +191,49 @@ final class SynthesisQueue {
 
     // MARK: - Private Methods
 
-    private func preSynthesizeAhead(from currentIndex: Int) {
+    /// Atomically acquire synthesis lock (prevents check-then-set race condition)
+    private func acquireSynthesisLock() async {
+        if isSynthesizing {
+            // Lock is held - wait in queue
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                synthesisWaitQueue.append(continuation)
+            }
+        }
+        // Acquired lock
+        isSynthesizing = true
+    }
+
+    /// Release synthesis lock and resume next waiter in queue
+    private func releaseSynthesisLock() {
+        if let next = synthesisWaitQueue.first {
+            synthesisWaitQueue.removeFirst()
+            next.resume()  // Transfer lock to next waiter
+        } else {
+            // No waiters - release lock
+            isSynthesizing = false
+        }
+    }
+
+    /// Start pre-synthesis in background (nonisolated, returns immediately)
+    nonisolated private func preSynthesizeAhead(from currentIndex: Int) {
+        Task {
+            await doPreSynthesis(from: currentIndex)
+        }
+    }
+
+    /// Perform pre-synthesis (actor-isolated, serialized)
+    private func doPreSynthesis(from currentIndex: Int) async {
+        // CRITICAL: Only pre-synthesize if no synthesis is currently running
+        guard !isSynthesizing else {
+            print("[SynthesisQueue] ⏭️  Skipping pre-synthesis - another synthesis in progress")
+            return
+        }
 
         // Calculate range of paragraphs to pre-synthesize
         let startIndex = currentIndex + 1
         let endIndex = min(currentIndex + lookaheadCount, paragraphs.count - 1)
 
+        // Only pre-synthesize ONE paragraph at a time
         for index in startIndex...endIndex {
             // Skip if already cached or synthesizing
             guard cache[index] == nil && !synthesizing.contains(index) else {
@@ -164,32 +243,55 @@ final class SynthesisQueue {
             // Mark as synthesizing
             synthesizing.insert(index)
 
-            // Start background synthesis task
+            // Start background synthesis
             let task = Task {
-                do {
-                    let text = paragraphs[index]
-                    let result = try await provider.synthesize(text, speed: speed)
-
-                    // Cache audio data
-                    await MainActor.run {
-                        cache[index] = result.audioData
-                        synthesizing.remove(index)
-                        activeTasks.removeValue(forKey: index)
-                    }
-
-                    // Perform alignment
-                    await performAlignment(for: index, result: result)
-                } catch {
-                    // Remove from synthesizing set on error
-                    await MainActor.run {
-                        synthesizing.remove(index)
-                        activeTasks.removeValue(forKey: index)
-                    }
-                    print("[SynthesisQueue] Pre-synthesis failed for paragraph \(index): \(error)")
-                }
+                await synthesizeParagraph(index, currentIndex: currentIndex)
             }
 
             activeTasks[index] = task
+
+            // CRITICAL: Only start ONE pre-synthesis task at a time
+            break
+        }
+    }
+
+    /// Synthesize a single paragraph (actor-isolated, serialized by atomic lock)
+    private func synthesizeParagraph(_ index: Int, currentIndex: Int) async {
+        // CRITICAL: Atomically acquire synthesis lock (prevents race condition)
+        await acquireSynthesisLock()
+        defer { releaseSynthesisLock() } // Always release lock
+
+        let startTime = Date()
+        let memoryBefore = getMemoryUsageMB()
+        print("[SynthesisQueue] 🔄 Pre-synthesis paragraph \(index), memory: \(String(format: "%.1f", memoryBefore)) MB")
+
+        do {
+            let text = paragraphs[index]
+
+            // Perform synthesis (serialized by gate)
+            let result = try await provider.synthesize(text, speed: speed)
+
+            let totalTime = Date().timeIntervalSince(startTime)
+            let memoryFinal = getMemoryUsageMB()
+
+            // Cache audio data
+            cache[index] = result.audioData
+            synthesizing.remove(index)
+            activeTasks.removeValue(forKey: index)
+
+            // Evict old cache entries
+            evictOldCacheEntries(currentIndex: currentIndex)
+
+            // Perform alignment
+            await performAlignment(for: index, result: result)
+
+            print("[SynthesisQueue] ✅ Pre-synthesis paragraph \(index) done - \(String(format: "%.2f", totalTime))s, memory: \(String(format: "%.1f", memoryFinal)) MB")
+        } catch {
+            // Remove from synthesizing set on error
+            synthesizing.remove(index)
+            activeTasks.removeValue(forKey: index)
+            let failureTime = Date().timeIntervalSince(startTime)
+            print("[SynthesisQueue] ❌ Pre-synthesis failed for paragraph \(index) after \(String(format: "%.2f", failureTime))s: \(error)")
         }
     }
 
@@ -250,9 +352,57 @@ final class SynthesisQueue {
     }
 
     private func cancelAll() {
+        // Cancel all active tasks
         for task in activeTasks.values {
             task.cancel()
         }
         activeTasks.removeAll()
+
+        // Resume all waiting continuations (they'll see cancelled tasks)
+        for continuation in synthesisWaitQueue {
+            continuation.resume()
+        }
+        synthesisWaitQueue.removeAll()
+
+        // Reset synthesis gate
+        isSynthesizing = false
+    }
+
+    /// Evict old cache entries to prevent memory buildup
+    /// Keeps only current paragraph + lookahead (maxCacheSize)
+    private func evictOldCacheEntries(currentIndex: Int) {
+        let keepIndices = Set((currentIndex...min(currentIndex + maxCacheSize - 1, paragraphs.count - 1)))
+
+        // Remove audio cache entries outside the window
+        let audioToRemove = cache.keys.filter { !keepIndices.contains($0) }
+        for index in audioToRemove {
+            cache.removeValue(forKey: index)
+            print("[SynthesisQueue] 🗑️ Evicted audio cache for paragraph \(index)")
+        }
+
+        // Remove alignment cache entries outside the window
+        let alignmentToRemove = alignments.keys.filter { !keepIndices.contains($0) }
+        for index in alignmentToRemove {
+            alignments.removeValue(forKey: index)
+            print("[SynthesisQueue] 🗑️ Evicted alignment cache for paragraph \(index)")
+        }
+    }
+
+    /// Get current memory usage in MB
+    private func getMemoryUsageMB() -> Double {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: 1) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            return 0
+        }
+
+        return Double(info.resident_size) / 1024.0 / 1024.0
     }
 }

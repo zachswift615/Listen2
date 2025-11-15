@@ -105,7 +105,7 @@ final class TTSService: NSObject, ObservableObject {
             self.provider = piperProvider
 
             // Initialize synthesis queue with provider and alignment services
-            self.synthesisQueue = await SynthesisQueue(
+            self.synthesisQueue = SynthesisQueue(
                 provider: piperProvider,
                 alignmentService: alignmentService,
                 alignmentCache: alignmentCache
@@ -222,8 +222,8 @@ final class TTSService: NSObject, ObservableObject {
         playbackRate = newRate
 
         // Update synthesis queue with new speed (clears cache)
-        Task { @MainActor in
-            synthesisQueue?.setSpeed(newRate)
+        Task {
+            await synthesisQueue?.setSpeed(newRate)
         }
 
         // Update now playing info with new rate
@@ -267,7 +267,7 @@ final class TTSService: NSObject, ObservableObject {
                     }
 
                     // Update synthesis queue with new provider and alignment services
-                    self.synthesisQueue = await SynthesisQueue(
+                    self.synthesisQueue = SynthesisQueue(
                         provider: piperProvider,
                         alignmentService: alignmentService,
                         alignmentCache: alignmentCache
@@ -298,8 +298,8 @@ final class TTSService: NSObject, ObservableObject {
         guard index < paragraphs.count else { return }
 
         // Initialize synthesis queue with new content
-        Task { @MainActor in
-            synthesisQueue?.setContent(
+        Task {
+            await synthesisQueue?.setContent(
                 paragraphs: paragraphs,
                 speed: playbackRate,
                 documentID: documentID,
@@ -347,21 +347,43 @@ final class TTSService: NSObject, ObservableObject {
             return
         }
 
-        stop()
+        // Stop audio but DON'T clear document state (stop() clears currentText)
+        stopAudioOnly()
         speakParagraph(at: nextIndex)
     }
 
     func skipToPrevious() {
         let prevIndex = max(0, currentProgress.paragraphIndex - 1)
-        stop()
+        // Stop audio but DON'T clear document state (stop() clears currentText)
+        stopAudioOnly()
         speakParagraph(at: prevIndex)
     }
 
+    /// Stop audio playback without clearing document state (for skip buttons)
+    private func stopAudioOnly() {
+        Task {
+            await audioPlayer.stop()
+        }
+        fallbackSynthesizer.stopSpeaking(at: .immediate)
+        stopHighlightTimer()
+        isPlaying = false
+
+        // DON'T clear currentText, wordMap, etc. - keep document loaded
+        // Just reset playback state
+        currentProgress = ReadingProgress(
+            paragraphIndex: currentProgress.paragraphIndex,
+            wordRange: nil,
+            isPlaying: false
+        )
+        lastHighlightedWordIndex = nil
+        lastHighlightChangeTime = 0
+    }
+
     func stop() {
-        Task { @MainActor in
-            audioPlayer.stop()
+        Task {
+            await audioPlayer.stop()
             // Clear synthesis queue cache when stopped
-            synthesisQueue?.clearAll()
+            await synthesisQueue?.clearAll()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopHighlightTimer()
@@ -432,10 +454,12 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func playAudio(_ data: Data) async throws {
+        // Get alignment for current paragraph from synthesis queue
+        let paragraphIndex = currentProgress.paragraphIndex
+        let alignment = await synthesisQueue?.getAlignment(for: paragraphIndex)
+
         try await MainActor.run {
-            // Get alignment for current paragraph from synthesis queue
-            let paragraphIndex = currentProgress.paragraphIndex
-            currentAlignment = synthesisQueue?.getAlignment(for: paragraphIndex)
+            currentAlignment = alignment
 
             try audioPlayer.play(data: data) { [weak self] in
                 self?.handleParagraphComplete()
