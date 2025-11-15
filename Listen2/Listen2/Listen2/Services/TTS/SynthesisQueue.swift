@@ -41,6 +41,12 @@ actor SynthesisQueue {
     /// Currently active synthesis tasks
     private var activeTasks: [Int: Task<Void, Never>] = [:]
 
+    /// Progress tracking for synthesis (0.0 to 1.0 per paragraph)
+    private(set) var synthesisProgress: [Int: Double] = [:]
+
+    /// Currently synthesizing paragraph index (for UI display)
+    private(set) var currentlySynthesizing: Int? = nil
+
     /// The provider used for synthesis
     private let provider: TTSProvider
 
@@ -85,6 +91,8 @@ actor SynthesisQueue {
         self.cache.removeAll()
         self.alignments.removeAll()
         self.synthesizing.removeAll()
+        self.synthesisProgress.removeAll()
+        self.currentlySynthesizing = nil
     }
 
     /// Update playback speed (clears cache as audio needs re-synthesis)
@@ -130,11 +138,20 @@ actor SynthesisQueue {
         await acquireSynthesisLock()
         defer { releaseSynthesisLock() } // Always release lock
 
+        // Mark as synthesizing and update progress
+        synthesizing.insert(index)
+        currentlySynthesizing = index
+        synthesisProgress[index] = 0.0
+
         let startTime = Date()
         let memoryBefore = getMemoryUsageMB()
         print("[SynthesisQueue] 🔄 Starting on-demand synthesis for paragraph \(index), memory: \(String(format: "%.1f", memoryBefore)) MB")
 
         let text = paragraphs[index]
+
+        // Note: We can't track real progress inside provider.synthesize()
+        // because it's synchronous. Set to 0.5 to show "in progress"
+        synthesisProgress[index] = 0.5
 
         // Perform synthesis (serialized by isSynthesizing gate)
         let result = try await provider.synthesize(text, speed: speed)
@@ -143,6 +160,11 @@ actor SynthesisQueue {
         let memoryAfter = getMemoryUsageMB()
         let memoryDelta = memoryAfter - memoryBefore
         print("[SynthesisQueue] ✅ On-demand synthesis for paragraph \(index) completed in \(String(format: "%.2f", synthesisTime))s, memory: \(String(format: "%.1f", memoryAfter)) MB (+\(String(format: "%.1f", memoryDelta)) MB)")
+
+        // Mark as complete
+        synthesisProgress[index] = 1.0
+        synthesizing.remove(index)
+        currentlySynthesizing = nil
 
         // Cache audio data
         cache[index] = result.audioData
@@ -269,12 +291,17 @@ actor SynthesisQueue {
         await acquireSynthesisLock()
         defer { releaseSynthesisLock() } // Always release lock
 
+        // Update progress
+        synthesisProgress[index] = 0.0
+
         let startTime = Date()
         let memoryBefore = getMemoryUsageMB()
         print("[SynthesisQueue] 🔄 Pre-synthesis paragraph \(index), memory: \(String(format: "%.1f", memoryBefore)) MB")
 
         do {
             let text = paragraphs[index]
+
+            synthesisProgress[index] = 0.5
 
             // Perform synthesis (serialized by gate)
             let result = try await provider.synthesize(text, speed: speed)
@@ -284,6 +311,7 @@ actor SynthesisQueue {
 
             // Cache audio data
             cache[index] = result.audioData
+            synthesisProgress[index] = 1.0
             synthesizing.remove(index)
             activeTasks.removeValue(forKey: index)
 
@@ -300,6 +328,7 @@ actor SynthesisQueue {
         } catch {
             // Remove from synthesizing set on error
             synthesizing.remove(index)
+            synthesisProgress.removeValue(forKey: index)
             activeTasks.removeValue(forKey: index)
             let failureTime = Date().timeIntervalSince(startTime)
             print("[SynthesisQueue] ❌ Pre-synthesis failed for paragraph \(index) after \(String(format: "%.2f", failureTime))s: \(error)")
