@@ -430,8 +430,9 @@ final class TTSService: NSObject, ObservableObject {
         if let queue = synthesisQueue {
             Task {
                 do {
-                    // Get audio from queue (may be pre-synthesized or synthesize on-demand)
-                    // TEMPORARY: Removed timeout - wait indefinitely for synthesis
+                    // Get audio from queue (will synthesize if needed)
+                    // Note: This may take 2-3 minutes for long paragraphs
+                    // Progress is tracked via synthesisQueue.synthesisProgress
                     guard let wavData = try await queue.getAudio(for: index) else {
                         throw TTSError.synthesisFailed(reason: "Synthesis returned nil")
                     }
