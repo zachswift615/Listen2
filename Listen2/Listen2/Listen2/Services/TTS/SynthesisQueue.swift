@@ -160,6 +160,11 @@ actor SynthesisQueue {
         let memoryFinal = getMemoryUsageMB()
         print("[SynthesisQueue] 📊 Total time for paragraph \(index): \(String(format: "%.2f", totalTime))s (synthesis: \(String(format: "%.2f", synthesisTime))s, alignment: \(String(format: "%.2f", alignmentTime))s), final memory: \(String(format: "%.1f", memoryFinal)) MB")
 
+        // Log memory breakdown every 5 paragraphs to track leaks
+        if index % 5 == 0 {
+            logMemoryBreakdown()
+        }
+
         // Start pre-synthesizing upcoming paragraphs
         preSynthesizeAhead(from: index)
 
@@ -404,5 +409,25 @@ actor SynthesisQueue {
         }
 
         return Double(info.resident_size) / 1024.0 / 1024.0
+    }
+
+    /// Log detailed memory breakdown for debugging
+    func logMemoryBreakdown() {
+        let totalMB = getMemoryUsageMB()
+
+        // Calculate cache sizes
+        let audioDataSize = cache.values.reduce(0) { $0 + $1.count }
+        let audioDataMB = Double(audioDataSize) / 1024.0 / 1024.0
+
+        // Estimate alignment data size (rough calculation)
+        let alignmentCount = alignments.values.reduce(0) { $0 + $1.wordTimings.count }
+        let estimatedAlignmentMB = Double(alignmentCount * 64) / 1024.0 / 1024.0 // ~64 bytes per WordTiming
+
+        print("📊 [MEMORY] Total: \(String(format: "%.1f", totalMB)) MB")
+        print("📊 [MEMORY] Audio cache: \(cache.count) entries, \(String(format: "%.1f", audioDataMB)) MB")
+        print("📊 [MEMORY] Alignment cache: \(alignments.count) entries, ~\(String(format: "%.1f", estimatedAlignmentMB)) MB estimated")
+        print("📊 [MEMORY] Synthesizing: \(synthesizing.count) active")
+        print("📊 [MEMORY] Tasks: \(activeTasks.count) active")
+        print("📊 [MEMORY] Unaccounted: ~\(String(format: "%.1f", totalMB - audioDataMB - estimatedAlignmentMB)) MB (ONNX runtime, frameworks, etc.)")
     }
 }
