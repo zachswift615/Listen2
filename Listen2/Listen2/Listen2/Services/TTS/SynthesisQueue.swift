@@ -35,7 +35,7 @@ actor SynthesisQueue {
 
     /// Cache of raw synthesis results for phoneme timeline building
     /// Key: "paragraphIndex-sentenceIndex", Value: synthesis result
-    private var synthesisCacheForTimeline: [String: SynthesisResult] = []
+    private var synthesisCacheForTimeline: [String: SynthesisResult] = [:]
 
     /// Tracks which sentences are currently being synthesized
     /// Key format: "paragraphIndex-sentenceIndex"
