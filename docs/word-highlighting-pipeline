@@ -1,0 +1,156 @@
+The Word Highlighting Pipeline - Complete Breakdown
+
+1. VoxPDF Word Mapping
+
+Purpose: Tracks word positions in the original PDF text for highlighting
+
+Example from logs:
+[PhonemeAlign] VoxPDF extracted 4 words from original text
+Word[0] 'Most': orig[0..<4]
+Word[1] 'practitioners': orig[5..<18]
+Word[2] 'don't': orig[19..<24]
+Word[3] 'begin': orig[25..<30]
+
+This means:
+- "Most" starts at character 0, ends at 4 (4 chars)
+- "practitioners" starts at character 5, ends at 18 (13 chars)
+- Space between words is counted in positions
+
+Original text: "Most practitioners don't begin"
+
+2. Text Normalization (espeak-ng does this)
+
+Purpose: Convert text to pronounceable form
+
+Example from logs:
+Original text: 'Most practitioners don't begin with a grand design'
+Normalized text: 'most practitioners don't begin with a grand design '
+
+Changes:
+- "Most" → "most" (lowercase)
+- "don't" → "don't" (unchanged)
+- Could expand: "Dr. Smith" → "doctor smith"
+
+3. Phoneme Positions from piper-phonemize
+
+Purpose: Tell us where each phoneme group (word) is in the normalized text
+
+Example from logs:
+[PIPER-PHONEMIZE] WORD event: raw_position=1, adjusted_position=0
+[PIPER-PHONEMIZE] WORD event: raw_position=6, adjusted_position=4
+[PIPER-PHONEMIZE] WORD event: raw_position=20, adjusted_position=18
+[PIPER-PHONEMIZE] WORD event: raw_position=27, adjusted_position=25
+
+After -2 offset fix:
+- Word at position 0 (length 4) = "most"
+- Word at position 4 (length 13) = space + "practitioners"
+- Word at position 18 (length 5) = space + "don't"
+- Word at position 25 (length 5) = space + "begin"
+
+Key insight: ALL phonemes in a word share the SAME position:
+[SherpaOnnx] First 5 phonemes' raw position data:
+[0]: char_start=0, char_length=4 -> range[0..<4]  // "most"
+[1]: char_start=0, char_length=4 -> range[0..<4]  // same position!
+[2]: char_start=0, char_length=4 -> range[0..<4]
+[3]: char_start=0, char_length=4 -> range[0..<4]
+[4]: char_start=4, char_length=13 -> range[4..<17] // "practitioners"
+
+4. Character Mapping (BROKEN)
+
+Purpose: Should map positions between original and normalized text
+
+Example from logs:
+[PhonemeAlign] Mapping entries: [(2, 0), (6, 4), (7, 5), (20, 18)]
+
+This SHOULD mean:
+- Original position 2 → Normalized position 0
+- Original position 6 → Normalized position 4
+
+But this is WRONG because:
+- "Most" → "most" should be position 0 → 0 (just lowercase)
+- The mapping always starts with (2,0) or (1,0) - suspicious offset
+
+5. Phoneme Durations
+
+Purpose: How long to highlight each word
+
+Example from logs:
+[SherpaOnnx] Extracted 7 phonemes (durations: ✓, total: 0.174s)
+[SherpaOnnx] Phoneme symbols: b ˈ ɪ l d ɪ ŋ  // "building"
+
+Each phoneme has a duration in seconds:
+Phoneme 'b': 0.0116s
+Phoneme 'ˈ': 0.0232s
+Phoneme 'ɪ': 0.0185s
+...
+
+Sum of all phoneme durations = word highlight duration
+
+The Alignment Process (What We're Trying to Do)
+
+Step 1: Match VoxPDF words to phoneme groups
+
+VoxPDF Word: "practitioners" at orig[5..<18]
+                ↓
+    (Should map to normalized position)
+                ↓
+Normalized: "practitioners" at norm[4..<17]
+                ↓
+    (Find phonemes at this position)
+                ↓
+Phonemes: All at position 4 with total duration 0.139s
+
+Step 2: The Current Problem
+
+What's happening:
+1. VoxPDF says "practitioners" is at position 5
+2. Broken mapping says: orig[5] → norm[3]  // WRONG!
+3. We look for phonemes at position 3
+4. But phonemes are at position 4
+5. Result: "⚠️ No phonemes found"
+
+What SHOULD happen:
+1. VoxPDF says "practitioners" is at position 5
+2. Correct mapping: orig[5] → norm[5] (just lowercase, no position change)
+3. Look for phonemes at position 5
+4. Find phonemes at position 5
+5. Sum their durations for highlight timing
+
+Visual Example of Complete Flow
+
+ORIGINAL TEXT (VoxPDF):
+"Most practitioners don't begin"
+↑    ↑             ↑      ↑
+0    5             19     25
+
+NORMALIZED TEXT (espeak):
+"most practitioners don't begin "
+↑    ↑             ↑      ↑
+0    5             19     25
+
+PHONEME POSITIONS (piper-phonemize):
+Word 1: All phonemes at position 0 (m,o,s,t)
+Word 2: All phonemes at position 5 (p,r,æ,k,t,ɪ,ʃ,ə,n,ə,r,z)
+Word 3: All phonemes at position 19 (d,o,n,t)
+Word 4: All phonemes at position 25 (b,ɪ,g,ɪ,n)
+
+DURATIONS:
+Word 1: 0.128s total
+Word 2: 0.302s total
+Word 3: 0.070s total
+Word 4: 0.185s total
+
+FINAL HIGHLIGHTING:
+0.000-0.128s: Highlight "Most"
+0.128-0.430s: Highlight "practitioners"
+0.430-0.500s: Highlight "don't"
+0.500-0.685s: Highlight "begin"
+
+The Core Issues
+
+1. State Bug: Normalized text from previous synthesis is being used
+2. Mapping Bug: Character mapping has mysterious offset (2,0) instead of (0,0)
+3. Design: Phonemes grouped by word, not character (this is actually fine for word highlighting)
+
+The solution is to fix the state bug first, then either fix or bypass the broken character mapping
+since simple lowercasing doesn't change positions.

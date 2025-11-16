@@ -207,6 +207,11 @@ struct GeneratedAudio {
                 let charStart = Int(startsPtr[i])
                 let charLength = Int(lengthsPtr[i])
 
+                // DEBUG: Log first few phoneme positions to trace offset issue
+                if i < 10 {
+                    print("[SherpaOnnx-Swift] Phoneme \(i): '\(symbol)' raw_position=\(charStart) length=\(charLength)")
+                }
+
                 // SAFETY: Ensure we don't create invalid ranges
                 // (espeak can give us duplicate or overlapping positions)
                 let rangeEnd = max(charStart, charStart + charLength)
@@ -224,6 +229,14 @@ struct GeneratedAudio {
             let totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
             print("[SherpaOnnx] Extracted \(phonemes.count) phonemes (durations: \(hasDurations ? "✓" : "✗"), total: \(String(format: "%.3f", totalDuration))s)")
             print("[SherpaOnnx] Phoneme symbols: \(phonemes.map { $0.symbol }.joined(separator: " "))")
+
+            // DEBUG: Log position analysis
+            if !phonemes.isEmpty {
+                let firstNonPunctuation = phonemes.first { $0.textRange.lowerBound >= 0 }
+                if let first = firstNonPunctuation {
+                    print("[SherpaOnnx-Swift] First word phoneme starts at position \(first.textRange.lowerBound), should be 0 for first word")
+                }
+            }
         } else {
             print("⚠️  [SherpaOnnx] No phoneme data available from C API (count=\(phonemeCount))")
         }

@@ -27,23 +27,19 @@ actor PhonemeAlignmentService {
 
     // MARK: - Public Methods
 
-    /// Align phoneme sequence to words using espeak word groupings
-    /// This works for ALL document types (PDF, EPUB, clipboard) by using espeak's
-    /// built-in word grouping instead of external word extraction.
+    /// Align phoneme sequence to words using simplified word-level matching
     /// - Parameters:
-    ///   - phonemes: Array of phonemes with character positions from espeak (positions in normalized text)
-    ///   - text: The original text (before normalization)
+    ///   - phonemes: Array of phonemes with word-level positions from espeak
+    ///   - text: The original text (what the user sees)
     ///   - normalizedText: The text after espeak normalization (e.g., "Dr." -> "Doctor")
-    ///   - charMapping: Character position mapping [(originalPos, normalizedPos)]
-    ///   - wordMap: Optional word map for VoxPDF word extraction (positions in original text)
+    ///   - wordMap: Optional word map for VoxPDF word extraction
     ///   - paragraphIndex: Index of the paragraph being aligned
-    /// - Returns: AlignmentResult with precise word timings
-    /// - Throws: AlignmentError if alignment fails
+    /// - Returns: AlignmentResult with word timings (or empty if alignment fails)
     func align(
         phonemes: [PhonemeInfo],
         text: String,
         normalizedText: String? = nil,
-        charMapping: [(Int, Int)] = [],
+        charMapping: [(Int, Int)] = [], // Kept for API compatibility but ignored
         wordMap: DocumentWordMap? = nil,
         paragraphIndex: Int
     ) async throws -> AlignmentResult {
@@ -67,26 +63,30 @@ actor PhonemeAlignmentService {
         print("[PhonemeAlign] Normalized text: '\(effectiveNormalizedText)'")
         print("[PhonemeAlign] Character mapping entries: \(charMapping.count)")
 
-        // Use normalized text mapping if we have a wordMap (VoxPDF case) AND normalized text
-        let alignmentResult: AlignmentResult
-        if let wordMap = wordMap, normalizedText != nil {
-            alignmentResult = try alignWithNormalizedMapping(
-                phonemes: phonemes,
-                originalText: text,
-                normalizedText: effectiveNormalizedText,
-                charMapping: charMapping,
-                wordMap: wordMap,
-                paragraphIndex: paragraphIndex
-            )
-        } else {
-            // Fallback to existing espeak word alignment for non-PDF sources or when no normalized text
-            alignmentResult = try alignWithEspeakWords(
-                phonemes: phonemes,
-                text: effectiveNormalizedText,  // Use normalized text (or original if not provided) for word extraction
-                wordMap: nil,
-                paragraphIndex: paragraphIndex
-            )
+        // DEBUG: Verify normalized text matches current synthesis
+        if let normalizedText = normalizedText {
+            print("[DEBUG] Normalized text provided: '\(normalizedText)'")
+            // Check if it makes sense for the original text
+            let originalWords = text.lowercased().split(separator: " ").map { String($0) }
+            let normalizedWords = normalizedText.split(separator: " ").map { String($0) }
+            print("[DEBUG] Original words: \(originalWords)")
+            print("[DEBUG] Normalized words: \(normalizedWords)")
+
+            // Basic sanity check - if completely different, log warning
+            if originalWords.first != normalizedWords.first &&
+               !normalizedWords.joined().contains(originalWords.first?.prefix(3) ?? "") {
+                print("⚠️ [DEBUG] SUSPICIOUS: Normalized text seems unrelated to original!")
+            }
         }
+
+        // Simplified: Always use word-level alignment
+        // We'll match words between original and normalized text
+        let alignmentResult = try alignSimplified(
+            phonemes: phonemes,
+            originalText: text,
+            normalizedText: effectiveNormalizedText,
+            paragraphIndex: paragraphIndex
+        )
 
         print("[PhonemeAlign] ✅ Created alignment with \(alignmentResult.wordTimings.count) word timings, total duration: \(String(format: "%.2f", alignmentResult.totalDuration))s")
 
@@ -112,6 +112,287 @@ actor PhonemeAlignmentService {
     }
 
     // MARK: - Private Methods
+
+    /// Simplified alignment using word-level matching
+    /// - What to highlight: Words from original text
+    /// - When to highlight: Timing from phoneme groups matched to normalized words
+    private func alignSimplified(
+        phonemes: [PhonemeInfo],
+        originalText: String,
+        normalizedText: String,
+        paragraphIndex: Int
+    ) throws -> AlignmentResult {
+        guard !phonemes.isEmpty else {
+            // No phonemes - return empty result (no highlighting)
+            return AlignmentResult(
+                paragraphIndex: paragraphIndex,
+                totalDuration: 0,
+                wordTimings: []
+            )
+        }
+
+        // Step 1: Get display words (what to highlight)
+        // NOTE: We always use whitespace splitting because VoxPDF's word.characterOffset
+        // is relative to the entire document, not the current paragraph
+        let displayWords = extractWordsFromText(originalText)
+
+        guard !displayWords.isEmpty else {
+            // No words found - return empty result
+            return AlignmentResult(
+                paragraphIndex: paragraphIndex,
+                totalDuration: 0,
+                wordTimings: []
+            )
+        }
+
+        // Step 2: Get normalized words
+        let normalizedWords = extractWordsFromText(normalizedText)
+
+        // Step 3: Group phonemes by word (they already come grouped from espeak)
+        let phonemeGroups = groupPhonemesByWord(phonemes)
+
+        print("[PhonemeAlign] Simplified alignment: \(displayWords.count) display words, \(normalizedWords.count) normalized words, \(phonemeGroups.count) phoneme groups")
+
+        // Step 4: Match normalized words to phoneme groups
+        // Since both come from espeak processing, they should align 1:1
+        var normalizedToPhonemes: [String: [PhonemeInfo]] = [:]
+        for (index, group) in phonemeGroups.enumerated() {
+            if index < normalizedWords.count {
+                let normalizedWord = normalizedWords[index].text.lowercased()
+                normalizedToPhonemes[normalizedWord] = group
+            }
+        }
+
+        // Step 5: Match display words to normalized words and calculate timing
+        var wordTimings: [AlignmentResult.WordTiming] = []
+        var currentTime: TimeInterval = 0
+        let hasDurations = phonemes.contains { $0.duration > 0 }
+        var consumedPhonemeGroups = Set<Int>() // Track which groups we've used
+
+        for (index, displayWord) in displayWords.enumerated() {
+            let displayText = displayWord.text
+            let displayRange = displayWord.range
+
+            // Find the next unconsumed phoneme group index
+            var currentGroupIndex = index
+            while currentGroupIndex < phonemeGroups.count && consumedPhonemeGroups.contains(currentGroupIndex) {
+                currentGroupIndex += 1
+            }
+
+            // Try to find matching normalized word(s)
+            let (matchedPhonemes, groupsUsed) = findPhonemesForDisplayWord(
+                displayText: displayText,
+                normalizedWords: normalizedWords.map { $0.text },
+                normalizedToPhonemes: normalizedToPhonemes,
+                allPhonemeGroups: phonemeGroups,
+                currentGroupIndex: currentGroupIndex,
+                consumedGroups: consumedPhonemeGroups
+            )
+
+            // Mark used groups as consumed
+            for groupIdx in groupsUsed {
+                consumedPhonemeGroups.insert(groupIdx)
+            }
+
+            // Calculate duration
+            let duration: TimeInterval
+            if !matchedPhonemes.isEmpty {
+                if hasDurations {
+                    duration = matchedPhonemes.reduce(0.0) { $0 + $1.duration }
+                } else {
+                    // Estimate 50ms per phoneme
+                    duration = Double(matchedPhonemes.count) * 0.05
+                }
+            } else {
+                // No phonemes found - skip this word (no highlighting)
+                print("[PhonemeAlign] ⚠️ No phonemes found for '\(displayText)' - skipping")
+                continue
+            }
+
+            let rangeLocation = originalText.distance(from: originalText.startIndex, to: displayRange.lowerBound)
+            let rangeLength = originalText.distance(from: displayRange.lowerBound, to: displayRange.upperBound)
+
+            wordTimings.append(AlignmentResult.WordTiming(
+                wordIndex: index,
+                startTime: currentTime,
+                duration: duration,
+                text: displayText,
+                rangeLocation: rangeLocation,
+                rangeLength: rangeLength
+            ))
+
+            currentTime += duration
+
+            // Debug first few words
+            if index < 3 {
+                print("   Word[\(index)] '\(displayText)' @ \(String(format: "%.3f", currentTime - duration))s for \(String(format: "%.3f", duration))s")
+            }
+        }
+
+        return AlignmentResult(
+            paragraphIndex: paragraphIndex,
+            totalDuration: currentTime,
+            wordTimings: wordTimings
+        )
+    }
+
+    /// Find phonemes for a display word by matching with normalized words
+    /// Returns both the matched phonemes and the indices of consumed phoneme groups
+    private func findPhonemesForDisplayWord(
+        displayText: String,
+        normalizedWords: [String],
+        normalizedToPhonemes: [String: [PhonemeInfo]],
+        allPhonemeGroups: [[PhonemeInfo]],
+        currentGroupIndex: Int,
+        consumedGroups: Set<Int>
+    ) -> ([PhonemeInfo], [Int]) {
+        let displayLower = displayText.lowercased()
+        var usedGroups: [Int] = []
+
+        // Case 1: Direct match
+        if let phonemes = normalizedToPhonemes[displayLower] {
+            // Find which group index this corresponds to
+            for (idx, group) in allPhonemeGroups.enumerated() {
+                if !consumedGroups.contains(idx) && group == phonemes {
+                    usedGroups.append(idx)
+                    break
+                }
+            }
+            return (phonemes, usedGroups)
+        }
+
+        // Case 2: Handle contractions (don't -> do not)
+        if displayLower.contains("'") {
+            // Common contractions
+            let expansions: [String: [String]] = [
+                "don't": ["do", "not"],
+                "won't": ["will", "not"],
+                "can't": ["can", "not"],
+                "shouldn't": ["should", "not"],
+                "wouldn't": ["would", "not"],
+                "couldn't": ["could", "not"],
+                "didn't": ["did", "not"],
+                "isn't": ["is", "not"],
+                "aren't": ["are", "not"],
+                "wasn't": ["was", "not"],
+                "weren't": ["were", "not"],
+                "haven't": ["have", "not"],
+                "hasn't": ["has", "not"],
+                "hadn't": ["had", "not"],
+                "i'm": ["i", "am"],
+                "you're": ["you", "are"],
+                "we're": ["we", "are"],
+                "they're": ["they", "are"],
+                "it's": ["it", "is"],
+                "he's": ["he", "is"],
+                "she's": ["she", "is"],
+                "that's": ["that", "is"],
+                "what's": ["what", "is"],
+                "let's": ["let", "us"],
+                "i've": ["i", "have"],
+                "you've": ["you", "have"],
+                "we've": ["we", "have"],
+                "they've": ["they", "have"],
+                "i'll": ["i", "will"],
+                "you'll": ["you", "will"],
+                "he'll": ["he", "will"],
+                "she'll": ["she", "will"],
+                "we'll": ["we", "will"],
+                "they'll": ["they", "will"],
+                "i'd": ["i", "would"]
+            ]
+
+            if let expanded = expansions[displayLower] {
+                var combinedPhonemes: [PhonemeInfo] = []
+                for word in expanded {
+                    if let phonemes = normalizedToPhonemes[word] {
+                        combinedPhonemes.append(contentsOf: phonemes)
+                        // Find and mark the group as used
+                        for (idx, group) in allPhonemeGroups.enumerated() {
+                            if !consumedGroups.contains(idx) && !usedGroups.contains(idx) && group == phonemes {
+                                usedGroups.append(idx)
+                                break
+                            }
+                        }
+                    }
+                }
+                if !combinedPhonemes.isEmpty {
+                    return (combinedPhonemes, usedGroups)
+                }
+            }
+        }
+
+        // Case 3: Handle abbreviations (Dr. -> doctor)
+        let abbreviations: [String: String] = [
+            "dr": "doctor",
+            "mr": "mister",
+            "mrs": "missus",
+            "ms": "miss",
+            "prof": "professor",
+            "st": "street",
+            "ave": "avenue",
+            "blvd": "boulevard",
+            "jr": "junior",
+            "sr": "senior"
+        ]
+
+        let cleanDisplay = displayLower.replacingOccurrences(of: ".", with: "")
+        if let expanded = abbreviations[cleanDisplay],
+           let phonemes = normalizedToPhonemes[expanded] {
+            // Find which group this corresponds to
+            for (idx, group) in allPhonemeGroups.enumerated() {
+                if !consumedGroups.contains(idx) && group == phonemes {
+                    usedGroups.append(idx)
+                    break
+                }
+            }
+            return (phonemes, usedGroups)
+        }
+
+        // Case 4: Handle numbers and complex expansions
+        // Numbers like "$99.99" expand to multiple words: "ninety nine dollars and ninety nine cents"
+        // For these cases, we need to consume multiple phoneme groups
+        if displayText.contains(where: { $0.isNumber }) || displayText.hasPrefix("$") {
+            print("[PhonemeAlign] Detected number/currency: '\(displayText)'")
+
+            // Try to match by position and consume multiple groups if needed
+            // This is a heuristic: numbers typically expand to 3-8 words
+            var numberPhonemes: [PhonemeInfo] = []
+            let startIndex = currentGroupIndex
+            let maxGroups = min(startIndex + 8, allPhonemeGroups.count)
+
+            // Consume phoneme groups until we hit a word that might be the next display word
+            for i in startIndex..<maxGroups {
+                if i < allPhonemeGroups.count && !consumedGroups.contains(i) {
+                    let group = allPhonemeGroups[i]
+                    numberPhonemes.append(contentsOf: group)
+                    usedGroups.append(i)
+
+                    // If we have enough phonemes for a reasonable duration, stop
+                    // (typically 5-15 phonemes for a number)
+                    if numberPhonemes.count >= 10 {
+                        break
+                    }
+                }
+            }
+
+            if !numberPhonemes.isEmpty {
+                print("[PhonemeAlign] Assigned \(numberPhonemes.count) phonemes to number '\(displayText)' using groups \(usedGroups)")
+                return (numberPhonemes, usedGroups)
+            }
+        }
+
+        // Case 5: Try to use positional matching as last resort
+        // If we're at position N in display words, try phoneme group N
+        if currentGroupIndex < allPhonemeGroups.count && !consumedGroups.contains(currentGroupIndex) {
+            print("[PhonemeAlign] Using positional match for '\(displayText)' at index \(currentGroupIndex)")
+            return (allPhonemeGroups[currentGroupIndex], [currentGroupIndex])
+        }
+
+        // No match found - no highlighting for this word per user's request
+        print("[PhonemeAlign] No match found for '\(displayText)' - will not highlight")
+        return ([], [])
+    }
 
     /// Align using text splitting + espeak phoneme counts for timing
     /// - What to highlight: Words from splitting synthesized text by whitespace
@@ -440,188 +721,6 @@ actor PhonemeAlignmentService {
         return text.range(of: word)
     }
 
-    /// Align using normalized text mapping for VoxPDF words
-    /// This is the CRITICAL integration point where we map VoxPDF words (in original text)
-    /// to phoneme positions (in normalized text) using the character mapping.
-    ///
-    /// Example:
-    /// - VoxPDF sees "Dr." at positions 0-3 in original text
-    /// - espeak normalized it to "Doctor" at positions 0-6
-    /// - Phonemes have positions in normalized text (0-6 for "Doctor")
-    /// - We map VoxPDF's "Dr." to the phonemes for "Doctor"
-    ///
-    /// - Parameters:
-    ///   - phonemes: Array of phonemes with positions in normalized text
-    ///   - originalText: The original text (what VoxPDF sees)
-    ///   - normalizedText: The text after espeak normalization
-    ///   - charMapping: Character position mapping [(originalPos, normalizedPos)]
-    ///   - wordMap: VoxPDF word map with positions in original text
-    ///   - paragraphIndex: Paragraph index
-    /// - Returns: AlignmentResult with word timings
-    /// - Throws: AlignmentError if alignment fails
-    private func alignWithNormalizedMapping(
-        phonemes: [PhonemeInfo],
-        originalText: String,
-        normalizedText: String,
-        charMapping: [(Int, Int)],
-        wordMap: DocumentWordMap,
-        paragraphIndex: Int
-    ) throws -> AlignmentResult {
-        guard !phonemes.isEmpty else {
-            throw AlignmentError.recognitionFailed("No phonemes to align")
-        }
-
-        // Step 1: Extract VoxPDF words from original text
-        let voxpdfWords = wordMap.words(for: paragraphIndex)
-        print("[PhonemeAlign] VoxPDF extracted \(voxpdfWords.count) words from original text")
-
-        guard !voxpdfWords.isEmpty else {
-            throw AlignmentError.recognitionFailed("No words found in word map")
-        }
-
-        // Step 2: Calculate total duration
-        let hasPhonemeDurations = phonemes.contains { $0.duration > 0 }
-        let totalDuration: TimeInterval
-        if hasPhonemeDurations {
-            totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
-        } else {
-            totalDuration = Double(phonemes.count) * 0.05
-            print("[PhonemeAlign] ⚠️ No per-phoneme durations, using estimate: \(String(format: "%.2f", totalDuration))s")
-        }
-
-        // Step 3: For each VoxPDF word, map to phonemes in normalized text
-        var wordTimings: [AlignmentResult.WordTiming] = []
-
-        for (index, voxWord) in voxpdfWords.enumerated() {
-            // WordPosition has .characterOffset and .length (in original text)
-            let originalStart = voxWord.characterOffset
-            let originalEnd = voxWord.characterOffset + voxWord.length
-
-            // Map original positions to normalized positions
-            let normalizedStart = mapToNormalized(originalPos: originalStart, mapping: charMapping)
-            let normalizedEnd = mapToNormalized(originalPos: originalEnd, mapping: charMapping)
-
-            print("[PhonemeAlign]   Word[\(index)] '\(voxWord.text)': orig[\(originalStart)..<\(originalEnd)] -> norm[\(normalizedStart)..<\(normalizedEnd)]")
-
-            // Find phonemes in this normalized range
-            let wordPhonemes = phonemes.filter { phoneme in
-                phoneme.textRange.lowerBound >= normalizedStart &&
-                phoneme.textRange.upperBound <= normalizedEnd
-            }
-
-            // Calculate timing from phonemes
-            let startTime: TimeInterval
-            let duration: TimeInterval
-
-            if !wordPhonemes.isEmpty {
-                if hasPhonemeDurations {
-                    // Calculate start time by summing durations of all phonemes before this word
-                    let phonemesBefore = phonemes.filter { $0.textRange.upperBound <= normalizedStart }
-                    startTime = phonemesBefore.reduce(0.0) { $0 + $1.duration }
-                    duration = wordPhonemes.reduce(0.0) { $0 + $1.duration }
-                } else {
-                    // Estimate based on phoneme count
-                    let phonemesBefore = phonemes.filter { $0.textRange.upperBound <= normalizedStart }.count
-                    startTime = Double(phonemesBefore) * 0.05
-                    duration = Double(wordPhonemes.count) * 0.05
-                }
-
-                print("[PhonemeAlign]     -> \(wordPhonemes.count) phonemes, duration: \(String(format: "%.3f", duration))s")
-            } else {
-                // No phonemes found - use estimated timing
-                startTime = wordTimings.last.map { $0.startTime + $0.duration } ?? 0
-                duration = 0.1  // Minimum duration
-                print("[PhonemeAlign]     -> ⚠️ No phonemes found, using estimate")
-            }
-
-            wordTimings.append(AlignmentResult.WordTiming(
-                wordIndex: index,
-                startTime: startTime,
-                duration: duration,
-                text: voxWord.text,
-                rangeLocation: originalStart,
-                rangeLength: voxWord.length
-            ))
-        }
-
-        let finalDuration = wordTimings.last.map { $0.startTime + $0.duration } ?? totalDuration
-
-        print("[PhonemeAlign] ✅ Aligned \(wordTimings.count) VoxPDF words using normalized mapping, total duration: \(String(format: "%.2f", finalDuration))s")
-
-        return AlignmentResult(
-            paragraphIndex: paragraphIndex,
-            totalDuration: finalDuration,
-            wordTimings: wordTimings
-        )
-    }
-
-    // MARK: - Normalized Text Mapping
-
-    /// Map a position in original text to normalized text using character mapping
-    ///
-    /// Character mappings define SEGMENT BOUNDARIES, not interpolation points.
-    /// Each mapping entry (origPos, normPos) marks where a segment starts.
-    /// The segment extends from this mapping to the next one.
-    ///
-    /// Example:
-    ///   Mapping: [(0, 0), (4, 7)]
-    ///   Creates segment: orig[0,4) → norm[0,7)
-    ///   - orig[0] → norm[0] (start boundary)
-    ///   - orig[1] → norm[1] (proportional within segment)
-    ///   - orig[3] → norm[6] (proportional, 3/4 through orig segment = 6/7 through norm segment)
-    ///   - orig[4] → norm[7] (end boundary = start of next segment)
-    ///
-    /// For word-level highlighting, we typically map word start/end boundaries:
-    ///   Word at orig[start, end) → find segment → map both boundaries
-    ///
-    /// - Parameters:
-    ///   - originalPos: Position in original text
-    ///   - mapping: Array of (originalPos, normalizedPos) tuples defining segment starts
-    /// - Returns: Position in normalized text
-    private func mapToNormalized(originalPos: Int, mapping: [(Int, Int)]) -> Int {
-        // Handle empty mapping - return position as-is
-        guard !mapping.isEmpty else {
-            return originalPos
-        }
-
-        // Find the segment this position falls in
-        for i in 0..<mapping.count {
-            let (origStart, normStart) = mapping[i]
-
-            // Exact boundary match
-            if originalPos == origStart {
-                return normStart
-            }
-
-            // Check if position is before this mapping point
-            if originalPos < origStart {
-                // Position is before the first mapping - use identity mapping
-                if i == 0 {
-                    return originalPos
-                }
-
-                // Position is in the segment between mapping[i-1] and mapping[i]
-                let (prevOrigStart, prevNormStart) = mapping[i - 1]
-                let origLength = origStart - prevOrigStart
-                let normLength = normStart - prevNormStart
-                let offset = originalPos - prevOrigStart
-
-                // Proportional mapping within the segment
-                // Use ceiling division to ensure we capture the full expanded text
-                // Example: orig[0,4) → norm[0,7), position 3 → (3*7+3)/4 = 6 (not 5)
-                let normalizedOffset = (offset * normLength + origLength - 1) / origLength
-                return prevNormStart + normalizedOffset
-            }
-        }
-
-        // Position is after the last mapping point
-        let (lastOrigStart, lastNormStart) = mapping[mapping.count - 1]
-
-        // If there's a next mapping, we're in the last segment
-        // Otherwise, extend proportionally
-        let offset = originalPos - lastOrigStart
-        return lastNormStart + offset
-    }
 
     // MARK: - Cache Management
 
