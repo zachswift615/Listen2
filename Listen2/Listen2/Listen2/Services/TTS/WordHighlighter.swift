@@ -77,6 +77,7 @@ final class WordHighlighter: ObservableObject {
         startDisplayLink()
 
         print("[WordHighlighter] ✓ Started highlighting for sentence \(bundle.sentenceKey)")
+    }
 
     /// Pause highlighting
     func pause() {
