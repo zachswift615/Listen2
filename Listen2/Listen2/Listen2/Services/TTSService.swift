@@ -366,6 +366,8 @@ final class TTSService: NSObject, ObservableObject {
     private func stopAudioOnly() {
         Task {
             await audioPlayer.stop()
+            // Clear sentence cache and reset producer-consumer for new paragraph
+            await synthesisQueue?.clearCacheAndReset()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopHighlightTimer()
@@ -436,7 +438,12 @@ final class TTSService: NSObject, ObservableObject {
                     var sentenceIndex = 0
                     for await audioChunk in await queue.streamAudio(for: index) {
                         // Play each sentence and wait for it to complete
-                        try await playSentenceAudio(audioChunk, isFirst: sentenceIndex == 0)
+                        try await playSentenceAudio(
+                            audioChunk,
+                            isFirst: sentenceIndex == 0,
+                            paragraphIndex: index,
+                            sentenceIndex: sentenceIndex
+                        )
                         sentenceIndex += 1
                     }
 
@@ -470,14 +477,15 @@ final class TTSService: NSObject, ObservableObject {
     /// - Parameters:
     ///   - data: Audio data for the sentence
     ///   - isFirst: Whether this is the first sentence (for initialization)
-    private func playSentenceAudio(_ data: Data, isFirst: Bool) async throws {
+    ///   - paragraphIndex: Index of the paragraph being played
+    ///   - sentenceIndex: Index of the sentence within the paragraph
+    private func playSentenceAudio(_ data: Data, isFirst: Bool, paragraphIndex: Int, sentenceIndex: Int) async throws {
         // Use a continuation to wait for audio playback to complete
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
                 do {
                     // Get alignment for current paragraph from synthesis queue (only on first sentence)
                     if isFirst {
-                        let paragraphIndex = currentProgress.paragraphIndex
                         let alignment = await synthesisQueue?.getAlignment(for: paragraphIndex)
                         currentAlignment = alignment
                         minWordIndex = 0
@@ -485,8 +493,14 @@ final class TTSService: NSObject, ObservableObject {
                         startHighlightTimer()
                     }
 
-                    try audioPlayer.play(data: data) {
-                        // Resume continuation when playback completes
+                    try audioPlayer.play(data: data) { [weak self] in
+                        // Sentence finished playing - notify queue
+                        Task {
+                            await self?.synthesisQueue?.onSentenceFinished(
+                                paragraphIndex: paragraphIndex,
+                                sentenceIndex: sentenceIndex
+                            )
+                        }
                         continuation.resume()
                     }
 
@@ -602,7 +616,7 @@ final class TTSService: NSObject, ObservableObject {
             // Find the word being spoken at this time
             if let wordTiming = alignment.wordTiming(at: currentTime),
                let paragraphText = currentText[safe: currentProgress.paragraphIndex],
-               let stringRange = wordTiming.stringRange(in: paragraphText) {
+               let _ = wordTiming.stringRange(in: paragraphText) {
 
                 // Enforce minimum word index to prevent going backwards after forcing forward
                 let effectiveWordIndex = max(wordTiming.wordIndex, minWordIndex)

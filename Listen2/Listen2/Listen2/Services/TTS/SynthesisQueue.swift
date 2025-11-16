@@ -40,6 +40,12 @@ actor SynthesisQueue {
     /// Paragraphs being synthesized in background tasks
     private var synthesizing: Set<Int> = []
 
+    /// Producer-consumer state for sentence synthesis
+    private var isProcessingSentences: Bool = false
+    private var currentSentenceIndex: Int = 0
+    private var currentParagraphIndex: Int = 0
+    private let maxSentenceCacheSize: Int = 7  // Cache 5-10 sentences (configurable)
+
     /// Gate to prevent concurrent synthesis operations
     /// CRITICAL: Only ONE synthesis should run at a time to prevent CPU/memory explosion
     /// Uses continuation queue for atomic lock acquisition (prevents check-then-set race)
@@ -103,6 +109,11 @@ actor SynthesisQueue {
         self.synthesizingSentences.removeAll()
         self.synthesisProgress.removeAll()
         self.currentlySynthesizing = nil
+
+        // Reset producer-consumer state
+        self.isProcessingSentences = false
+        self.currentSentenceIndex = 0
+        self.currentParagraphIndex = 0
 
         // Auto-start pre-synthesis for first paragraph if enabled
         if autoPreSynthesize && !paragraphs.isEmpty {
@@ -225,6 +236,9 @@ actor SynthesisQueue {
         synthesizing.removeAll()
         sentenceCache.removeAll()
         synthesizingSentences.removeAll()
+        isProcessingSentences = false
+        currentSentenceIndex = 0
+        currentParagraphIndex = 0
     }
 
     /// Get alignment for a specific paragraph
@@ -234,8 +248,8 @@ actor SynthesisQueue {
         return alignments[index]
     }
 
-    /// Stream audio for a paragraph sentence-by-sentence with rolling window synthesis
-    /// Uses 1-sentence lookahead to eliminate CPU spikes while maintaining zero-gap playback
+    /// Stream audio for a paragraph sentence-by-sentence with producer-consumer architecture
+    /// Producer fills cache with sentences, consumer plays them
     /// - Parameter index: Paragraph index
     /// - Returns: AsyncStream of sentence audio data chunks
     func streamAudio(for index: Int) -> AsyncStream<Data> {
@@ -254,49 +268,27 @@ actor SynthesisQueue {
                     return
                 }
 
-                // START SENTENCE 0 FIRST (critical fix!)
-                // The rolling window lookahead starts sentence N+1 while playing N,
-                // but we need to bootstrap by starting sentence 0 before the loop
-                let firstSentenceKey = "\(index)-0"
-                if !synthesizingSentences.contains(firstSentenceKey) {
-                    Task {
-                        _ = try? await synthesizeSentenceAsync(
-                            paragraphIndex: index,
-                            sentenceIndex: 0
-                        )
-                    }
-                }
+                // Reset state for new paragraph
+                currentSentenceIndex = 0
+                currentParagraphIndex = index
 
-                // Rolling window synthesis: synthesize 1 ahead while playing current
-                // This eliminates CPU spikes from parallel synthesis of ALL sentences
+                // Start the producer task
+                startSentenceProcessing(paragraphIndex: index)
+
+                // Consumer: play sentences as they become available
                 for sentenceIndex in 0..<chunks.count {
                     do {
-                        // Start synthesizing NEXT sentence (lookahead=1) while current plays
-                        let nextIndex = sentenceIndex + 1
-                        if nextIndex < chunks.count {
-                            // Kick off next sentence in background (don't await)
-                            let nextKey = "\(index)-\(nextIndex)"
-                            if !synthesizingSentences.contains(nextKey) {
-                                Task {
-                                    _ = try? await synthesizeSentenceAsync(
-                                        paragraphIndex: index,
-                                        sentenceIndex: nextIndex
-                                    )
-                                }
-                            }
-                        }
-
-                        // Wait for CURRENT sentence (should be ready immediately after first)
+                        // Wait for sentence to be cached
                         let sentence = try await waitForSentence(
                             paragraphIndex: index,
                             sentenceIndex: sentenceIndex
                         )
 
-                        // Yield it immediately for playback
+                        // Yield for playback
                         continuation.yield(sentence.audioData)
 
-                        // Clean up played sentence from cache to free memory
-                        cleanupPlayedSentence(paragraphIndex: index, sentenceIndex: sentenceIndex)
+                        // Don't call onSentenceFinished here - TTSService will call it
+                        // after actual playback completes
 
                     } catch {
                         print("[SynthesisQueue] Error streaming sentence \(sentenceIndex): \(error)")
@@ -308,7 +300,103 @@ actor SynthesisQueue {
         }
     }
 
+    /// Clear cache when user navigates (skip/TOC/etc)
+    func clearCacheAndReset() {
+        sentenceCache.removeAll()
+        synthesizingSentences.removeAll()
+        currentSentenceIndex = 0
+        isProcessingSentences = false
+        print("[SynthesisQueue] Cache cleared, ready for new paragraph")
+    }
+
+    /// Callback to start sentence processing if not already running
+    /// Called by: streamAudio() initially, and onSentenceFinished
+    func startSentenceProcessing(paragraphIndex: Int) {
+        // Check if already running
+        if isProcessingSentences {
+            return  // Already running, do nothing
+        }
+
+        // Start the processing task
+        Task {
+            await runSentenceProcessingTask(paragraphIndex: paragraphIndex)
+        }
+    }
+
+    /// Called when a sentence finishes playing
+    /// Removes sentence from cache and restarts processing if needed
+    func onSentenceFinished(paragraphIndex: Int, sentenceIndex: Int) {
+        // Remove finished sentence from cache
+        if var sentences = sentenceCache[paragraphIndex] {
+            sentences = sentences.filter { $0.chunk.index != sentenceIndex }
+            if sentences.isEmpty {
+                sentenceCache.removeValue(forKey: paragraphIndex)
+            } else {
+                sentenceCache[paragraphIndex] = sentences
+            }
+        }
+
+        let key = "\(paragraphIndex)-\(sentenceIndex)"
+        synthesizingSentences.remove(key)
+
+        print("[SynthesisQueue] 🗑️ Removed sentence \(sentenceIndex), cache now has space")
+
+        // Restart processing to fill cache
+        startSentenceProcessing(paragraphIndex: paragraphIndex)
+    }
+
     // MARK: - Private Methods
+
+    /// Background task that fills cache with sentences
+    /// Runs in loop until cache is full, then stops
+    /// Will be restarted by onSentenceFinished when space is available
+    private func runSentenceProcessingTask(paragraphIndex: Int) async {
+        isProcessingSentences = true
+        defer { isProcessingSentences = false }
+
+        guard paragraphIndex < paragraphs.count else { return }
+
+        let paragraphText = paragraphs[paragraphIndex]
+        let chunks = SentenceSplitter.split(paragraphText)
+
+        // Find next sentence index to process
+        var nextSentenceIndex = currentSentenceIndex
+
+        // Loop: process sentences until cache is full
+        while true {
+            // Check if cache has room (max 5-10 sentences)
+            let cacheSize = sentenceCache[paragraphIndex]?.count ?? 0
+            if cacheSize >= maxSentenceCacheSize {
+                print("[SynthesisQueue] Cache full (\(cacheSize)/\(maxSentenceCacheSize)), pausing processing")
+                break  // Cache full, stop processing
+            }
+
+            // Check if we've processed all sentences in paragraph
+            if nextSentenceIndex >= chunks.count {
+                print("[SynthesisQueue] All sentences processed for paragraph \(paragraphIndex)")
+                break  // Done with this paragraph
+            }
+
+            // Process next sentence
+            let key = "\(paragraphIndex)-\(nextSentenceIndex)"
+            if !synthesizingSentences.contains(key) {
+                do {
+                    let result = try await synthesizeSentenceAsync(
+                        paragraphIndex: paragraphIndex,
+                        sentenceIndex: nextSentenceIndex
+                    )
+                    print("[SynthesisQueue] ✅ Cached sentence \(nextSentenceIndex+1)/\(chunks.count)")
+                    nextSentenceIndex += 1
+                    currentSentenceIndex = nextSentenceIndex
+                } catch {
+                    print("[SynthesisQueue] ❌ Sentence \(nextSentenceIndex) failed: \(error)")
+                    break  // Stop on error
+                }
+            } else {
+                nextSentenceIndex += 1  // Skip already processing
+            }
+        }
+    }
 
     /// Remove played sentence from cache to free memory
     /// Only keeps unplayed sentences (sentenceIndex+1 onwards)
