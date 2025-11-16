@@ -24,8 +24,8 @@ struct AlignmentResult: Codable, Equatable {
         let text: String
 
         /// Store range as integers for Codable
-        private let rangeLocation: Int
-        private let rangeLength: Int
+        internal let rangeLocation: Int
+        internal let rangeLength: Int
 
         /// End time of the word (computed property)
         var endTime: TimeInterval {

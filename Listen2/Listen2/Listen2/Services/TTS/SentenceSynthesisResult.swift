@@ -53,9 +53,37 @@ struct ParagraphSynthesisResult {
     var combinedAlignment: AlignmentResult? {
         guard !sentences.isEmpty else { return nil }
 
-        // TODO: Implement alignment concatenation in Task 9
-        // For now, return first sentence alignment
-        return sentences.first?.alignment
+        // Collect all alignments
+        let alignments = sentences.compactMap { $0.alignment }
+        guard !alignments.isEmpty else { return nil }
+
+        // Concatenate alignments with cumulative time offsets
+        var allWordTimings: [AlignmentResult.WordTiming] = []
+        var cumulativeTime: TimeInterval = 0.0
+
+        for alignment in alignments {
+            // Add each word timing with offset
+            for wordTiming in alignment.wordTimings {
+                let adjustedTiming = AlignmentResult.WordTiming(
+                    wordIndex: wordTiming.wordIndex,
+                    startTime: wordTiming.startTime + cumulativeTime,
+                    duration: wordTiming.duration,
+                    text: wordTiming.text,
+                    rangeLocation: wordTiming.rangeLocation,
+                    rangeLength: wordTiming.rangeLength
+                )
+                allWordTimings.append(adjustedTiming)
+            }
+
+            // Update cumulative time for next sentence
+            cumulativeTime += alignment.totalDuration
+        }
+
+        return AlignmentResult(
+            paragraphIndex: paragraphIndex,
+            totalDuration: cumulativeTime,
+            wordTimings: allWordTimings
+        )
     }
 
     /// Total duration of paragraph in seconds

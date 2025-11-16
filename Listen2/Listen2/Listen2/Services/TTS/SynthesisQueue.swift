@@ -368,60 +368,65 @@ actor SynthesisQueue {
     /// Background task that fills cache with sentences
     /// Runs in loop until cache is full, then stops
     /// Will be restarted by onSentenceFinished when space is available
+    /// Processes across paragraph boundaries to maintain lookahead
     private func runSentenceProcessingTask(paragraphIndex: Int) async {
         isProcessingSentences = true
         defer { isProcessingSentences = false }
 
-        guard paragraphIndex < paragraphs.count else { return }
+        var currentPara = paragraphIndex
 
-        let paragraphText = paragraphs[paragraphIndex]
-        let chunks = SentenceSplitter.split(paragraphText)
+        // Loop across paragraphs until cache is full
+        while currentPara < paragraphs.count {
+            guard currentPara < paragraphs.count else { break }
 
-        // Find next sentence index to process for THIS paragraph
-        var processingIndex = 0
-        if paragraphIndex == currentParagraphIndex {
-            processingIndex = currentSentenceIndex
-        }
-        // For lookahead paragraphs, start from 0
+            let paragraphText = paragraphs[currentPara]
+            let chunks = SentenceSplitter.split(paragraphText)
 
-        // Loop: process sentences until cache is full
-        while true {
-            // Check TOTAL cache size across all paragraphs
-            let totalCacheSize = sentenceCache.values.reduce(0) { $0 + $1.count }
-            if totalCacheSize >= maxSentenceCacheSize {
-                print("[SynthesisQueue] Total cache full (\(totalCacheSize)/\(maxSentenceCacheSize)), pausing")
-                break
+            // Find next sentence index to process for THIS paragraph
+            var processingIndex = 0
+            if currentPara == currentParagraphIndex {
+                processingIndex = currentSentenceIndex
             }
+            // For lookahead paragraphs, start from 0
 
-            // Check if we've processed all sentences in THIS paragraph
-            if processingIndex >= chunks.count {
-                print("[SynthesisQueue] Paragraph \(paragraphIndex) complete")
-                break
-            }
-
-            // Process next sentence
-            let key = "\(paragraphIndex)-\(processingIndex)"
-            if !synthesizingSentences.contains(key) {
-                do {
-                    _ = try await synthesizeSentenceAsync(
-                        paragraphIndex: paragraphIndex,
-                        sentenceIndex: processingIndex
-                    )
-                    print("[SynthesisQueue] ✅ Cached \(paragraphIndex)-\(processingIndex)")
-                    processingIndex += 1
-
-                    // Update currentSentenceIndex only for current paragraph
-                    if paragraphIndex == currentParagraphIndex {
-                        currentSentenceIndex = processingIndex
-                    }
-                } catch {
-                    print("[SynthesisQueue] ❌ \(paragraphIndex)-\(processingIndex) failed: \(error)")
-                    break
+            // Loop: process sentences in this paragraph until done or cache full
+            while processingIndex < chunks.count {
+                // Check TOTAL cache size across all paragraphs
+                let totalCacheSize = sentenceCache.values.reduce(0) { $0 + $1.count }
+                if totalCacheSize >= maxSentenceCacheSize {
+                    print("[SynthesisQueue] Total cache full (\(totalCacheSize)/\(maxSentenceCacheSize)), pausing")
+                    return  // Exit entirely - cache is full
                 }
-            } else {
-                processingIndex += 1
+
+                // Process next sentence
+                let key = "\(currentPara)-\(processingIndex)"
+                if !synthesizingSentences.contains(key) {
+                    do {
+                        _ = try await synthesizeSentenceAsync(
+                            paragraphIndex: currentPara,
+                            sentenceIndex: processingIndex
+                        )
+                        print("[SynthesisQueue] ✅ Cached \(currentPara)-\(processingIndex)")
+                        processingIndex += 1
+
+                        // Update currentSentenceIndex only for current playback paragraph
+                        if currentPara == currentParagraphIndex {
+                            currentSentenceIndex = processingIndex
+                        }
+                    } catch {
+                        print("[SynthesisQueue] ❌ \(currentPara)-\(processingIndex) failed: \(error)")
+                        return  // Exit on error
+                    }
+                } else {
+                    processingIndex += 1
+                }
             }
+
+            print("[SynthesisQueue] Paragraph \(currentPara) complete, moving to next")
+            currentPara += 1  // Move to next paragraph
         }
+
+        print("[SynthesisQueue] All paragraphs processed")
     }
 
     /// Remove played sentence from cache to free memory
