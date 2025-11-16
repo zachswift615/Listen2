@@ -376,8 +376,6 @@ actor SynthesisQueue {
                paragraph: paragraphIndex,
                speed: speed
            ) {
-            // TODO: Extract alignment for this sentence's range
-            // For now, return full paragraph alignment
             return cached
         }
 
@@ -633,6 +631,13 @@ actor SynthesisQueue {
         for index in alignmentToRemove {
             alignments.removeValue(forKey: index)
             print("[SynthesisQueue] 🗑️ Evicted alignment cache for paragraph \(index)")
+        }
+
+        // Remove sentence cache entries outside the window
+        let sentenceToRemove = sentenceCache.keys.filter { !keepIndices.contains($0) }
+        for index in sentenceToRemove {
+            sentenceCache.removeValue(forKey: index)
+            print("[SynthesisQueue] 🗑️ Evicted sentence cache for paragraph \(index)")
         }
     }
 

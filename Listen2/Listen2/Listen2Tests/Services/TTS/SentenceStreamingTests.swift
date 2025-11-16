@@ -89,7 +89,7 @@ final class SentenceStreamingTests: XCTestCase {
     }
 
     /// Test that streaming starts quickly (< 10s for first audio)
-    func testTimeTofirstAudio() async throws {
+    func testTimeToFirstAudio() async throws {
         // Given: A long paragraph with multiple sentences
         let testParagraph = "First sentence here. Second sentence here. Third sentence here. Fourth sentence here."
         let paragraphs = [testParagraph]
