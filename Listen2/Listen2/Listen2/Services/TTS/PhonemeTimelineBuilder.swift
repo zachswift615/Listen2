@@ -125,174 +125,90 @@ struct PhonemeTimelineBuilder {
         wordMap: DocumentWordMap?,
         paragraphIndex: Int
     ) -> [PhonemeTimeline.WordBoundary] {
+        print("[PhonemeTimelineBuilder] Finding word boundaries...")
+        print("  Original text: '\(originalText)'")
+        print("  Normalized text: '\(normalizedText)'")
+        print("  Phonemes: \(timedPhonemes.count)")
+        print("  Char mappings: \(charMapping.count)")
+
         var boundaries: [PhonemeTimeline.WordBoundary] = []
 
-        // Alternative approach: Group phonemes into words based on timing gaps
-        // This avoids the complexity of mapping between normalized and original text
-        var currentWordPhonemes: [PhonemeTimeline.TimedPhoneme] = []
-        var currentWordStart: TimeInterval = 0
-        let gapThreshold: TimeInterval = 0.05 // 50ms gap indicates word boundary
+        // Step 1: Split NORMALIZED text into words
+        let normalizedWords = findWordsInNormalizedText(normalizedText)
+        print("  Found \(normalizedWords.count) words in normalized text")
 
-        for (index, phoneme) in timedPhonemes.enumerated() {
-            if currentWordPhonemes.isEmpty {
-                // Start new word
-                currentWordPhonemes.append(phoneme)
-                currentWordStart = phoneme.startTime
-            } else {
-                // Check if there's a gap indicating word boundary
-                let previousEnd = currentWordPhonemes.last!.endTime
-                let gap = phoneme.startTime - previousEnd
-
-                if gap > gapThreshold {
-                    // Gap detected - finish current word
-                    if let wordBoundary = createWordBoundary(
-                        from: currentWordPhonemes,
-                        in: originalText,
-                        wordMap: wordMap,
-                        paragraphIndex: paragraphIndex
-                    ) {
-                        boundaries.append(wordBoundary)
-                    }
-
-                    // Start new word
-                    currentWordPhonemes = [phoneme]
-                    currentWordStart = phoneme.startTime
-                } else {
-                    // Continue current word
-                    currentWordPhonemes.append(phoneme)
-                }
+        // Step 2: For each normalized word, find its phonemes and map to original text
+        for (normalizedWord, normalizedRange) in normalizedWords {
+            // Find phonemes that belong to this normalized word
+            let wordPhonemes = timedPhonemes.filter { phoneme in
+                // Phoneme positions are in normalized text
+                let phonemeRange = phoneme.normalizedRange
+                // Check if phoneme overlaps with normalized word
+                return phonemeRange.overlaps(normalizedRange)
             }
-        }
 
-        // Don't forget the last word
-        if !currentWordPhonemes.isEmpty {
-            if let wordBoundary = createWordBoundary(
-                from: currentWordPhonemes,
-                in: originalText,
-                wordMap: wordMap,
-                paragraphIndex: paragraphIndex
+            guard !wordPhonemes.isEmpty else {
+                print("  ⚠️ No phonemes for normalized word '\(normalizedWord)' at \(normalizedRange)")
+                continue
+            }
+
+            // Get timing from phonemes
+            let startTime = wordPhonemes.first!.startTime
+            let endTime = wordPhonemes.last!.endTime
+
+            // Map normalized position to original position
+            let originalWord: String
+            let originalStart: Int
+            let originalEnd: Int
+
+            if let mappedRange = mapNormalizedRangeToOriginal(
+                normalizedRange: normalizedRange,
+                charMapping: charMapping,
+                originalText: originalText
             ) {
-                boundaries.append(wordBoundary)
-            }
-        }
+                originalStart = mappedRange.lowerBound
+                originalEnd = mappedRange.upperBound
 
-        // If gap-based detection didn't work well, fall back to simple division
-        if boundaries.isEmpty && !timedPhonemes.isEmpty {
-            print("[PhonemeTimelineBuilder] Gap-based word detection failed, using simple division")
-            boundaries = createSimpleWordBoundaries(
-                timedPhonemes: timedPhonemes,
-                originalText: originalText,
-                wordMap: wordMap,
-                paragraphIndex: paragraphIndex
+                // Extract word from original text
+                let startIdx = originalText.index(originalText.startIndex, offsetBy: originalStart)
+                let endIdx = originalText.index(originalText.startIndex, offsetBy: min(originalEnd, originalText.count))
+                originalWord = String(originalText[startIdx..<endIdx])
+            } else {
+                // Fallback: use normalized word
+                print("  ⚠️ Failed to map '\(normalizedWord)' to original text")
+                originalWord = normalizedWord
+                originalStart = 0
+                originalEnd = normalizedWord.count
+            }
+
+            let boundary = PhonemeTimeline.WordBoundary(
+                word: originalWord,
+                startTime: startTime,
+                endTime: endTime,
+                originalStartOffset: originalStart,
+                originalEndOffset: originalEnd,
+                voxPDFWord: wordMap?.word(at: originalStart, in: paragraphIndex)
             )
+
+            boundaries.append(boundary)
+            print("  Word '\(originalWord)': \(startTime)-\(endTime)s")
         }
 
+        // Sort by time to ensure correct order
+        boundaries.sort { $0.startTime < $1.startTime }
+
+        print("  Created \(boundaries.count) word boundaries")
         return boundaries
     }
 
-    /// Create a word boundary from a group of phonemes
-    private static func createWordBoundary(
-        from phonemes: [PhonemeTimeline.TimedPhoneme],
-        in text: String,
-        wordMap: DocumentWordMap?,
-        paragraphIndex: Int
-    ) -> PhonemeTimeline.WordBoundary? {
-        guard !phonemes.isEmpty else { return nil }
-
-        let startTime = phonemes.first!.startTime
-        let endTime = phonemes.last!.endTime
-
-        // Try to find the word in the original text
-        // Use the first phoneme's original position if available
-        var wordText = "?"
-        var startOffset = 0
-        var endOffset = 0
-
-        if let firstOriginalRange = phonemes.first?.originalRange,
-           let lastOriginalRange = phonemes.last?.originalRange {
-            startOffset = firstOriginalRange.lowerBound
-            endOffset = lastOriginalRange.upperBound
-
-            // Extract word from text
-            if startOffset >= 0 && endOffset <= text.count {
-                let startIndex = text.index(text.startIndex, offsetBy: startOffset)
-                let endIndex = text.index(text.startIndex, offsetBy: endOffset)
-                wordText = String(text[startIndex..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        }
-
-        // Find VoxPDF word if available
-        let voxWord = wordMap?.word(at: startOffset, in: paragraphIndex)
-
-        return PhonemeTimeline.WordBoundary(
-            word: wordText,
-            startTime: startTime,
-            endTime: endTime,
-            originalStartOffset: startOffset,
-            originalEndOffset: endOffset,
-            voxPDFWord: voxWord
-        )
-    }
-
-    /// Create simple word boundaries by dividing phonemes evenly
-    private static func createSimpleWordBoundaries(
-        timedPhonemes: [PhonemeTimeline.TimedPhoneme],
-        originalText: String,
-        wordMap: DocumentWordMap?,
-        paragraphIndex: Int
-    ) -> [PhonemeTimeline.WordBoundary] {
-        // Split original text into words
-        let words = originalText.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard !words.isEmpty else { return [] }
-
-        var boundaries: [PhonemeTimeline.WordBoundary] = []
-        let phonemesPerWord = max(1, timedPhonemes.count / words.count)
-
-        var phonemeIndex = 0
-        var charOffset = 0
-
-        for word in words {
-            let startPhonemeIndex = phonemeIndex
-            let endPhonemeIndex = min(phonemeIndex + phonemesPerWord, timedPhonemes.count)
-
-            if startPhonemeIndex < timedPhonemes.count {
-                let wordPhonemes = Array(timedPhonemes[startPhonemeIndex..<endPhonemeIndex])
-                if !wordPhonemes.isEmpty {
-                    let boundary = PhonemeTimeline.WordBoundary(
-                        word: word,
-                        startTime: wordPhonemes.first!.startTime,
-                        endTime: wordPhonemes.last!.endTime,
-                        originalStartOffset: charOffset,
-                        originalEndOffset: charOffset + word.count,
-                        voxPDFWord: wordMap?.word(at: charOffset, in: paragraphIndex)
-                    )
-                    boundaries.append(boundary)
-                }
-
-                phonemeIndex = endPhonemeIndex
-            }
-
-            charOffset += word.count + 1 // +1 for space
-        }
-
-        return boundaries
-    }
-
-    /// Find words with their character positions in the text
-    private static func findWordsWithPositions(in text: String) -> [(word: String, range: Range<Int>)] {
+    /// Find words in normalized text with their positions
+    private static func findWordsInNormalizedText(_ text: String) -> [(word: String, range: Range<Int>)] {
         var words: [(String, Range<Int>)] = []
-        var currentIndex = 0
-
-        // Use NSString for more accurate word boundary detection
         let nsText = text as NSString
-        let options: NSString.EnumerationOptions = [
-            .byWords,
-            .localized
-        ]
 
         nsText.enumerateSubstrings(
             in: NSRange(location: 0, length: nsText.length),
-            options: options
+            options: [.byWords, .localized]
         ) { substring, substringRange, _, _ in
             if let word = substring {
                 let range = substringRange.location..<(substringRange.location + substringRange.length)
@@ -300,24 +216,60 @@ struct PhonemeTimelineBuilder {
             }
         }
 
-        // If no words found (shouldn't happen), fall back to simple splitting
-        if words.isEmpty {
-            let components = text.components(separatedBy: .whitespacesAndNewlines)
-            var offset = 0
+        return words
+    }
 
-            for component in components where !component.isEmpty {
-                let range = offset..<(offset + component.count)
-                words.append((component, range))
-                offset += component.count
+    /// Map a range in normalized text to a range in original text
+    private static func mapNormalizedRangeToOriginal(
+        normalizedRange: Range<Int>,
+        charMapping: [(originalPos: Int, normalizedPos: Int)],
+        originalText: String
+    ) -> Range<Int>? {
+        // Find the mapping for the start of the normalized range
+        var originalStart: Int?
+        var originalEnd: Int?
 
-                // Account for separator
-                if offset < text.count {
-                    offset += 1
+        // The charMapping contains pairs of (originalPos, normalizedPos)
+        // We need to find entries where normalizedPos matches our range
+
+        for mapping in charMapping {
+            if mapping.normalizedPos == normalizedRange.lowerBound {
+                originalStart = mapping.originalPos
+            }
+            if mapping.normalizedPos == normalizedRange.upperBound - 1 {
+                originalEnd = mapping.originalPos + 1
+            }
+        }
+
+        // If we couldn't find exact matches, try to interpolate
+        if originalStart == nil || originalEnd == nil {
+            // Find the closest mappings
+            let sortedMappings = charMapping.sorted { $0.normalizedPos < $1.normalizedPos }
+
+            if originalStart == nil {
+                // Find the last mapping before or at our start position
+                if let mapping = sortedMappings.last(where: { $0.normalizedPos <= normalizedRange.lowerBound }) {
+                    originalStart = mapping.originalPos
+                }
+            }
+
+            if originalEnd == nil {
+                // Find the first mapping after or at our end position
+                if let mapping = sortedMappings.first(where: { $0.normalizedPos >= normalizedRange.upperBound - 1 }) {
+                    originalEnd = mapping.originalPos + 1
+                } else if let lastMapping = sortedMappings.last {
+                    // Use the last position if we're at the end
+                    originalEnd = min(lastMapping.originalPos + 1, originalText.count)
                 }
             }
         }
 
-        return words
+        guard let start = originalStart, let end = originalEnd else {
+            return nil
+        }
+
+        return start..<end
     }
+
 
 }

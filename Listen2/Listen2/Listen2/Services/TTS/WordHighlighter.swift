@@ -45,6 +45,8 @@ final class WordHighlighter: ObservableObject {
 
     /// Start highlighting for a new sentence
     func startSentence(_ bundle: SentenceBundle, paragraphText: String) {
+        print("[WordHighlighter] startSentence called for \(bundle.sentenceKey)")
+
         // Cancel any transition timer
         transitionTimer?.invalidate()
         transitionTimer = nil
@@ -53,10 +55,17 @@ final class WordHighlighter: ObservableObject {
         currentTimeline = bundle.timeline
 
         // Only start timing if we have a timeline
-        guard bundle.timeline != nil else {
-            print("[WordHighlighter] No timeline for sentence \(bundle.sentenceKey)")
+        guard let timeline = bundle.timeline else {
+            print("[WordHighlighter] ❌ No timeline for sentence \(bundle.sentenceKey)")
             // Keep last highlighted word during sentences without timing
             return
+        }
+
+        print("[WordHighlighter] ✓ Timeline has \(timeline.wordBoundaries.count) words, \(timeline.phonemes.count) phonemes")
+
+        // Log first few words for debugging
+        for (i, word) in timeline.wordBoundaries.prefix(3).enumerated() {
+            print("[WordHighlighter]   Word \(i): '\(word.word)' @ \(word.startTime)-\(word.endTime)s")
         }
 
         // Reset timing
@@ -67,8 +76,7 @@ final class WordHighlighter: ObservableObject {
         // Start display link for updates
         startDisplayLink()
 
-        print("[WordHighlighter] Started sentence \(bundle.sentenceKey) with \(bundle.timeline?.wordBoundaries.count ?? 0) words")
-    }
+        print("[WordHighlighter] ✓ Started highlighting for sentence \(bundle.sentenceKey)")
 
     /// Pause highlighting
     func pause() {

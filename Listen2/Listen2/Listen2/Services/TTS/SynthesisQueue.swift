@@ -619,10 +619,15 @@ actor SynthesisQueue {
         sentenceIndex: Int
     ) -> SentenceBundle {
         let key = "\(paragraphIndex)-\(sentenceIndex)"
+        print("[SynthesisQueue] Creating bundle for sentence \(key)")
 
         // Try to get cached synthesis result for timeline building
         var timeline: PhonemeTimeline? = nil
         if let synthesisResult = synthesisCacheForTimeline[key] {
+            print("[SynthesisQueue] Found synthesis result with \(synthesisResult.phonemes.count) phonemes")
+            print("[SynthesisQueue] Normalized text: '\(synthesisResult.normalizedText)'")
+            print("[SynthesisQueue] CharMapping count: \(synthesisResult.charMapping.count)")
+
             timeline = PhonemeTimelineBuilder.build(
                 from: synthesisResult,
                 sentence: sentenceResult.chunk.text,
@@ -631,8 +636,12 @@ actor SynthesisQueue {
             )
 
             if timeline == nil {
-                print("[SynthesisQueue] Warning: Failed to build timeline for sentence \(key)")
+                print("[SynthesisQueue] ❌ Failed to build timeline for sentence \(key)")
+            } else {
+                print("[SynthesisQueue] ✓ Built timeline with \(timeline!.wordBoundaries.count) words")
             }
+        } else {
+            print("[SynthesisQueue] ❌ No synthesis result cached for \(key)")
         }
 
         return SentenceBundle(
