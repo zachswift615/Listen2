@@ -58,6 +58,11 @@ struct PhonemeTimelineBuilder {
 
         print("[PhonemeTimelineBuilder] Built timeline: \(timedPhonemes.count) phonemes, \(wordBoundaries.count) words, duration: \(totalDuration)s")
 
+        // Debug: Print first few word boundaries
+        for (index, boundary) in wordBoundaries.prefix(5).enumerated() {
+            print("[PhonemeTimelineBuilder] Word \(index): '\(boundary.word)' at \(boundary.startTime)s-\(boundary.endTime)s (chars \(boundary.originalStartOffset)-\(boundary.originalEndOffset))")
+        }
+
         return timeline
     }
 
@@ -122,40 +127,153 @@ struct PhonemeTimelineBuilder {
     ) -> [PhonemeTimeline.WordBoundary] {
         var boundaries: [PhonemeTimeline.WordBoundary] = []
 
-        // Split text into words, preserving their positions
-        let words = findWordsWithPositions(in: originalText)
+        // Alternative approach: Group phonemes into words based on timing gaps
+        // This avoids the complexity of mapping between normalized and original text
+        var currentWordPhonemes: [PhonemeTimeline.TimedPhoneme] = []
+        var currentWordStart: TimeInterval = 0
+        let gapThreshold: TimeInterval = 0.05 // 50ms gap indicates word boundary
 
-        for (word, range) in words {
-            // Find phonemes that overlap this word position
-            let wordPhonemes = findPhonemesForWord(
-                wordRange: range,
-                timedPhonemes: timedPhonemes
-            )
+        for (index, phoneme) in timedPhonemes.enumerated() {
+            if currentWordPhonemes.isEmpty {
+                // Start new word
+                currentWordPhonemes.append(phoneme)
+                currentWordStart = phoneme.startTime
+            } else {
+                // Check if there's a gap indicating word boundary
+                let previousEnd = currentWordPhonemes.last!.endTime
+                let gap = phoneme.startTime - previousEnd
 
-            // Skip words with no phonemes (e.g., punctuation only)
-            guard !wordPhonemes.isEmpty else { continue }
+                if gap > gapThreshold {
+                    // Gap detected - finish current word
+                    if let wordBoundary = createWordBoundary(
+                        from: currentWordPhonemes,
+                        in: originalText,
+                        wordMap: wordMap,
+                        paragraphIndex: paragraphIndex
+                    ) {
+                        boundaries.append(wordBoundary)
+                    }
 
-            // Get timing from first and last phoneme
-            let startTime = wordPhonemes.first!.startTime
-            let endTime = wordPhonemes.last!.endTime
-
-            // Find VoxPDF word if available
-            let voxWord = wordMap?.word(at: range.lowerBound, in: paragraphIndex)
-
-            let boundary = PhonemeTimeline.WordBoundary(
-                word: word,
-                startTime: startTime,
-                endTime: endTime,
-                originalStartOffset: range.lowerBound,
-                originalEndOffset: range.upperBound,
-                voxPDFWord: voxWord
-            )
-
-            boundaries.append(boundary)
+                    // Start new word
+                    currentWordPhonemes = [phoneme]
+                    currentWordStart = phoneme.startTime
+                } else {
+                    // Continue current word
+                    currentWordPhonemes.append(phoneme)
+                }
+            }
         }
 
-        // Sort by start time to ensure correct order
-        boundaries.sort { $0.startTime < $1.startTime }
+        // Don't forget the last word
+        if !currentWordPhonemes.isEmpty {
+            if let wordBoundary = createWordBoundary(
+                from: currentWordPhonemes,
+                in: originalText,
+                wordMap: wordMap,
+                paragraphIndex: paragraphIndex
+            ) {
+                boundaries.append(wordBoundary)
+            }
+        }
+
+        // If gap-based detection didn't work well, fall back to simple division
+        if boundaries.isEmpty && !timedPhonemes.isEmpty {
+            print("[PhonemeTimelineBuilder] Gap-based word detection failed, using simple division")
+            boundaries = createSimpleWordBoundaries(
+                timedPhonemes: timedPhonemes,
+                originalText: originalText,
+                wordMap: wordMap,
+                paragraphIndex: paragraphIndex
+            )
+        }
+
+        return boundaries
+    }
+
+    /// Create a word boundary from a group of phonemes
+    private static func createWordBoundary(
+        from phonemes: [PhonemeTimeline.TimedPhoneme],
+        in text: String,
+        wordMap: DocumentWordMap?,
+        paragraphIndex: Int
+    ) -> PhonemeTimeline.WordBoundary? {
+        guard !phonemes.isEmpty else { return nil }
+
+        let startTime = phonemes.first!.startTime
+        let endTime = phonemes.last!.endTime
+
+        // Try to find the word in the original text
+        // Use the first phoneme's original position if available
+        var wordText = "?"
+        var startOffset = 0
+        var endOffset = 0
+
+        if let firstOriginalRange = phonemes.first?.originalRange,
+           let lastOriginalRange = phonemes.last?.originalRange {
+            startOffset = firstOriginalRange.lowerBound
+            endOffset = lastOriginalRange.upperBound
+
+            // Extract word from text
+            if startOffset >= 0 && endOffset <= text.count {
+                let startIndex = text.index(text.startIndex, offsetBy: startOffset)
+                let endIndex = text.index(text.startIndex, offsetBy: endOffset)
+                wordText = String(text[startIndex..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        // Find VoxPDF word if available
+        let voxWord = wordMap?.word(at: startOffset, in: paragraphIndex)
+
+        return PhonemeTimeline.WordBoundary(
+            word: wordText,
+            startTime: startTime,
+            endTime: endTime,
+            originalStartOffset: startOffset,
+            originalEndOffset: endOffset,
+            voxPDFWord: voxWord
+        )
+    }
+
+    /// Create simple word boundaries by dividing phonemes evenly
+    private static func createSimpleWordBoundaries(
+        timedPhonemes: [PhonemeTimeline.TimedPhoneme],
+        originalText: String,
+        wordMap: DocumentWordMap?,
+        paragraphIndex: Int
+    ) -> [PhonemeTimeline.WordBoundary] {
+        // Split original text into words
+        let words = originalText.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard !words.isEmpty else { return [] }
+
+        var boundaries: [PhonemeTimeline.WordBoundary] = []
+        let phonemesPerWord = max(1, timedPhonemes.count / words.count)
+
+        var phonemeIndex = 0
+        var charOffset = 0
+
+        for word in words {
+            let startPhonemeIndex = phonemeIndex
+            let endPhonemeIndex = min(phonemeIndex + phonemesPerWord, timedPhonemes.count)
+
+            if startPhonemeIndex < timedPhonemes.count {
+                let wordPhonemes = Array(timedPhonemes[startPhonemeIndex..<endPhonemeIndex])
+                if !wordPhonemes.isEmpty {
+                    let boundary = PhonemeTimeline.WordBoundary(
+                        word: word,
+                        startTime: wordPhonemes.first!.startTime,
+                        endTime: wordPhonemes.last!.endTime,
+                        originalStartOffset: charOffset,
+                        originalEndOffset: charOffset + word.count,
+                        voxPDFWord: wordMap?.word(at: charOffset, in: paragraphIndex)
+                    )
+                    boundaries.append(boundary)
+                }
+
+                phonemeIndex = endPhonemeIndex
+            }
+
+            charOffset += word.count + 1 // +1 for space
+        }
 
         return boundaries
     }
@@ -202,26 +320,4 @@ struct PhonemeTimelineBuilder {
         return words
     }
 
-    /// Find phonemes that correspond to a word's character range
-    private static func findPhonemesForWord(
-        wordRange: Range<Int>,
-        timedPhonemes: [PhonemeTimeline.TimedPhoneme]
-    ) -> [PhonemeTimeline.TimedPhoneme] {
-        return timedPhonemes.filter { phoneme in
-            // Check if phoneme's original range overlaps with word range
-            if let originalRange = phoneme.originalRange {
-                // Check for any overlap
-                let phonemeStart = originalRange.lowerBound
-                let phonemeEnd = originalRange.upperBound
-                let wordStart = wordRange.lowerBound
-                let wordEnd = wordRange.upperBound
-
-                // Overlap exists if phoneme ends after word starts AND phoneme starts before word ends
-                return phonemeEnd > wordStart && phonemeStart < wordEnd
-            }
-
-            // If no original range mapping, skip this phoneme
-            return false
-        }
-    }
 }
