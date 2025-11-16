@@ -171,6 +171,7 @@ actor SynthesisQueue {
 
     /// Get synthesized audio for a paragraph, synthesizing if not cached
     /// Uses sentence-level chunking for faster initial playback
+    /// NOTE: This method is primarily for testing. Production code should use streamAudio() for rolling window synthesis.
     /// - Returns: Audio data if available, nil if synthesis is pending
     func getAudio(for index: Int) async throws -> Data? {
         // Check if we have all sentences cached for this paragraph
@@ -199,14 +200,11 @@ actor SynthesisQueue {
             return paragraphResult.combinedAudioData
         }
 
-        // Kick off parallel synthesis for ALL sentences (async magic!)
-        synthesizeAllSentencesAsync(for: index)
-
-        // Wait for first sentence to complete
-        let firstSentence = try await waitForSentence(paragraphIndex: index, sentenceIndex: 0)
+        // For tests, synthesize first sentence only and return it
+        // (In production, use streamAudio() which does rolling window synthesis)
+        let firstSentence = try await synthesizeSentenceAsync(paragraphIndex: index, sentenceIndex: 0)
 
         // Return first sentence audio to start playback immediately
-        // Remaining sentences synthesize in parallel while this plays
         return firstSentence.audioData
     }
 
@@ -236,7 +234,8 @@ actor SynthesisQueue {
         return alignments[index]
     }
 
-    /// Stream audio for a paragraph sentence-by-sentence
+    /// Stream audio for a paragraph sentence-by-sentence with rolling window synthesis
+    /// Uses 1-sentence lookahead to eliminate CPU spikes while maintaining zero-gap playback
     /// - Parameter index: Paragraph index
     /// - Returns: AsyncStream of sentence audio data chunks
     func streamAudio(for index: Int) -> AsyncStream<Data> {
@@ -250,17 +249,37 @@ actor SynthesisQueue {
                 let paragraphText = paragraphs[index]
                 let chunks = SentenceSplitter.split(paragraphText)
 
-                // Kick off parallel synthesis for ALL sentences
-                synthesizeAllSentencesAsync(for: index)
-
-                // Stream each sentence as it becomes available
+                // Rolling window synthesis: synthesize 1 ahead while playing current
+                // This eliminates CPU spikes from parallel synthesis of ALL sentences
                 for sentenceIndex in 0..<chunks.count {
                     do {
+                        // Start synthesizing NEXT sentence (lookahead=1) while current plays
+                        let nextIndex = sentenceIndex + 1
+                        if nextIndex < chunks.count {
+                            // Kick off next sentence in background (don't await)
+                            let nextKey = "\(index)-\(nextIndex)"
+                            if !synthesizingSentences.contains(nextKey) {
+                                Task {
+                                    _ = try? await synthesizeSentenceAsync(
+                                        paragraphIndex: index,
+                                        sentenceIndex: nextIndex
+                                    )
+                                }
+                            }
+                        }
+
+                        // Wait for CURRENT sentence (should be ready immediately after first)
                         let sentence = try await waitForSentence(
                             paragraphIndex: index,
                             sentenceIndex: sentenceIndex
                         )
+
+                        // Yield it immediately for playback
                         continuation.yield(sentence.audioData)
+
+                        // Clean up played sentence from cache to free memory
+                        cleanupPlayedSentence(paragraphIndex: index, sentenceIndex: sentenceIndex)
+
                     } catch {
                         print("[SynthesisQueue] Error streaming sentence \(sentenceIndex): \(error)")
                     }
@@ -272,6 +291,28 @@ actor SynthesisQueue {
     }
 
     // MARK: - Private Methods
+
+    /// Remove played sentence from cache to free memory
+    /// Only keeps unplayed sentences (sentenceIndex+1 onwards)
+    private func cleanupPlayedSentence(paragraphIndex: Int, sentenceIndex: Int) {
+        let key = "\(paragraphIndex)-\(sentenceIndex)"
+
+        // Remove from sentence cache
+        if var sentences = sentenceCache[paragraphIndex] {
+            // Keep only unplayed sentences (sentenceIndex+1 onwards)
+            sentences = sentences.filter { $0.chunk.index > sentenceIndex }
+            if sentences.isEmpty {
+                sentenceCache.removeValue(forKey: paragraphIndex)
+            } else {
+                sentenceCache[paragraphIndex] = sentences
+            }
+        }
+
+        // Remove from tracking
+        synthesizingSentences.remove(key)
+
+        print("[SynthesisQueue] 🗑️ Cleaned up played sentence \(paragraphIndex)-\(sentenceIndex)")
+    }
 
     /// Synthesize a single sentence with streaming callbacks
     /// Uses ONNX streaming for progress + async for parallelization
