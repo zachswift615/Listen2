@@ -22,6 +22,14 @@ protocol TTSProvider {
     /// - Returns: Synthesis result containing audio data and phoneme sequence
     func synthesize(_ text: String, speed: Float) async throws -> SynthesisResult
 
+    /// Synthesize with streaming callback support
+    /// - Parameters:
+    ///   - text: Text to synthesize
+    ///   - speed: Playback speed (0.5-2.0, default 1.0)
+    ///   - delegate: Delegate to receive progress callbacks
+    /// - Returns: Synthesis result containing audio data and phoneme sequence
+    func synthesizeWithStreaming(_ text: String, speed: Float, delegate: SynthesisStreamDelegate?) async throws -> SynthesisResult
+
     /// Clean up resources (unload models, release memory)
     func cleanup()
 }

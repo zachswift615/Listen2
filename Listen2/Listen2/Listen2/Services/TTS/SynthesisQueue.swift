@@ -33,6 +33,10 @@ actor SynthesisQueue {
     /// Key: paragraph index, Value: array of sentence results
     private var sentenceCache: [Int: [SentenceSynthesisResult]] = [:]
 
+    /// Cache of raw synthesis results for phoneme timeline building
+    /// Key: "paragraphIndex-sentenceIndex", Value: synthesis result
+    private var synthesisCacheForTimeline: [String: SynthesisResult] = []
+
     /// Tracks which sentences are currently being synthesized
     /// Key format: "paragraphIndex-sentenceIndex"
     private var synthesizingSentences: Set<String> = []
@@ -235,6 +239,7 @@ actor SynthesisQueue {
         alignments.removeAll()
         synthesizing.removeAll()
         sentenceCache.removeAll()
+        synthesisCacheForTimeline.removeAll()
         synthesizingSentences.removeAll()
         isProcessingSentences = false
         currentSentenceIndex = 0
@@ -296,6 +301,65 @@ actor SynthesisQueue {
 
                     } catch {
                         print("[SynthesisQueue] Error streaming sentence \(sentenceIndex): \(error)")
+                    }
+                }
+
+                continuation.finish()
+            }
+        }
+    }
+
+    /// Stream sentence bundles with phoneme timelines for word highlighting
+    /// - Parameter index: Paragraph index
+    /// - Returns: AsyncStream of sentence bundles with timing data
+    func streamSentenceBundles(for index: Int) -> AsyncStream<SentenceBundle> {
+        AsyncStream { continuation in
+            Task {
+                guard index < paragraphs.count else {
+                    continuation.finish()
+                    return
+                }
+
+                let paragraphText = paragraphs[index]
+                let chunks = SentenceSplitter.split(paragraphText)
+
+                guard !chunks.isEmpty else {
+                    continuation.finish()
+                    return
+                }
+
+                // Update current paragraph
+                currentParagraphIndex = index
+
+                // Reset sentence index for new paragraph
+                if sentenceCache[index] == nil || sentenceCache[index]?.isEmpty == true {
+                    currentSentenceIndex = 0
+                }
+
+                // Start the producer task
+                startSentenceProcessing(paragraphIndex: index)
+
+                // Consumer: yield sentence bundles as they become available
+                for sentenceIndex in 0..<chunks.count {
+                    do {
+                        // Wait for sentence to be cached
+                        let sentence = try await waitForSentence(
+                            paragraphIndex: index,
+                            sentenceIndex: sentenceIndex
+                        )
+
+                        // Create bundle with phoneme timeline
+                        let bundle = createSentenceBundle(
+                            from: sentence,
+                            paragraphIndex: index,
+                            sentenceIndex: sentenceIndex
+                        )
+
+                        // Yield bundle for playback and highlighting
+                        continuation.yield(bundle)
+
+                    } catch {
+                        print("[SynthesisQueue] Error streaming bundle \(sentenceIndex): \(error)")
                     }
                 }
 
@@ -486,6 +550,9 @@ actor SynthesisQueue {
             delegate: self  // Receive progress callbacks
         )
 
+        // Store synthesis result for timeline building
+        synthesisCacheForTimeline[key] = result
+
         // Perform alignment for this sentence
         let alignment = await performAlignmentForSentence(
             paragraphIndex: paragraphIndex,
@@ -543,6 +610,38 @@ actor SynthesisQueue {
                 }
             }
         }
+    }
+
+    /// Create a sentence bundle with phoneme timeline
+    private func createSentenceBundle(
+        from sentenceResult: SentenceSynthesisResult,
+        paragraphIndex: Int,
+        sentenceIndex: Int
+    ) -> SentenceBundle {
+        let key = "\(paragraphIndex)-\(sentenceIndex)"
+
+        // Try to get cached synthesis result for timeline building
+        var timeline: PhonemeTimeline? = nil
+        if let synthesisResult = synthesisCacheForTimeline[key] {
+            timeline = PhonemeTimelineBuilder.build(
+                from: synthesisResult,
+                sentence: sentenceResult.chunk.text,
+                wordMap: wordMap,
+                paragraphIndex: paragraphIndex
+            )
+
+            if timeline == nil {
+                print("[SynthesisQueue] Warning: Failed to build timeline for sentence \(key)")
+            }
+        }
+
+        return SentenceBundle(
+            chunk: sentenceResult.chunk,
+            audioData: sentenceResult.audioData,
+            timeline: timeline,
+            paragraphIndex: paragraphIndex,
+            sentenceIndex: sentenceIndex
+        )
     }
 
     /// Perform alignment for a sentence chunk

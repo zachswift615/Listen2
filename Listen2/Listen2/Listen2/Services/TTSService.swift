@@ -48,6 +48,7 @@ final class TTSService: NSObject, ObservableObject {
     // Word highlighting for Piper playback
     private var highlightTimer: Timer?
     private var currentAlignment: AlignmentResult?
+    private let wordHighlighter = WordHighlighter()
 
     // Timing validation to prevent getting stuck
     private var lastHighlightedWordIndex: Int?
@@ -55,6 +56,9 @@ final class TTSService: NSObject, ObservableObject {
     private let maxStuckDuration: TimeInterval = 2.0  // Force move if stuck for > 2 seconds
     private var minWordIndex: Int = 0  // Minimum word index to prevent going backwards after forcing forward
     private var stuckWordWarningCount: [Int: Int] = [:]  // Track warning count per word to limit spam
+
+    // Subscription for word highlighting
+    private var highlightSubscription: AnyCancellable?
 
     // MARK: - Initialization
 
@@ -66,6 +70,9 @@ final class TTSService: NSObject, ObservableObject {
         Task { @MainActor in
             self.audioPlayer = AudioPlayer()
         }
+
+        // Subscribe to word highlighter updates
+        setupWordHighlighterSubscription()
 
         // TEMPORARY FIX: Clear corrupt alignment cache from previous sessions
         // TODO: Remove this after confirmed working - added 2025-11-14
@@ -191,6 +198,26 @@ final class TTSService: NSObject, ObservableObject {
                 self?.skipToPrevious()
             }
         )
+    }
+
+    private func setupWordHighlighterSubscription() {
+        // Subscribe to word highlighter updates on Main thread
+        highlightSubscription = wordHighlighter.$highlightedRange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] range in
+                guard let self = self,
+                      let range = range,
+                      self.currentProgress.paragraphIndex < self.currentText.count else {
+                    return
+                }
+
+                // Update current progress with highlighted word range
+                self.currentProgress = ReadingProgress(
+                    paragraphIndex: self.currentProgress.paragraphIndex,
+                    wordRange: range,
+                    isPlaying: self.isPlaying
+                )
+            }
     }
 
     // MARK: - Public Methods
@@ -326,6 +353,7 @@ final class TTSService: NSObject, ObservableObject {
     func pause() {
         Task { @MainActor in
             audioPlayer.pause()
+            wordHighlighter.pause()
         }
         fallbackSynthesizer.pauseSpeaking(at: .word)
         stopHighlightTimer()
@@ -336,6 +364,7 @@ final class TTSService: NSObject, ObservableObject {
     func resume() {
         Task { @MainActor in
             audioPlayer.resume()
+            wordHighlighter.resume()
         }
         fallbackSynthesizer.continueSpeaking()
         startHighlightTimer()
@@ -368,6 +397,9 @@ final class TTSService: NSObject, ObservableObject {
             await audioPlayer.stop()
             // Clear sentence cache and reset producer-consumer for new paragraph
             await synthesisQueue?.clearCacheAndReset()
+            await MainActor.run {
+                wordHighlighter.stop()
+            }
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopHighlightTimer()
@@ -389,6 +421,9 @@ final class TTSService: NSObject, ObservableObject {
             await audioPlayer.stop()
             // Clear synthesis queue cache when stopped
             await synthesisQueue?.clearAll()
+            await MainActor.run {
+                wordHighlighter.stop()
+            }
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopHighlightTimer()
@@ -433,18 +468,21 @@ final class TTSService: NSObject, ObservableObject {
         if let queue = synthesisQueue {
             Task {
                 do {
-                    // Use streaming playback for sentence-by-sentence audio
-                    // This plays each sentence as it becomes available, achieving <10s time-to-first-audio
-                    var sentenceIndex = 0
-                    for await audioChunk in await queue.streamAudio(for: index) {
-                        // Play each sentence and wait for it to complete
+                    // Use streaming playback with sentence bundles for word highlighting
+                    // This plays each sentence as it becomes available with phoneme timing
+                    for await bundle in await queue.streamSentenceBundles(for: index) {
+                        // Start highlighting for this sentence
+                        await MainActor.run {
+                            wordHighlighter.startSentence(bundle, paragraphText: text)
+                        }
+
+                        // Play sentence audio and wait for completion
                         try await playSentenceAudio(
-                            audioChunk,
-                            isFirst: sentenceIndex == 0,
-                            paragraphIndex: index,
-                            sentenceIndex: sentenceIndex
+                            bundle.audioData,
+                            isFirst: bundle.sentenceIndex == 0,
+                            paragraphIndex: bundle.paragraphIndex,
+                            sentenceIndex: bundle.sentenceIndex
                         )
-                        sentenceIndex += 1
                     }
 
                     // All sentences played - trigger paragraph complete

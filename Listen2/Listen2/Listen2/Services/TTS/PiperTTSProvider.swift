@@ -138,6 +138,56 @@ final class PiperTTSProvider: TTSProvider {
         )
     }
 
+    /// Synthesize with streaming callback support
+    func synthesizeWithStreaming(
+        _ text: String,
+        speed: Float,
+        delegate: SynthesisStreamDelegate?
+    ) async throws -> SynthesisResult {
+        guard isInitialized, let tts = tts else {
+            throw TTSError.notInitialized
+        }
+
+        // Validate text
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw TTSError.emptyText
+        }
+
+        guard text.utf8.count <= 10_000 else {
+            throw TTSError.textTooLong(maxLength: 10_000)
+        }
+
+        guard text.data(using: .utf8) != nil else {
+            throw TTSError.invalidEncoding
+        }
+
+        // Clamp speed to valid range
+        let clampedSpeed = max(0.5, min(2.0, speed))
+
+        // Use sherpa-onnx streaming API
+        let audio = await tts.generateWithStreaming(
+            text: text,
+            sid: 0,
+            speed: clampedSpeed,
+            delegate: delegate
+        )
+
+        // Convert to WAV data
+        let wavData = createWAVData(samples: audio.samples, sampleRate: Int(audio.sampleRate))
+
+        print("[PiperTTS] Streamed synthesis: \(audio.samples.count) samples at \(audio.sampleRate) Hz")
+        print("[PiperTTS] Received \(audio.phonemes.count) phonemes from sherpa-onnx")
+
+        return SynthesisResult(
+            audioData: wavData,
+            phonemes: audio.phonemes,
+            text: text,
+            sampleRate: audio.sampleRate,
+            normalizedText: audio.normalizedText,
+            charMapping: audio.charMapping
+        )
+    }
+
     func cleanup() {
         tts = nil
         isInitialized = false
