@@ -74,23 +74,37 @@ struct PhonemeTimelineBuilder {
         var timedPhonemes: [PhonemeTimeline.TimedPhoneme] = []
         var currentTime: TimeInterval = 0
 
-        for phoneme in phonemes {
+        // Check if we have valid durations
+        let totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
+        let hasValidDurations = totalDuration > 0
+
+        // If no valid durations, estimate based on phoneme count
+        // Typical speech rate is ~10-15 phonemes per second
+        let estimatedDurationPerPhoneme: TimeInterval = 0.08 // ~12.5 phonemes/sec
+
+        for (index, phoneme) in phonemes.enumerated() {
             // Map normalized range to original if possible
             let originalRange = mapToOriginal(
                 normalizedRange: phoneme.textRange,
                 using: charMapping
             )
 
+            let duration = hasValidDurations ? phoneme.duration : estimatedDurationPerPhoneme
+
             let timed = PhonemeTimeline.TimedPhoneme(
                 symbol: phoneme.symbol,
                 startTime: currentTime,
-                endTime: currentTime + phoneme.duration,
+                endTime: currentTime + duration,
                 normalizedRange: phoneme.textRange,
                 originalRange: originalRange
             )
 
             timedPhonemes.append(timed)
-            currentTime += phoneme.duration
+            currentTime += duration
+        }
+
+        if !hasValidDurations {
+            print("[PhonemeTimelineBuilder] WARNING: No phoneme durations available, using estimated timing")
         }
 
         return timedPhonemes
@@ -225,6 +239,12 @@ struct PhonemeTimelineBuilder {
         charMapping: [(originalPos: Int, normalizedPos: Int)],
         originalText: String
     ) -> Range<Int>? {
+        // Handle sparse/incomplete character mappings
+        if charMapping.isEmpty {
+            // No mapping available - try direct mapping
+            return normalizedRange.lowerBound..<min(normalizedRange.upperBound, originalText.count)
+        }
+
         // Find the mapping for the start of the normalized range
         var originalStart: Int?
         var originalEnd: Int?
@@ -249,26 +269,48 @@ struct PhonemeTimelineBuilder {
             if originalStart == nil {
                 // Find the last mapping before or at our start position
                 if let mapping = sortedMappings.last(where: { $0.normalizedPos <= normalizedRange.lowerBound }) {
-                    originalStart = mapping.originalPos
+                    // Estimate based on distance from mapped position
+                    let diff = normalizedRange.lowerBound - mapping.normalizedPos
+                    originalStart = mapping.originalPos + diff
+                } else if let firstMapping = sortedMappings.first {
+                    // Use first mapping as reference
+                    originalStart = max(0, firstMapping.originalPos - (firstMapping.normalizedPos - normalizedRange.lowerBound))
+                } else {
+                    // Fallback: assume direct mapping
+                    originalStart = normalizedRange.lowerBound
                 }
             }
 
             if originalEnd == nil {
                 // Find the first mapping after or at our end position
                 if let mapping = sortedMappings.first(where: { $0.normalizedPos >= normalizedRange.upperBound - 1 }) {
-                    originalEnd = mapping.originalPos + 1
+                    let diff = mapping.normalizedPos - (normalizedRange.upperBound - 1)
+                    originalEnd = mapping.originalPos - diff + 1
                 } else if let lastMapping = sortedMappings.last {
-                    // Use the last position if we're at the end
-                    originalEnd = min(lastMapping.originalPos + 1, originalText.count)
+                    // Extrapolate from last mapping
+                    let diff = (normalizedRange.upperBound - 1) - lastMapping.normalizedPos
+                    originalEnd = min(lastMapping.originalPos + diff + 1, originalText.count)
+                } else {
+                    // Fallback: use text length
+                    originalEnd = min(normalizedRange.upperBound, originalText.count)
                 }
             }
         }
 
         guard let start = originalStart, let end = originalEnd else {
-            return nil
+            // Last resort: use normalized range directly
+            return normalizedRange.lowerBound..<min(normalizedRange.upperBound, originalText.count)
         }
 
-        return start..<end
+        // Ensure valid range
+        let validStart = max(0, start)
+        let validEnd = min(end, originalText.count)
+
+        if validStart >= validEnd {
+            return normalizedRange.lowerBound..<min(normalizedRange.upperBound, originalText.count)
+        }
+
+        return validStart..<validEnd
     }
 
 
