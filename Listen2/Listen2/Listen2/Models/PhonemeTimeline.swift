@@ -117,7 +117,7 @@ struct PhonemeTimeline: Codable {
 
 /// Bundle of sentence audio with phoneme timeline
 struct SentenceBundle {
-    let chunk: TextChunk              // Sentence text and metadata
+    let chunk: SentenceChunk          // Sentence text and metadata
     let audioData: Data               // WAV audio data
     let timeline: PhonemeTimeline?   // Optional - may fail to generate
     let paragraphIndex: Int

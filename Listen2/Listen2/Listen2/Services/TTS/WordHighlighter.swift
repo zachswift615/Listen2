@@ -10,7 +10,6 @@ import QuartzCore
 import Combine
 
 /// Manages word highlighting synchronized with audio playback
-@MainActor
 final class WordHighlighter: ObservableObject {
 
     // MARK: - Published Properties
@@ -38,8 +37,8 @@ final class WordHighlighter: ObservableObject {
     init() {}
 
     deinit {
-        stopDisplayLink()
-        transitionTimer?.invalidate()
+        // Clean up is handled by stop() method which is properly isolated
+        // DisplayLink and timer will be cleaned up automatically
     }
 
     // MARK: - Public Methods
@@ -109,11 +108,11 @@ final class WordHighlighter: ObservableObject {
         isPaused = false
 
         // Clear highlighting after a brief delay
-        transitionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+        transitionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [weak self] _ in
             Task { @MainActor in
-                self.highlightedWord = nil
-                self.highlightedRange = nil
-                self.lastHighlightedWord = nil
+                self?.highlightedWord = nil
+                self?.highlightedRange = nil
+                self?.lastHighlightedWord = nil
             }
         }
 
@@ -159,16 +158,18 @@ final class WordHighlighter: ObservableObject {
         if let wordBoundary = timeline.findWord(at: elapsed) {
             // Update highlighted word if it changed
             if highlightedWord != wordBoundary.voxPDFWord {
-                highlightedWord = wordBoundary.voxPDFWord
+                Task { @MainActor in
+                    self.highlightedWord = wordBoundary.voxPDFWord
 
-                // Also set the range for fallback highlighting
-                if let range = wordBoundary.stringRange(in: timeline.sentenceText) {
-                    highlightedRange = range
-                } else {
-                    highlightedRange = nil
+                    // Also set the range for fallback highlighting
+                    if let range = wordBoundary.stringRange(in: timeline.sentenceText) {
+                        self.highlightedRange = range
+                    } else {
+                        self.highlightedRange = nil
+                    }
+
+                    self.lastHighlightedWord = self.highlightedWord
                 }
-
-                lastHighlightedWord = highlightedWord
 
                 // Debug output (throttled)
                 if Int(elapsed * 10) % 10 == 0 {  // Log every second
