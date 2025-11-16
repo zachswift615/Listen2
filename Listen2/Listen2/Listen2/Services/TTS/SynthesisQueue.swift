@@ -249,6 +249,24 @@ actor SynthesisQueue {
                 let paragraphText = paragraphs[index]
                 let chunks = SentenceSplitter.split(paragraphText)
 
+                guard !chunks.isEmpty else {
+                    continuation.finish()
+                    return
+                }
+
+                // START SENTENCE 0 FIRST (critical fix!)
+                // The rolling window lookahead starts sentence N+1 while playing N,
+                // but we need to bootstrap by starting sentence 0 before the loop
+                let firstSentenceKey = "\(index)-0"
+                if !synthesizingSentences.contains(firstSentenceKey) {
+                    Task {
+                        _ = try? await synthesizeSentenceAsync(
+                            paragraphIndex: index,
+                            sentenceIndex: 0
+                        )
+                    }
+                }
+
                 // Rolling window synthesis: synthesize 1 ahead while playing current
                 // This eliminates CPU spikes from parallel synthesis of ALL sentences
                 for sentenceIndex in 0..<chunks.count {
