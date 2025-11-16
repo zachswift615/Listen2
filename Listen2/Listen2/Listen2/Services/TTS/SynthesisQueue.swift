@@ -29,6 +29,14 @@ actor SynthesisQueue {
     /// Key: paragraph index, Value: alignment result
     private var alignments: [Int: AlignmentResult] = [:]
 
+    /// Cache of sentence-level synthesis results
+    /// Key: paragraph index, Value: array of sentence results
+    private var sentenceCache: [Int: [SentenceSynthesisResult]] = [:]
+
+    /// Tracks which sentences are currently being synthesized
+    /// Key format: "paragraphIndex-sentenceIndex"
+    private var synthesizingSentences: Set<String> = []
+
     /// Paragraphs being synthesized in background tasks
     private var synthesizing: Set<Int> = []
 
@@ -91,6 +99,8 @@ actor SynthesisQueue {
         self.cache.removeAll()
         self.alignments.removeAll()
         self.synthesizing.removeAll()
+        self.sentenceCache.removeAll()
+        self.synthesizingSentences.removeAll()
         self.synthesisProgress.removeAll()
         self.currentlySynthesizing = nil
 
@@ -160,92 +170,50 @@ actor SynthesisQueue {
     }
 
     /// Get synthesized audio for a paragraph, synthesizing if not cached
-    /// - Returns: Audio data (waits for ongoing synthesis if needed)
+    /// Uses sentence-level chunking for faster initial playback
+    /// - Returns: Audio data if available, nil if synthesis is pending
     func getAudio(for index: Int) async throws -> Data? {
-        // Check cache first
-        if let cachedData = cache[index] {
-            // DON'T call preSynthesizeAhead here - cache hits happen rapidly and create concurrent Tasks
-            return cachedData
-        }
-
-        // If pre-synthesis is already in progress for this paragraph, WAIT for it
-        // FIX: Don't return nil - wait for the background synthesis to complete!
-        while synthesizing.contains(index) {
-            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
-
-            // Check cache again - pre-synthesis might have completed
-            if let cachedData = cache[index] {
-                // DON'T call preSynthesizeAhead here - cache hits happen rapidly and create concurrent Tasks
-                return cachedData
-            }
-        }
-
-        // Still not in cache - synthesize on-demand (blocking)
+        // Check if we have all sentences cached for this paragraph
         guard index < paragraphs.count else {
             throw TTSError.synthesisFailed(reason: "Invalid paragraph index")
         }
 
-        // CRITICAL: Atomically acquire synthesis lock (prevents race condition)
-        await acquireSynthesisLock()
-        defer { releaseSynthesisLock() } // Always release lock
+        let paragraphText = paragraphs[index]
+        let chunks = SentenceSplitter.split(paragraphText)
 
-        // Mark as synthesizing and update progress
-        synthesizing.insert(index)
-        currentlySynthesizing = index
-        synthesisProgress[index] = 0.0
+        // Check if all sentences are cached
+        if let cached = sentenceCache[index], cached.count == chunks.count {
+            let paragraphResult = ParagraphSynthesisResult(
+                paragraphIndex: index,
+                sentences: cached.sorted { $0.chunk.index < $1.chunk.index }
+            )
 
-        let startTime = Date()
-        let memoryBefore = getMemoryUsageMB()
-        print("[SynthesisQueue] 🔄 Starting on-demand synthesis for paragraph \(index), memory: \(String(format: "%.1f", memoryBefore)) MB")
+            // Cache combined alignment
+            if let alignment = paragraphResult.combinedAlignment {
+                alignments[index] = alignment
+            }
 
-        let text = paragraphs[index]
+            // Start pre-synthesizing upcoming paragraphs
+            preSynthesizeAhead(from: index)
 
-        // Note: We can't track real progress inside provider.synthesize()
-        // because it's synchronous. Set to 0.5 to show "in progress"
-        synthesisProgress[index] = 0.5
-
-        // Perform synthesis (serialized by isSynthesizing gate)
-        let result = try await provider.synthesize(text, speed: speed)
-
-        let synthesisTime = Date().timeIntervalSince(startTime)
-        let memoryAfter = getMemoryUsageMB()
-        let memoryDelta = memoryAfter - memoryBefore
-        print("[SynthesisQueue] ✅ On-demand synthesis for paragraph \(index) completed in \(String(format: "%.2f", synthesisTime))s, memory: \(String(format: "%.1f", memoryAfter)) MB (+\(String(format: "%.1f", memoryDelta)) MB)")
-
-        // Mark as complete
-        synthesisProgress[index] = 1.0
-        synthesizing.remove(index)
-        currentlySynthesizing = nil
-
-        // Cache audio data
-        cache[index] = result.audioData
-
-        // Evict old cache entries to prevent memory buildup
-        evictOldCacheEntries(currentIndex: index)
-
-        // Perform alignment if word map is available
-        let alignmentStart = Date()
-        await performAlignment(for: index, result: result)
-        let alignmentTime = Date().timeIntervalSince(alignmentStart)
-
-        let totalTime = Date().timeIntervalSince(startTime)
-        let memoryFinal = getMemoryUsageMB()
-        print("[SynthesisQueue] 📊 Total time for paragraph \(index): \(String(format: "%.2f", totalTime))s (synthesis: \(String(format: "%.2f", synthesisTime))s, alignment: \(String(format: "%.2f", alignmentTime))s), final memory: \(String(format: "%.1f", memoryFinal)) MB")
-
-        // Log memory breakdown every 5 paragraphs to track leaks
-        if index % 5 == 0 {
-            logMemoryBreakdown()
+            return paragraphResult.combinedAudioData
         }
 
-        // Start pre-synthesizing upcoming paragraphs
-        preSynthesizeAhead(from: index)
+        // Kick off parallel synthesis for ALL sentences (async magic!)
+        synthesizeAllSentencesAsync(for: index)
 
-        return result.audioData
+        // Wait for first sentence to complete
+        let firstSentence = try await waitForSentence(paragraphIndex: index, sentenceIndex: 0)
+
+        // Return first sentence audio to start playback immediately
+        // Remaining sentences synthesize in parallel while this plays
+        return firstSentence.audioData
     }
 
     /// Clear cached data for a specific paragraph
     func clearCache(for index: Int) {
         cache.removeValue(forKey: index)
+        sentenceCache.removeValue(forKey: index)
         activeTasks[index]?.cancel()
         activeTasks.removeValue(forKey: index)
         synthesizing.remove(index)
@@ -257,6 +225,8 @@ actor SynthesisQueue {
         cache.removeAll()
         alignments.removeAll()
         synthesizing.removeAll()
+        sentenceCache.removeAll()
+        synthesizingSentences.removeAll()
     }
 
     /// Get alignment for a specific paragraph
@@ -266,7 +236,194 @@ actor SynthesisQueue {
         return alignments[index]
     }
 
+    /// Stream audio for a paragraph sentence-by-sentence
+    /// - Parameter index: Paragraph index
+    /// - Returns: AsyncStream of sentence audio data chunks
+    func streamAudio(for index: Int) -> AsyncStream<Data> {
+        AsyncStream { continuation in
+            Task {
+                guard index < paragraphs.count else {
+                    continuation.finish()
+                    return
+                }
+
+                let paragraphText = paragraphs[index]
+                let chunks = SentenceSplitter.split(paragraphText)
+
+                // Kick off parallel synthesis for ALL sentences
+                synthesizeAllSentencesAsync(for: index)
+
+                // Stream each sentence as it becomes available
+                for sentenceIndex in 0..<chunks.count {
+                    do {
+                        let sentence = try await waitForSentence(
+                            paragraphIndex: index,
+                            sentenceIndex: sentenceIndex
+                        )
+                        continuation.yield(sentence.audioData)
+                    } catch {
+                        print("[SynthesisQueue] Error streaming sentence \(sentenceIndex): \(error)")
+                    }
+                }
+
+                continuation.finish()
+            }
+        }
+    }
+
     // MARK: - Private Methods
+
+    /// Synthesize a single sentence with streaming callbacks
+    /// Uses ONNX streaming for progress + async for parallelization
+    /// - Parameters:
+    ///   - paragraphIndex: The paragraph index
+    ///   - sentenceIndex: The sentence index within paragraph
+    /// - Returns: Sentence synthesis result
+    private func synthesizeSentenceAsync(paragraphIndex: Int, sentenceIndex: Int) async throws -> SentenceSynthesisResult {
+        let key = "\(paragraphIndex)-\(sentenceIndex)"
+
+        // Get paragraph text
+        guard paragraphIndex < paragraphs.count else {
+            throw TTSError.synthesisFailed(reason: "Invalid paragraph index")
+        }
+
+        let paragraphText = paragraphs[paragraphIndex]
+        let chunks = SentenceSplitter.split(paragraphText)
+
+        guard sentenceIndex < chunks.count else {
+            throw TTSError.synthesisFailed(reason: "Invalid sentence index")
+        }
+
+        let chunk = chunks[sentenceIndex]
+
+        // Mark as synthesizing
+        synthesizingSentences.insert(key)
+        currentlySynthesizing = paragraphIndex
+        synthesisProgress[paragraphIndex] = Double(sentenceIndex) / Double(chunks.count)
+
+        // Synthesize with streaming callback (ONNX native streaming!)
+        let result = try await provider.synthesizeWithStreaming(
+            chunk.text,
+            speed: speed,
+            delegate: self  // Receive progress callbacks
+        )
+
+        // Perform alignment for this sentence
+        let alignment = await performAlignmentForSentence(
+            paragraphIndex: paragraphIndex,
+            chunk: chunk,
+            result: result
+        )
+
+        let sentenceResult = SentenceSynthesisResult(
+            chunk: chunk,
+            audioData: result.audioData,
+            alignment: alignment
+        )
+
+        // Cache the result
+        if sentenceCache[paragraphIndex] == nil {
+            sentenceCache[paragraphIndex] = []
+        }
+        sentenceCache[paragraphIndex]?.append(sentenceResult)
+        synthesizingSentences.remove(key)
+
+        // Update progress
+        let completedCount = sentenceCache[paragraphIndex]?.count ?? 0
+        synthesisProgress[paragraphIndex] = Double(completedCount) / Double(chunks.count)
+
+        if completedCount == chunks.count {
+            currentlySynthesizing = nil
+        }
+
+        return sentenceResult
+    }
+
+    /// Synthesize all sentences in a paragraph concurrently
+    /// This is where the magic happens - PARALLEL SYNTHESIS!
+    /// - Parameter index: Paragraph index
+    func synthesizeAllSentencesAsync(for index: Int) {
+        guard index < paragraphs.count else { return }
+
+        let paragraphText = paragraphs[index]
+        let chunks = SentenceSplitter.split(paragraphText)
+
+        // Launch parallel synthesis tasks for ALL sentences
+        for sentenceIndex in 0..<chunks.count {
+            let key = "\(index)-\(sentenceIndex)"
+            guard !synthesizingSentences.contains(key) else { continue }
+
+            Task {
+                do {
+                    _ = try await synthesizeSentenceAsync(
+                        paragraphIndex: index,
+                        sentenceIndex: sentenceIndex
+                    )
+                    print("[SynthesisQueue] ✅ Sentence \(sentenceIndex+1)/\(chunks.count) ready")
+                } catch {
+                    print("[SynthesisQueue] ❌ Sentence \(sentenceIndex) failed: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Perform alignment for a sentence chunk
+    private func performAlignmentForSentence(paragraphIndex: Int, chunk: SentenceChunk, result: SynthesisResult) async -> AlignmentResult? {
+        // Check cache first
+        if let documentID = documentID,
+           let cached = try? await alignmentCache.load(
+               for: documentID,
+               paragraph: paragraphIndex,
+               speed: speed
+           ) {
+            // TODO: Extract alignment for this sentence's range
+            // For now, return full paragraph alignment
+            return cached
+        }
+
+        // Perform alignment for sentence
+        guard let wordMap = wordMap else { return nil }
+
+        do {
+            let alignment = try await alignmentService.align(
+                phonemes: result.phonemes,
+                text: result.text,
+                normalizedText: result.normalizedText,
+                charMapping: result.charMapping,
+                wordMap: wordMap,
+                paragraphIndex: paragraphIndex
+            )
+
+            // Don't cache sentence-level alignments individually
+            // They'll be combined and cached at paragraph level
+
+            return alignment
+        } catch {
+            print("[SynthesisQueue] ⚠️ Alignment failed for sentence: \(error)")
+            return nil
+        }
+    }
+
+    /// Wait for a specific sentence to complete synthesis
+    private func waitForSentence(paragraphIndex: Int, sentenceIndex: Int) async throws -> SentenceSynthesisResult {
+        // Poll until sentence is ready (or timeout)
+        let maxWaitTime: TimeInterval = 300  // 5 minutes max
+        let pollInterval: TimeInterval = 0.1  // Check every 100ms
+        var elapsed: TimeInterval = 0
+
+        while elapsed < maxWaitTime {
+            // Check if sentence is cached
+            if let cached = sentenceCache[paragraphIndex]?.first(where: { $0.chunk.index == sentenceIndex }) {
+                return cached
+            }
+
+            // Wait a bit
+            try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+            elapsed += pollInterval
+        }
+
+        throw TTSError.synthesisFailed(reason: "Sentence synthesis timeout")
+    }
 
     /// Atomically acquire synthesis lock (prevents check-then-set race condition)
     private func acquireSynthesisLock() async {
@@ -515,5 +672,26 @@ actor SynthesisQueue {
         print("📊 [MEMORY] Synthesizing: \(synthesizing.count) active")
         print("📊 [MEMORY] Tasks: \(activeTasks.count) active")
         print("📊 [MEMORY] Unaccounted: ~\(String(format: "%.1f", totalMB - audioDataMB - estimatedAlignmentMB)) MB (ONNX runtime, frameworks, etc.)")
+    }
+}
+
+// MARK: - SynthesisStreamDelegate
+
+extension SynthesisQueue: SynthesisStreamDelegate {
+    nonisolated func didReceiveAudioChunk(_ chunk: Data, progress: Double) -> Bool {
+        // Store chunk for currently synthesizing sentence
+        // This is called from ONNX thread - update on actor
+        Task {
+            await updateProgress(progress: progress)
+        }
+
+        return true  // Continue synthesis
+    }
+
+    /// Update synthesis progress (internal actor method for streaming callback)
+    private func updateProgress(progress: Double) {
+        if let currentIndex = currentlySynthesizing {
+            synthesisProgress[currentIndex] = progress
+        }
     }
 }

@@ -431,13 +431,17 @@ final class TTSService: NSObject, ObservableObject {
         if let queue = synthesisQueue {
             Task {
                 do {
-                    // Get audio from queue (will synthesize if needed)
-                    // Note: This may take 2-3 minutes for long paragraphs
-                    // Progress is tracked via synthesisQueue.synthesisProgress
-                    guard let wavData = try await queue.getAudio(for: index) else {
-                        throw TTSError.synthesisFailed(reason: "Synthesis returned nil")
+                    // Use streaming playback for sentence-by-sentence audio
+                    // This plays each sentence as it becomes available, achieving <10s time-to-first-audio
+                    var sentenceIndex = 0
+                    for await audioChunk in await queue.streamAudio(for: index) {
+                        // Play each sentence and wait for it to complete
+                        try await playSentenceAudio(audioChunk, isFirst: sentenceIndex == 0)
+                        sentenceIndex += 1
                     }
-                    try await playAudio(wavData)
+
+                    // All sentences played - trigger paragraph complete
+                    handleParagraphComplete()
                 } catch {
                     print("[TTSService] ⚠️ Piper synthesis failed: \(error)")
 
@@ -459,6 +463,42 @@ final class TTSService: NSObject, ObservableObject {
             // fallbackToAVSpeech(text: text)
             print("[TTSService] ⚠️ Synthesis queue unavailable, fallback disabled")
             isPlaying = false
+        }
+    }
+
+    /// Play a sentence audio chunk and wait for completion
+    /// - Parameters:
+    ///   - data: Audio data for the sentence
+    ///   - isFirst: Whether this is the first sentence (for initialization)
+    private func playSentenceAudio(_ data: Data, isFirst: Bool) async throws {
+        // Use a continuation to wait for audio playback to complete
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task { @MainActor in
+                do {
+                    // Get alignment for current paragraph from synthesis queue (only on first sentence)
+                    if isFirst {
+                        let paragraphIndex = currentProgress.paragraphIndex
+                        let alignment = await synthesisQueue?.getAlignment(for: paragraphIndex)
+                        currentAlignment = alignment
+                        minWordIndex = 0
+                        stuckWordWarningCount.removeAll()
+                        startHighlightTimer()
+                    }
+
+                    try audioPlayer.play(data: data) {
+                        // Resume continuation when playback completes
+                        continuation.resume()
+                    }
+
+                    // Update playback state
+                    isPlaying = true
+                    if isFirst {
+                        shouldAutoAdvance = true
+                    }
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
@@ -495,6 +535,13 @@ final class TTSService: NSObject, ObservableObject {
         utterance.preUtteranceDelay = 0.0
         utterance.postUtteranceDelay = paragraphPauseDelay
         fallbackSynthesizer.speak(utterance)
+    }
+
+    private func getAudioDuration(_ audioData: Data) -> Double {
+        // WAV header is 44 bytes, then 16-bit samples at 22050 Hz
+        guard audioData.count > 44 else { return 0 }
+        let sampleCount = (audioData.count - 44) / 2
+        return Double(sampleCount) / 22050.0
     }
 
     private func handleParagraphComplete() {
