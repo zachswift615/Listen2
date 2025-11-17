@@ -61,6 +61,9 @@ final class TTSService: NSObject, ObservableObject {
     // Subscription for word highlighting
     private var highlightSubscription: AnyCancellable?
 
+    // Active continuation for current audio playback (to prevent leaks during stop)
+    private var activeContinuation: CheckedContinuation<Void, Error>?
+
     // MARK: - Initialization
 
     override init() {
@@ -257,6 +260,10 @@ final class TTSService: NSObject, ObservableObject {
         // Update now playing info with new rate
         nowPlayingManager.updatePlaybackRate(newRate)
 
+        // Apply rate to audio player immediately (affects currently playing audio)
+        audioPlayer.setRate(newRate)
+        print("[TTSService] 🔊 Applied playback rate to audio player: \(newRate)")
+
         // If we were playing, restart current paragraph with new rate
         // NOTE: We don't call stop() because it resets progress to .initial (paragraph 0)
         // Instead, we just stop audio and restart from current position
@@ -266,6 +273,13 @@ final class TTSService: NSObject, ObservableObject {
                 // Otherwise playback starts with old speed (race condition)
                 await synthesisQueue?.setSpeed(newRate)
                 print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate)")
+
+                // Resume continuation before stopping to prevent leak
+                if let continuation = activeContinuation {
+                    print("[TTSService] ⚠️ Resuming active continuation during speed change")
+                    continuation.resume(throwing: CancellationError())
+                    activeContinuation = nil
+                }
 
                 await audioPlayer.stop()
                 wordHighlighter.stop()
@@ -391,6 +405,13 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func pause() {
+        // Resume continuation before pausing to prevent leaks
+        if let continuation = activeContinuation {
+            print("[TTSService] ⚠️ Resuming active continuation during pause()")
+            continuation.resume(throwing: CancellationError())
+            activeContinuation = nil
+        }
+
         Task { @MainActor in
             audioPlayer.pause()
             wordHighlighter.pause()
@@ -457,13 +478,19 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func stop() {
+        // CRITICAL: Resume any active continuation to prevent leaks
+        // This happens when stop() is called while audio is playing (e.g., during voice/speed change)
+        if let continuation = activeContinuation {
+            print("[TTSService] ⚠️ Resuming active continuation during stop() to prevent leak")
+            continuation.resume(throwing: CancellationError())
+            activeContinuation = nil
+        }
+
         Task {
             await audioPlayer.stop()
             // Clear synthesis queue cache when stopped
             await synthesisQueue?.clearAll()
-            await MainActor.run {
-                wordHighlighter.stop()
-            }
+            wordHighlighter.stop()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopHighlightTimer()
@@ -555,6 +582,9 @@ final class TTSService: NSObject, ObservableObject {
         // Use a continuation to wait for audio playback to complete
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
+                // Store the continuation so we can resume it during stop() to prevent leaks
+                activeContinuation = continuation
+
                 do {
                     // Get alignment for current paragraph from synthesis queue (only on first sentence)
                     if isFirst {
@@ -574,6 +604,9 @@ final class TTSService: NSObject, ObservableObject {
                                 sentenceIndex: bundle.sentenceIndex
                             )
                         }
+
+                        // Clear and resume continuation
+                        self?.activeContinuation = nil
                         continuation.resume()
                     }
 
@@ -590,6 +623,7 @@ final class TTSService: NSObject, ObservableObject {
                         shouldAutoAdvance = true
                     }
                 } catch {
+                    activeContinuation = nil
                     continuation.resume(throwing: error)
                 }
             }
