@@ -51,7 +51,7 @@ final class StreamingCallbackTests: XCTestCase {
         let delegate = TestDelegate()
 
         let text = "First sentence. Second sentence. Third sentence."
-        let result = ttsWrapper.generateWithStreaming(
+        let result = await ttsWrapper.generateWithStreaming(
             text: text,
             sid: 0,
             speed: 1.0,

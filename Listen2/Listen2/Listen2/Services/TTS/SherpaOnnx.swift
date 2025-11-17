@@ -277,6 +277,20 @@ struct GeneratedAudio {
         }
 
         self.charMapping = charMapping
+
+        // DIAGNOSTIC: Final extraction summary
+        print("[Swift-Extract] ===== EXTRACTION COMPLETE =====")
+        print("[Swift-Extract] Phonemes: \(phonemes.count)")
+        print("[Swift-Extract] Durations available: \(audio.pointee.phoneme_durations != nil ? "YES" : "NO")")
+        if !phonemes.isEmpty {
+            print("[Swift-Extract] First phoneme: '\(phonemes[0].symbol)' range=\(phonemes[0].textRange) duration=\(String(format: "%.4f", phonemes[0].duration))s")
+            if phonemes.count > 1 {
+                print("[Swift-Extract] Last phoneme: '\(phonemes[phonemes.count-1].symbol)' range=\(phonemes[phonemes.count-1].textRange) duration=\(String(format: "%.4f", phonemes[phonemes.count-1].duration))s")
+            }
+        }
+        print("[Swift-Extract] Normalized text: '\(self.normalizedText)'")
+        print("[Swift-Extract] Char mappings: \(charMapping.count)")
+        print("[Swift-Extract] ==============================")
     }
 }
 

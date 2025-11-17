@@ -90,6 +90,11 @@ actor PhonemeAlignmentService {
 
         print("[PhonemeAlign] ✅ Created alignment with \(alignmentResult.wordTimings.count) word timings, total duration: \(String(format: "%.2f", alignmentResult.totalDuration))s")
 
+        // DIAGNOSTIC: Show first few word timings
+        for (i, timing) in alignmentResult.wordTimings.prefix(5).enumerated() {
+            print("[Alignment] OUTPUT: Word[\(i)] '\(timing.text)' @ \(String(format: "%.3f", timing.startTime))s for \(String(format: "%.3f", timing.duration))s (range \(timing.rangeLocation)..<\(timing.rangeLocation + timing.rangeLength))")
+        }
+
         // Cache the result with LRU eviction
         updateCache(key: cacheKey, result: alignmentResult)
 

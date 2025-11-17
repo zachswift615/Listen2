@@ -632,7 +632,8 @@ actor SynthesisQueue {
                 from: synthesisResult,
                 sentence: sentenceResult.chunk.text,
                 wordMap: wordMap,
-                paragraphIndex: paragraphIndex
+                paragraphIndex: paragraphIndex,
+                sentenceOffset: sentenceResult.chunk.range.lowerBound
             )
 
             if timeline == nil {

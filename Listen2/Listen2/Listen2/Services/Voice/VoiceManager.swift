@@ -15,6 +15,15 @@ final class VoiceManager {
 
     private let fileManager = FileManager.default
     private var catalog: VoiceCatalog?
+    private let bundle: Bundle
+
+    // MARK: - Initialization
+
+    /// Initialize VoiceManager with a specific bundle (useful for tests)
+    /// - Parameter bundle: Bundle to use for resource lookup (defaults to .main)
+    init(bundle: Bundle = .main) {
+        self.bundle = bundle
+    }
 
     // MARK: - Storage Paths
 
@@ -32,7 +41,7 @@ final class VoiceManager {
             return cached
         }
 
-        guard let url = Bundle.main.url(forResource: "voice-catalog", withExtension: "json"),
+        guard let url = bundle.url(forResource: "voice-catalog", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode(VoiceCatalog.self, from: data) else {
             fatalError("Failed to load voice-catalog.json from bundle")
@@ -80,7 +89,7 @@ final class VoiceManager {
     /// - Returns: Path if voice is bundled or downloaded, nil otherwise
     func modelPath(for voiceID: String) -> URL? {
         // Check if bundled (Xcode 16 flattens Resources to bundle root)
-        if let bundledPath = Bundle.main.url(forResource: voiceID, withExtension: "onnx") {
+        if let bundledPath = bundle.url(forResource: voiceID, withExtension: "onnx") {
             print("[VoiceManager] 🔍 modelPath(\(voiceID)): Found bundled at \(bundledPath.path)")
             return bundledPath
         }
@@ -114,7 +123,7 @@ final class VoiceManager {
         }
 
         // Fallback to bundled (only for bundled voice)
-        if let bundledPath = Bundle.main.url(forResource: "tokens", withExtension: "txt") {
+        if let bundledPath = bundle.url(forResource: "tokens", withExtension: "txt") {
             print("[VoiceManager] 🔍 tokensPath(\(voiceID)): Using bundled at \(bundledPath.path)")
             return bundledPath
         }
@@ -136,13 +145,13 @@ final class VoiceManager {
         }
 
         // Fallback to bundled (only for bundled voice)
-        if let bundledPath = Bundle.main.url(forResource: "espeak-ng-data", withExtension: nil) {
+        if let bundledPath = bundle.url(forResource: "espeak-ng-data", withExtension: nil) {
             print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundled at \(bundledPath.path)")
             return bundledPath
         }
 
         // Second fallback: Check if it's in bundle root (old Xcode 16 flattening workaround)
-        if let bundledPath = Bundle.main.resourceURL {
+        if let bundledPath = bundle.resourceURL {
             let espeakDir = bundledPath.appendingPathComponent("espeak-ng-data")
             if fileManager.fileExists(atPath: espeakDir.path) {
                 print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundle root at \(espeakDir.path)")

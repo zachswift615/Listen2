@@ -268,6 +268,15 @@ The Listen2 app provides real-time word-by-word highlighting synchronized with T
 ┌─────────────────────────────────────────────────────────────┐
 │ PhonemeTimelineBuilder.build()                              │
 │                                                              │
+│ Input (from SynthesisQueue):                                │
+│   - synthesis result (phonemes, normalized text, mappings) │
+│   - sentence text: "CHAPTER 2"                              │
+│   - sentenceOffset: 0 (or N for Nth sentence in paragraph) │
+│                                                              │
+│ CRITICAL: Applies sentenceOffset to word boundaries!        │
+│ This makes word positions paragraph-relative, not           │
+│ sentence-relative. Essential for multi-sentence paragraphs. │
+│                                                              │
 │ Creates PhonemeTimeline from SynthesisResult:               │
 │                                                              │
 │ PhonemeTimeline {                                            │
@@ -283,6 +292,10 @@ The Listen2 app provides real-time word-by-word highlighting synchronized with T
 │   ]                                                          │
 │   duration: 0.41s                                           │
 │ }                                                            │
+│                                                              │
+│ Note: If this was sentence 2 starting at offset 50 in       │
+│ the paragraph, all originalStartOffset values would have    │
+│ 50 added to them.                                           │
 └────────────────┬────────────────────────────────────────────┘
                  │
                  ▼
@@ -293,15 +306,23 @@ The Listen2 app provides real-time word-by-word highlighting synchronized with T
 ┌─────────────────────────────────────────────────────────────┐
 │ WordHighlighter (60 FPS CADisplayLink)                      │
 │                                                              │
+│ On startSentence():                                         │
+│   - Store timeline (contains word timings)                  │
+│   - Store paragraphText (full paragraph for highlighting)   │
+│                                                              │
 │ Every frame (16.67ms):                                      │
 │   currentTime = audioPlayer.currentTime                     │
 │                                                              │
 │   for word in timeline.wordBoundaries:                      │
 │     if word.startTime <= currentTime < word.endTime:        │
 │       // Highlight this word!                               │
-│       highlightRange = word.originalStartOffset..<...End    │
+│       // Use paragraphText, not sentenceText!               │
+│       highlightRange = word.stringRange(in: paragraphText)  │
 │       UI updates with highlighted range                     │
 │       break                                                  │
+│                                                              │
+│ CRITICAL: Word offsets are paragraph-relative, so we        │
+│ must use paragraphText for range calculation!               │
 │                                                              │
 │ Timeline:                                                    │
 │   0.00s ──────▶ 0.29s ──────▶ 0.41s                        │
