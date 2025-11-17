@@ -103,8 +103,8 @@ final class LibraryViewModel: ObservableObject {
             // Extract TOC data while we have file access (pass paragraphs for accurate index mapping)
             let tocData = await documentProcessor.extractTOCData(from: url, sourceType: sourceType, paragraphs: paragraphs)
 
-            // Extract word positions for word-level highlighting (PDF only)
-            let wordMap = await documentProcessor.extractWordPositions(from: url, sourceType: sourceType)
+            // Extract word positions for word-level highlighting
+            let wordMap = await documentProcessor.extractWordPositions(from: url, sourceType: sourceType, paragraphs: paragraphs)
             let wordMapData: Data? = {
                 if let wordMap = wordMap {
                     return try? JSONEncoder().encode(wordMap)

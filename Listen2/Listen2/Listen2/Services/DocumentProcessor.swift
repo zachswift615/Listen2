@@ -54,24 +54,34 @@ final class DocumentProcessor {
         }
     }
 
-    /// Extract word positions for word-level highlighting (PDF only)
-    /// Returns nil for non-PDF sources or if extraction fails
-    func extractWordPositions(from url: URL, sourceType: SourceType) async -> DocumentWordMap? {
-        guard sourceType == .pdf else {
-            return nil
-        }
+    /// Extract word positions for word-level highlighting
+    /// - PDF: Uses VoxPDF for precise layout-aware word positions
+    /// - EPUB/Clipboard: Uses plain text word mapping
+    /// Returns nil if extraction fails
+    func extractWordPositions(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> DocumentWordMap? {
+        switch sourceType {
+        case .pdf:
+            print("🔤 Starting VoxPDF word position extraction (this may take a while for large PDFs)...")
+            let startTime = Date()
 
-        print("🔤 Starting word position extraction (this may take a while for large PDFs)...")
-        let startTime = Date()
+            do {
+                let wordMap = try await voxPDFService.extractWordPositions(from: url)
+                let duration = Date().timeIntervalSince(startTime)
+                print("✅ Extracted \(wordMap.words.count) words for highlighting in \(String(format: "%.1f", duration))s")
+                return wordMap
+            } catch {
+                print("⚠️ VoxPDF word position extraction failed: \(error), word highlighting unavailable")
+                return nil
+            }
 
-        do {
-            let wordMap = try await voxPDFService.extractWordPositions(from: url)
+        case .epub, .clipboard:
+            print("🔤 Generating word positions from plain text...")
+            let startTime = Date()
+
+            let wordMap = PlainTextWordMapper.createWordMap(from: paragraphs)
             let duration = Date().timeIntervalSince(startTime)
-            print("✅ Extracted \(wordMap.words.count) words for highlighting in \(String(format: "%.1f", duration))s")
+            print("✅ Generated \(wordMap.words.count) word positions in \(String(format: "%.3f", duration))s")
             return wordMap
-        } catch {
-            print("⚠️ Word position extraction failed: \(error), word highlighting unavailable")
-            return nil
         }
     }
 
