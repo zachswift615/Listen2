@@ -157,8 +157,18 @@ struct PhonemeTimelineBuilder {
             $0.normalizedPos == normalizedRange.upperBound - 1
         }) else { return nil }
 
+        // Calculate range bounds
+        let originalStart = startMapping.originalPos
+        let originalEnd = endMapping.originalPos + 1
+
+        // Validate range is valid (can fail with code blocks or weird PDF formatting)
+        guard originalStart <= originalEnd else {
+            print("[PhonemeTimelineBuilder] ⚠️ Invalid range mapping: start=\(originalStart) > end=\(originalEnd) (normalized \(normalizedRange))")
+            return nil
+        }
+
         // Return inclusive range in original text
-        return startMapping.originalPos..<(endMapping.originalPos + 1)
+        return originalStart..<originalEnd
     }
 
     /// Find word boundaries by analyzing phoneme positions
