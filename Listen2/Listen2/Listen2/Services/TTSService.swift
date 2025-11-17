@@ -471,17 +471,12 @@ final class TTSService: NSObject, ObservableObject {
                     // Use streaming playback with sentence bundles for word highlighting
                     // This plays each sentence as it becomes available with phoneme timing
                     for await bundle in await queue.streamSentenceBundles(for: index) {
-                        // Start highlighting for this sentence
-                        await MainActor.run {
-                            wordHighlighter.startSentence(bundle, paragraphText: text)
-                        }
-
                         // Play sentence audio and wait for completion
+                        // Note: word highlighting is started INSIDE playSentenceAudio after audio player initialization
                         try await playSentenceAudio(
-                            bundle.audioData,
-                            isFirst: bundle.sentenceIndex == 0,
-                            paragraphIndex: bundle.paragraphIndex,
-                            sentenceIndex: bundle.sentenceIndex
+                            bundle: bundle,
+                            paragraphText: text,
+                            isFirst: bundle.sentenceIndex == 0
                         )
                     }
 
@@ -513,34 +508,41 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Play a sentence audio chunk and wait for completion
     /// - Parameters:
-    ///   - data: Audio data for the sentence
+    ///   - bundle: Sentence bundle containing audio data and timeline
+    ///   - paragraphText: Full paragraph text for word position mapping
     ///   - isFirst: Whether this is the first sentence (for initialization)
-    ///   - paragraphIndex: Index of the paragraph being played
-    ///   - sentenceIndex: Index of the sentence within the paragraph
-    private func playSentenceAudio(_ data: Data, isFirst: Bool, paragraphIndex: Int, sentenceIndex: Int) async throws {
+    private func playSentenceAudio(bundle: SentenceBundle, paragraphText: String, isFirst: Bool) async throws {
         // Use a continuation to wait for audio playback to complete
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
                 do {
                     // Get alignment for current paragraph from synthesis queue (only on first sentence)
                     if isFirst {
-                        let alignment = await synthesisQueue?.getAlignment(for: paragraphIndex)
+                        let alignment = await synthesisQueue?.getAlignment(for: bundle.paragraphIndex)
                         currentAlignment = alignment
                         minWordIndex = 0
                         stuckWordWarningCount.removeAll()
                         startHighlightTimer()
                     }
 
-                    try audioPlayer.play(data: data) { [weak self] in
+                    // Start audio playback - this initializes AVAudioPlayer
+                    try audioPlayer.play(data: bundle.audioData) { [weak self] in
                         // Sentence finished playing - notify queue
                         Task {
                             await self?.synthesisQueue?.onSentenceFinished(
-                                paragraphIndex: paragraphIndex,
-                                sentenceIndex: sentenceIndex
+                                paragraphIndex: bundle.paragraphIndex,
+                                sentenceIndex: bundle.sentenceIndex
                             )
                         }
                         continuation.resume()
                     }
+
+                    // NOW the audio player is initialized - get actual duration
+                    let actualDuration = audioPlayer.duration
+
+                    // Start word highlighting with actual audio duration
+                    print("[TTSService] 🔄 Starting word highlighting with actual duration: \(String(format: "%.3f", actualDuration))s")
+                    wordHighlighter.startSentence(bundle, paragraphText: paragraphText, actualAudioDuration: actualDuration)
 
                     // Update playback state
                     isPlaying = true

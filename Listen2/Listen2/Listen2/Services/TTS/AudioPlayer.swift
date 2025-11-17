@@ -37,6 +37,11 @@ final class AudioPlayer: NSObject, ObservableObject {
 
         self.onFinished = onFinished
 
+        // Log actual audio duration from WAV file
+        if let actualDuration = player?.duration {
+            print("[AudioPlayer] 🎵 Actual WAV duration: \(String(format: "%.3f", actualDuration))s (from AVAudioPlayer)")
+        }
+
         // Start playback
         guard player?.play() == true else {
             throw AudioPlayerError.playbackFailed

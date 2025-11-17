@@ -23,6 +23,7 @@ final class WordHighlighter: ObservableObject {
     // MARK: - Private State
 
     private var currentTimeline: PhonemeTimeline?
+    private var currentParagraphText: String?
     private var sentenceStartTime: Date?
     private var displayLink: CADisplayLink?
     private var isPaused = false
@@ -44,28 +45,69 @@ final class WordHighlighter: ObservableObject {
     // MARK: - Public Methods
 
     /// Start highlighting for a new sentence
-    func startSentence(_ bundle: SentenceBundle, paragraphText: String) {
+    func startSentence(_ bundle: SentenceBundle, paragraphText: String, actualAudioDuration: TimeInterval? = nil) {
         print("[WordHighlighter] startSentence called for \(bundle.sentenceKey)")
 
         // Cancel any transition timer
         transitionTimer?.invalidate()
         transitionTimer = nil
 
-        // Store timeline if available
-        currentTimeline = bundle.timeline
+        // Store timeline and paragraph text
+        var timeline = bundle.timeline
+        currentParagraphText = paragraphText
 
         // Only start timing if we have a timeline
-        guard let timeline = bundle.timeline else {
+        guard let originalTimeline = bundle.timeline else {
             print("[WordHighlighter] ❌ No timeline for sentence \(bundle.sentenceKey)")
             // Keep last highlighted word during sentences without timing
             return
         }
 
-        print("[WordHighlighter] ✓ Timeline has \(timeline.wordBoundaries.count) words, \(timeline.phonemes.count) phonemes")
+        print("[WordHighlighter] ✓ Timeline has \(originalTimeline.wordBoundaries.count) words, \(originalTimeline.phonemes.count) phonemes")
+        print("[WordHighlighter]   Timeline duration: \(String(format: "%.3f", originalTimeline.duration))s (from sample count)")
+
+        // Scale timeline to match actual audio duration if provided
+        if let actualDuration = actualAudioDuration, actualDuration > 0.01 {
+            let timelineDuration = originalTimeline.duration
+
+            if abs(actualDuration - timelineDuration) > 0.01 {
+                let scaleFactor = actualDuration / timelineDuration
+
+                print("[WordHighlighter] 🎯 DURATION MISMATCH: Timeline=\(String(format: "%.3f", timelineDuration))s vs Actual=\(String(format: "%.3f", actualDuration))s")
+                print("[WordHighlighter]   Applying scale factor: \(String(format: "%.3f", scaleFactor))x to word boundaries")
+
+                // Scale all word boundaries
+                let scaledBoundaries = originalTimeline.wordBoundaries.map { boundary in
+                    PhonemeTimeline.WordBoundary(
+                        word: boundary.word,
+                        startTime: boundary.startTime * scaleFactor,
+                        endTime: boundary.endTime * scaleFactor,
+                        originalStartOffset: boundary.originalStartOffset,
+                        originalEndOffset: boundary.originalEndOffset,
+                        voxPDFWord: boundary.voxPDFWord
+                    )
+                }
+
+                // Create new timeline with scaled boundaries and actual duration
+                timeline = PhonemeTimeline(
+                    sentenceText: originalTimeline.sentenceText,
+                    normalizedText: originalTimeline.normalizedText,
+                    phonemes: originalTimeline.phonemes,
+                    wordBoundaries: scaledBoundaries,
+                    duration: actualDuration
+                )
+
+                print("[WordHighlighter]   ✓ Scaled last word end time: \(String(format: "%.3f", scaledBoundaries.last!.endTime))s")
+            }
+        }
+
+        currentTimeline = timeline
 
         // Log first few words for debugging
-        for (i, word) in timeline.wordBoundaries.prefix(3).enumerated() {
-            print("[WordHighlighter]   Word \(i): '\(word.word)' @ \(word.startTime)-\(word.endTime)s")
+        if let finalTimeline = timeline {
+            for (i, word) in finalTimeline.wordBoundaries.prefix(3).enumerated() {
+                print("[WordHighlighter]   Word \(i): '\(word.word)' @ \(String(format: "%.3f", word.startTime))-\(String(format: "%.3f", word.endTime))s")
+            }
         }
 
         // Reset timing
@@ -112,6 +154,7 @@ final class WordHighlighter: ObservableObject {
         transitionTimer?.invalidate()
 
         currentTimeline = nil
+        currentParagraphText = nil
         sentenceStartTime = nil
         pausedTime = 0
         isPaused = false
@@ -159,6 +202,7 @@ final class WordHighlighter: ObservableObject {
     @objc private func updateHighlight() {
         guard !isPaused,
               let timeline = currentTimeline,
+              let paragraphText = currentParagraphText,
               let startTime = sentenceStartTime else { return }
 
         let elapsed = Date().timeIntervalSince(startTime)
@@ -170,8 +214,8 @@ final class WordHighlighter: ObservableObject {
                 Task { @MainActor in
                     self.highlightedWord = wordBoundary.voxPDFWord
 
-                    // Also set the range for fallback highlighting
-                    if let range = wordBoundary.stringRange(in: timeline.sentenceText) {
+                    // Use paragraph text for range calculation (word offsets are paragraph-relative)
+                    if let range = wordBoundary.stringRange(in: paragraphText) {
                         self.highlightedRange = range
                     } else {
                         self.highlightedRange = nil
@@ -182,7 +226,7 @@ final class WordHighlighter: ObservableObject {
 
                 // Debug output (throttled)
                 if Int(elapsed * 10) % 10 == 0 {  // Log every second
-                    print("[WordHighlighter] Highlighting: \(wordBoundary.word) at \(elapsed)s")
+                    print("[WordHighlighter] Highlighting: \(wordBoundary.word) at \(elapsed)s (offset \(wordBoundary.originalStartOffset)-\(wordBoundary.originalEndOffset))")
                 }
             }
         } else if elapsed > timeline.duration {

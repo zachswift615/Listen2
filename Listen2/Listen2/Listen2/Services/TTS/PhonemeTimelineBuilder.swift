@@ -16,12 +16,14 @@ struct PhonemeTimelineBuilder {
     ///   - sentence: The original sentence text
     ///   - wordMap: Optional VoxPDF word map for enhanced word positions
     ///   - paragraphIndex: Index of the paragraph containing this sentence
+    ///   - sentenceOffset: Character offset of sentence start within paragraph (for multi-sentence paragraphs)
     /// - Returns: PhonemeTimeline if successful, nil if phonemes are empty
     static func build(
         from synthesis: SynthesisResult,
         sentence: String,
         wordMap: DocumentWordMap?,
-        paragraphIndex: Int
+        paragraphIndex: Int,
+        sentenceOffset: Int = 0
     ) -> PhonemeTimeline? {
         // Guard against empty phonemes
         guard !synthesis.phonemes.isEmpty else {
@@ -36,17 +38,46 @@ struct PhonemeTimelineBuilder {
         )
 
         // Find word boundaries
-        let wordBoundaries = findWordBoundaries(
+        var wordBoundaries = findWordBoundaries(
             timedPhonemes: timedPhonemes,
             originalText: sentence,
             normalizedText: synthesis.normalizedText,
             charMapping: synthesis.charMapping,
             wordMap: wordMap,
-            paragraphIndex: paragraphIndex
+            paragraphIndex: paragraphIndex,
+            sentenceOffset: sentenceOffset
         )
 
-        // Calculate total duration
+        // Calculate total duration from all phonemes (includes orphaned phonemes)
         let totalDuration = timedPhonemes.last?.endTime ?? 0
+
+        // Scale word boundaries to match actual audio duration
+        // This fixes the issue where orphaned phonemes (blanks, pauses, stress marks)
+        // aren't assigned to any words, causing word boundaries to be shorter than audio
+        if !wordBoundaries.isEmpty, let lastWordEnd = wordBoundaries.last?.endTime, lastWordEnd > 0 {
+            let wordBoundaryDuration = lastWordEnd
+
+            if abs(totalDuration - wordBoundaryDuration) > 0.01 { // Only scale if there's a meaningful difference
+                let scaleFactor = totalDuration / wordBoundaryDuration
+
+                print("[PhonemeTimelineBuilder] ⚖️  SCALING FIX: Word boundaries span \(String(format: "%.3f", wordBoundaryDuration))s but audio is \(String(format: "%.3f", totalDuration))s")
+                print("[PhonemeTimelineBuilder]   Applying scale factor: \(String(format: "%.3f", scaleFactor))x")
+
+                // Scale all word boundary times proportionally
+                wordBoundaries = wordBoundaries.map { boundary in
+                    PhonemeTimeline.WordBoundary(
+                        word: boundary.word,
+                        startTime: boundary.startTime * scaleFactor,
+                        endTime: boundary.endTime * scaleFactor,
+                        originalStartOffset: boundary.originalStartOffset,
+                        originalEndOffset: boundary.originalEndOffset,
+                        voxPDFWord: boundary.voxPDFWord
+                    )
+                }
+
+                print("[PhonemeTimelineBuilder]   Scaled last word end time: \(String(format: "%.3f", wordBoundaries.last!.endTime))s (matches audio)")
+            }
+        }
 
         let timeline = PhonemeTimeline(
             sentenceText: sentence,
@@ -137,75 +168,92 @@ struct PhonemeTimelineBuilder {
         normalizedText: String,
         charMapping: [(originalPos: Int, normalizedPos: Int)],
         wordMap: DocumentWordMap?,
-        paragraphIndex: Int
+        paragraphIndex: Int,
+        sentenceOffset: Int
     ) -> [PhonemeTimeline.WordBoundary] {
-        print("[PhonemeTimelineBuilder] Finding word boundaries...")
+        print("[PhonemeTimelineBuilder] Finding word boundaries (word-level approach)...")
         print("  Original text: '\(originalText)'")
         print("  Normalized text: '\(normalizedText)'")
         print("  Phonemes: \(timedPhonemes.count)")
-        print("  Char mappings: \(charMapping.count)")
 
         var boundaries: [PhonemeTimeline.WordBoundary] = []
 
-        // Step 1: Split NORMALIZED text into words
+        // Step 1: Group phonemes by their textRange (same position = same word)
+        let phonemeGroups = groupPhonemesByPosition(timedPhonemes)
+        print("  Grouped into \(phonemeGroups.count) phoneme word groups")
+
+        // Step 2: Split normalized text into words
         let normalizedWords = findWordsInNormalizedText(normalizedText)
         print("  Found \(normalizedWords.count) words in normalized text")
 
-        // Step 2: For each normalized word, find its phonemes and map to original text
-        for (normalizedWord, normalizedRange) in normalizedWords {
-            // Find phonemes that belong to this normalized word
-            let wordPhonemes = timedPhonemes.filter { phoneme in
-                // Phoneme positions are in normalized text
-                let phonemeRange = phoneme.normalizedRange
-                // Check if phoneme overlaps with normalized word
-                return phonemeRange.overlaps(normalizedRange)
+        // Step 3: Split original text into words
+        let originalWords = findWordsInNormalizedText(originalText)
+        print("  Found \(originalWords.count) words in original text")
+
+        // Step 4: Match groups 1:1 with normalized words
+        // Both phoneme groups and normalized words are in the same order
+        var groupIndex = 0
+        var originalWordIndex = 0
+
+        for (normalizedWord, _) in normalizedWords {
+            guard groupIndex < phonemeGroups.count else {
+                print("  ⚠️ Ran out of phoneme groups at normalized word '\(normalizedWord)'")
+                break
             }
 
-            guard !wordPhonemes.isEmpty else {
-                print("  ⚠️ No phonemes for normalized word '\(normalizedWord)' at \(normalizedRange)")
-                continue
-            }
+            let wordPhonemes = phonemeGroups[groupIndex]
+            groupIndex += 1
+
+            print("  Phoneme group \(groupIndex - 1): \(wordPhonemes.count) phonemes for '\(normalizedWord)'")
 
             // Get timing from phonemes
             let startTime = wordPhonemes.first!.startTime
             let endTime = wordPhonemes.last!.endTime
 
-            // Map normalized position to original position
-            let originalWord: String
-            let originalStart: Int
-            let originalEnd: Int
-
-            if let mappedRange = mapNormalizedRangeToOriginal(
-                normalizedRange: normalizedRange,
-                charMapping: charMapping,
-                originalText: originalText
-            ) {
-                originalStart = mappedRange.lowerBound
-                originalEnd = mappedRange.upperBound
-
-                // Extract word from original text
-                let startIdx = originalText.index(originalText.startIndex, offsetBy: originalStart)
-                let endIdx = originalText.index(originalText.startIndex, offsetBy: min(originalEnd, originalText.count))
-                originalWord = String(originalText[startIdx..<endIdx])
-            } else {
-                // Fallback: use normalized word
-                print("  ⚠️ Failed to map '\(normalizedWord)' to original text")
-                originalWord = normalizedWord
-                originalStart = 0
-                originalEnd = normalizedWord.count
+            // Map to original word by position
+            // Handle edge case: contractions like "don't" → ["do", "not"]
+            // If normalized has more words than original, it's likely a contraction
+            // For now, use simple 1:1 mapping by index
+            guard originalWordIndex < originalWords.count else {
+                print("  ⚠️ Ran out of original words at normalized '\(normalizedWord)'")
+                break
             }
+
+            let (originalWord, originalRange) = originalWords[originalWordIndex]
+
+            // Check if this might be a contraction that expanded
+            // Simple heuristic: if next normalized word starts with same letter as current original word
+            // and original word contains apostrophe, it's likely a contraction
+            let isContraction = originalWord.contains("'") &&
+                               groupIndex < normalizedWords.count &&
+                               normalizedWords[groupIndex].word.first == normalizedWord.first
+
+            if isContraction {
+                // This original word maps to multiple normalized words
+                // Consume next phoneme group too
+                print("  📝 Detected contraction: '\(originalWord)' → '\(normalizedWord)' + next word")
+                // Don't increment originalWordIndex yet - will do it after processing both groups
+                // For now, just use this group's timing
+            } else {
+                // Normal 1:1 mapping
+                originalWordIndex += 1
+            }
+
+            // Apply sentence offset to make positions paragraph-relative
+            let paragraphStart = originalRange.lowerBound + sentenceOffset
+            let paragraphEnd = originalRange.upperBound + sentenceOffset
 
             let boundary = PhonemeTimeline.WordBoundary(
                 word: originalWord,
                 startTime: startTime,
                 endTime: endTime,
-                originalStartOffset: originalStart,
-                originalEndOffset: originalEnd,
-                voxPDFWord: wordMap?.word(at: originalStart, in: paragraphIndex)
+                originalStartOffset: paragraphStart,
+                originalEndOffset: paragraphEnd,
+                voxPDFWord: wordMap?.word(at: paragraphStart, in: paragraphIndex)
             )
 
             boundaries.append(boundary)
-            print("  Word '\(originalWord)': \(startTime)-\(endTime)s")
+            print("  Word '\(originalWord)': \(startTime)-\(endTime)s (offset \(paragraphStart)-\(paragraphEnd))")
         }
 
         // Sort by time to ensure correct order
@@ -213,6 +261,34 @@ struct PhonemeTimelineBuilder {
 
         print("  Created \(boundaries.count) word boundaries")
         return boundaries
+    }
+
+    /// Group phonemes by their textRange position (same position = same word)
+    private static func groupPhonemesByPosition(_ phonemes: [PhonemeTimeline.TimedPhoneme]) -> [[PhonemeTimeline.TimedPhoneme]] {
+        var groups: [[PhonemeTimeline.TimedPhoneme]] = []
+        var currentGroup: [PhonemeTimeline.TimedPhoneme] = []
+        var currentRange: Range<Int>? = nil
+
+        for phoneme in phonemes {
+            if let range = currentRange, range == phoneme.normalizedRange {
+                // Same word - add to current group
+                currentGroup.append(phoneme)
+            } else {
+                // New word - save previous group and start new one
+                if !currentGroup.isEmpty {
+                    groups.append(currentGroup)
+                }
+                currentGroup = [phoneme]
+                currentRange = phoneme.normalizedRange
+            }
+        }
+
+        // Don't forget the last group
+        if !currentGroup.isEmpty {
+            groups.append(currentGroup)
+        }
+
+        return groups
     }
 
     /// Find words in normalized text with their positions
