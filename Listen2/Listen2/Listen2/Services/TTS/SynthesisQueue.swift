@@ -173,11 +173,16 @@ actor SynthesisQueue {
 
     /// Update playback speed (clears cache as audio needs re-synthesis)
     func setSpeed(_ speed: Float) {
-        guard self.speed != speed else { return }
+        guard self.speed != speed else {
+            print("[SynthesisQueue] ⚠️ Speed already set to \(speed), skipping")
+            return
+        }
 
+        print("[SynthesisQueue] 🎚️ Changing speed from \(self.speed) to \(speed)")
         self.speed = speed
 
         // Clear cache - speed change requires re-synthesis and re-alignment
+        print("[SynthesisQueue] 🗑️ Clearing cache for speed change")
         cancelAll()
         cache.removeAll()
         alignments.removeAll()
@@ -544,6 +549,7 @@ actor SynthesisQueue {
         synthesisProgress[paragraphIndex] = Double(sentenceIndex) / Double(chunks.count)
 
         // Synthesize with streaming callback (ONNX native streaming!)
+        print("[SynthesisQueue] 🎵 Synthesizing sentence \(sentenceIndex) of paragraph \(paragraphIndex) at speed: \(speed)")
         let result = try await provider.synthesizeWithStreaming(
             chunk.text,
             speed: speed,

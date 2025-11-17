@@ -9,6 +9,7 @@ import Combine
 import MediaPlayer
 import SwiftUI
 
+@MainActor
 final class TTSService: NSObject, ObservableObject {
 
     // MARK: - Settings
@@ -251,6 +252,8 @@ final class TTSService: NSObject, ObservableObject {
         // Update the rate
         playbackRate = newRate
 
+        print("[TTSService] 🎚️ Playback rate changed to: \(newRate)")
+
         // Update now playing info with new rate
         nowPlayingManager.updatePlaybackRate(newRate)
 
@@ -262,25 +265,22 @@ final class TTSService: NSObject, ObservableObject {
                 // CRITICAL: Must await setSpeed BEFORE restarting playback
                 // Otherwise playback starts with old speed (race condition)
                 await synthesisQueue?.setSpeed(newRate)
+                print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate)")
 
                 await audioPlayer.stop()
-                await MainActor.run {
-                    wordHighlighter.stop()
-                }
+                wordHighlighter.stop()
+                fallbackSynthesizer.stopSpeaking(at: .immediate)
+                stopHighlightTimer()
 
-                // Restart from current paragraph on main actor
-                await MainActor.run {
-                    self.fallbackSynthesizer.stopSpeaking(at: .immediate)
-                    self.stopHighlightTimer()
-
-                    // Now speed is set, restart playback
-                    self.speakParagraph(at: currentIndex)
-                }
+                // Now speed is set, restart playback
+                print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new speed")
+                speakParagraph(at: currentIndex)
             }
         } else {
             // Not playing, just update speed for next playback
             Task {
                 await synthesisQueue?.setSpeed(newRate)
+                print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate) (not playing)")
             }
         }
     }
@@ -309,6 +309,8 @@ final class TTSService: NSObject, ObservableObject {
             // Extract voice ID from "piper:en_US-lessac-medium" format
             let voiceID = String(voice.id.dropFirst("piper:".count))
 
+            print("[TTSService] 🎤 Switching to voice: \(voiceID)")
+
             // Reinitialize Piper provider with new voice
             Task {
                 do {
@@ -318,31 +320,29 @@ final class TTSService: NSObject, ObservableObject {
                     )
                     try await piperProvider.initialize()
 
-                    // CRITICAL: All property updates must be on MainActor to avoid threading errors
-                    await MainActor.run {
-                        self.provider = piperProvider
+                    // Update properties (already on MainActor)
+                    provider = piperProvider
 
-                        // Update synthesis queue with new provider and alignment services
-                        // MUST be set on MainActor (synthesisQueue updates Published properties)
-                        self.synthesisQueue = SynthesisQueue(
-                            provider: piperProvider,
-                            alignmentService: self.alignmentService,
-                            alignmentCache: self.alignmentCache
-                        )
+                    // Update synthesis queue with new provider and alignment services
+                    synthesisQueue = SynthesisQueue(
+                        provider: piperProvider,
+                        alignmentService: alignmentService,
+                        alignmentCache: alignmentCache
+                    )
 
-                        print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
+                    print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
 
-                        // If was playing, restart from saved position with new voice
-                        if wasPlaying {
-                            // Restore document state
-                            self.currentText = savedText
-                            self.currentTitle = savedTitle
-                            self.wordMap = savedWordMap
-                            self.currentDocumentID = savedDocumentID
+                    // If was playing, restart from saved position with new voice
+                    if wasPlaying {
+                        // Restore document state
+                        currentText = savedText
+                        currentTitle = savedTitle
+                        wordMap = savedWordMap
+                        currentDocumentID = savedDocumentID
 
-                            // Restart playback from saved position
-                            self.speakParagraph(at: currentIndex)
-                        }
+                        // Restart playback from saved position
+                        print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new voice")
+                        speakParagraph(at: currentIndex)
                     }
                 } catch {
                     print("[TTSService] ⚠️ Failed to switch Piper voice: \(error)")
