@@ -251,11 +251,6 @@ final class TTSService: NSObject, ObservableObject {
         // Update the rate
         playbackRate = newRate
 
-        // Update synthesis queue with new speed (clears cache)
-        Task {
-            await synthesisQueue?.setSpeed(newRate)
-        }
-
         // Update now playing info with new rate
         nowPlayingManager.updatePlaybackRate(newRate)
 
@@ -264,16 +259,29 @@ final class TTSService: NSObject, ObservableObject {
         // Instead, we just stop audio and restart from current position
         if wasPlaying {
             Task {
+                // CRITICAL: Must await setSpeed BEFORE restarting playback
+                // Otherwise playback starts with old speed (race condition)
+                await synthesisQueue?.setSpeed(newRate)
+
                 await audioPlayer.stop()
                 await MainActor.run {
                     wordHighlighter.stop()
                 }
-            }
-            fallbackSynthesizer.stopSpeaking(at: .immediate)
-            stopHighlightTimer()
 
-            // Restart from current paragraph (don't reset progress)
-            speakParagraph(at: currentIndex)
+                // Restart from current paragraph on main actor
+                await MainActor.run {
+                    self.fallbackSynthesizer.stopSpeaking(at: .immediate)
+                    self.stopHighlightTimer()
+
+                    // Now speed is set, restart playback
+                    self.speakParagraph(at: currentIndex)
+                }
+            }
+        } else {
+            // Not playing, just update speed for next playback
+            Task {
+                await synthesisQueue?.setSpeed(newRate)
+            }
         }
     }
 
@@ -310,22 +318,22 @@ final class TTSService: NSObject, ObservableObject {
                     )
                     try await piperProvider.initialize()
 
+                    // CRITICAL: All property updates must be on MainActor to avoid threading errors
                     await MainActor.run {
                         self.provider = piperProvider
-                    }
 
-                    // Update synthesis queue with new provider and alignment services
-                    self.synthesisQueue = SynthesisQueue(
-                        provider: piperProvider,
-                        alignmentService: alignmentService,
-                        alignmentCache: alignmentCache
-                    )
+                        // Update synthesis queue with new provider and alignment services
+                        // MUST be set on MainActor (synthesisQueue updates Published properties)
+                        self.synthesisQueue = SynthesisQueue(
+                            provider: piperProvider,
+                            alignmentService: self.alignmentService,
+                            alignmentCache: self.alignmentCache
+                        )
 
-                    print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
+                        print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
 
-                    // If was playing, restart from saved position with new voice
-                    if wasPlaying {
-                        await MainActor.run {
+                        // If was playing, restart from saved position with new voice
+                        if wasPlaying {
                             // Restore document state
                             self.currentText = savedText
                             self.currentTitle = savedTitle
