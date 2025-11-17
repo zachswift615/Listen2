@@ -181,12 +181,24 @@ actor SynthesisQueue {
         print("[SynthesisQueue] 🎚️ Changing speed from \(self.speed) to \(speed)")
         self.speed = speed
 
-        // Clear cache - speed change requires re-synthesis and re-alignment
-        print("[SynthesisQueue] 🗑️ Clearing cache for speed change")
+        // Clear ALL caches - speed change requires complete re-synthesis and re-alignment
+        print("[SynthesisQueue] 🗑️ Clearing ALL caches for speed change (including sentence-level)")
         cancelAll()
+
+        // Paragraph-level caches
         cache.removeAll()
         alignments.removeAll()
         synthesizing.removeAll()
+
+        // Sentence-level caches (CRITICAL: these must be cleared too!)
+        sentenceCache.removeAll()
+        synthesisCacheForTimeline.removeAll()
+        synthesizingSentences.removeAll()
+
+        // Reset sentence synthesis state
+        isProcessingSentences = false
+        currentSentenceIndex = 0
+        currentParagraphIndex = 0
     }
 
     /// Get synthesized audio for a paragraph, synthesizing if not cached

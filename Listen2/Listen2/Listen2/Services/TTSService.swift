@@ -549,6 +549,13 @@ final class TTSService: NSObject, ObservableObject {
 
                     // All sentences played - trigger paragraph complete
                     handleParagraphComplete()
+                } catch is CancellationError {
+                    // Playback was cancelled (voice/speed change, user stopped, etc.)
+                    // DO NOT call handleParagraphComplete() - we don't want to auto-advance!
+                    print("[TTSService] ⏸️ Playback cancelled - not advancing to next paragraph")
+                    await MainActor.run {
+                        self.isPlaying = false
+                    }
                 } catch {
                     print("[TTSService] ⚠️ Piper synthesis failed: \(error)")
 
