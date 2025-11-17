@@ -260,9 +260,19 @@ final class TTSService: NSObject, ObservableObject {
         nowPlayingManager.updatePlaybackRate(newRate)
 
         // If we were playing, restart current paragraph with new rate
-        // This ensures rapid slider changes all trigger restarts
+        // NOTE: We don't call stop() because it resets progress to .initial (paragraph 0)
+        // Instead, we just stop audio and restart from current position
         if wasPlaying {
-            stop()
+            Task {
+                await audioPlayer.stop()
+                await MainActor.run {
+                    wordHighlighter.stop()
+                }
+            }
+            fallbackSynthesizer.stopSpeaking(at: .immediate)
+            stopHighlightTimer()
+
+            // Restart from current paragraph (don't reset progress)
             speakParagraph(at: currentIndex)
         }
     }
@@ -275,8 +285,16 @@ final class TTSService: NSObject, ObservableObject {
                 return
             }
 
+            // Capture playback state before stopping
+            let wasPlaying = isPlaying
+            let currentIndex = currentProgress.paragraphIndex
+            let savedText = currentText
+            let savedTitle = currentTitle
+            let savedWordMap = wordMap
+            let savedDocumentID = currentDocumentID
+
             // Stop current playback if active
-            if isPlaying {
+            if wasPlaying {
                 stop()
             }
 
@@ -304,6 +322,20 @@ final class TTSService: NSObject, ObservableObject {
                     )
 
                     print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
+
+                    // If was playing, restart from saved position with new voice
+                    if wasPlaying {
+                        await MainActor.run {
+                            // Restore document state
+                            self.currentText = savedText
+                            self.currentTitle = savedTitle
+                            self.wordMap = savedWordMap
+                            self.currentDocumentID = savedDocumentID
+
+                            // Restart playback from saved position
+                            self.speakParagraph(at: currentIndex)
+                        }
+                    }
                 } catch {
                     print("[TTSService] ⚠️ Failed to switch Piper voice: \(error)")
                 }
