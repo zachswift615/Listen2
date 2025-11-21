@@ -2,3 +2,8 @@
 **.DS_Store
 .workshop/
 docs/.
+
+# Xcode user-specific files
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
