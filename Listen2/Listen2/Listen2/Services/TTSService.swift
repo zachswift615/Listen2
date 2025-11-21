@@ -33,7 +33,7 @@ final class TTSService: NSObject, ObservableObject {
     private var useFallback: Bool = false  // Disable fallback during testing
     private let audioSessionManager = AudioSessionManager()
     private let nowPlayingManager = NowPlayingInfoManager()
-    private var audioPlayer: AudioPlayer!
+    private var audioPlayer: StreamingAudioPlayer!
     private var synthesisQueue: SynthesisQueue?
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
@@ -75,7 +75,7 @@ final class TTSService: NSObject, ObservableObject {
 
         // Initialize audio player on main actor
         Task { @MainActor in
-            self.audioPlayer = AudioPlayer()
+            self.audioPlayer = StreamingAudioPlayer()
         }
 
         // Subscribe to word highlighter updates
@@ -121,11 +121,9 @@ final class TTSService: NSObject, ObservableObject {
             try await piperProvider.initialize()
             self.provider = piperProvider
 
-            // Initialize synthesis queue with provider and alignment services
+            // Initialize synthesis queue with provider
             self.synthesisQueue = SynthesisQueue(
-                provider: piperProvider,
-                alignmentService: alignmentService,
-                alignmentCache: alignmentCache
+                provider: piperProvider
             )
 
             print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
@@ -347,11 +345,9 @@ final class TTSService: NSObject, ObservableObject {
                     // Update properties (already on MainActor)
                     provider = piperProvider
 
-                    // Update synthesis queue with new provider and alignment services
+                    // Update synthesis queue with new provider
                     synthesisQueue = SynthesisQueue(
-                        provider: piperProvider,
-                        alignmentService: alignmentService,
-                        alignmentCache: alignmentCache
+                        provider: piperProvider
                     )
 
                     print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
@@ -562,65 +558,62 @@ final class TTSService: NSObject, ObservableObject {
             existingTask.cancel()
         }
 
-        // Try Piper TTS with synthesis queue first, fallback to AVSpeech if unavailable or on error
+        // Use chunk-level streaming with synthesis queue
         if let queue = synthesisQueue {
             let taskID = UUID().uuidString.prefix(8)
-            print("[TTSService] 🎬 Starting speak task \(taskID) for paragraph \(index)")
+            print("[TTSService] 🎬 Starting streaming task \(taskID) for paragraph \(index)")
 
             activeSpeakTask = Task {
                 defer {
-                    print("[TTSService] 🏁 Ending speak task \(taskID)")
+                    print("[TTSService] 🏁 Ending streaming task \(taskID)")
                     self.activeSpeakTask = nil
                 }
                 do {
-                    // Use streaming playback with sentence bundles for word highlighting
-                    // This plays each sentence as it becomes available with phoneme timing
-                    for await bundle in await queue.streamSentenceBundles(for: index) {
-                        // CRITICAL: Check if task was cancelled (speed change, voice change, stop, etc.)
+                    // Split into sentences
+                    let sentences = SentenceSplitter.split(text)
+                    print("[TTSService] 📝 Split paragraph into \(sentences.count) sentences")
+
+                    // Play each sentence with chunk streaming
+                    for (sentenceIndex, chunk) in sentences.enumerated() {
+                        // Check cancellation
                         guard !Task.isCancelled else {
-                            print("[TTSService] 🛑 Task cancelled during sentence stream - breaking loop")
+                            print("[TTSService] 🛑 Task cancelled - breaking loop")
                             throw CancellationError()
                         }
 
-                        // Play sentence audio and wait for completion
-                        // Note: word highlighting is started INSIDE playSentenceAudio after audio player initialization
-                        try await playSentenceAudio(
-                            bundle: bundle,
-                            paragraphText: text,
-                            isFirst: bundle.sentenceIndex == 0
+                        print("[TTSService] 🎤 Starting sentence \(sentenceIndex+1)/\(sentences.count)")
+
+                        // Play sentence with chunk streaming
+                        try await playSentenceWithChunks(
+                            sentence: chunk.text,
+                            isLast: sentenceIndex == sentences.count - 1
                         )
                     }
 
                     // Check cancellation one more time before advancing
                     guard !Task.isCancelled else {
-                        print("[TTSService] 🛑 Task cancelled after sentences complete - not advancing")
+                        print("[TTSService] 🛑 Task cancelled after sentences complete")
                         throw CancellationError()
                     }
 
-                    // All sentences played - trigger paragraph complete
-                    print("[TTSService] ✅ All sentences complete, advancing to next paragraph")
+                    // All sentences played - advance to next paragraph
+                    print("[TTSService] ✅ Paragraph complete, advancing")
                     handleParagraphComplete()
+
                 } catch is CancellationError {
-                    // Playback was cancelled (voice/speed change, user stopped, etc.)
-                    // DO NOT call handleParagraphComplete() - we don't want to auto-advance!
-                    print("[TTSService] ⏸️ Playback cancelled - not advancing to next paragraph")
+                    print("[TTSService] ⏸️ Playback cancelled")
                     await MainActor.run {
                         self.isPlaying = false
                     }
                 } catch {
-                    // Log detailed error information
-                    print("[TTSService] ❌ Error during playback:")
-                    print("[TTSService]   Type: \(type(of: error))")
-                    print("[TTSService]   Description: \(error)")
-                    print("[TTSService]   Is CancellationError? \(error is CancellationError)")
-
+                    print("[TTSService] ❌ Error during playback: \(error)")
                     if useFallback {
                         print("[TTSService] Falling back to AVSpeech")
                         await MainActor.run {
                             self.fallbackToAVSpeech(text: text)
                         }
                     } else {
-                        print("[TTSService] Fallback disabled - stopping playback")
+                        print("[TTSService] Fallback disabled - stopping")
                         await MainActor.run {
                             self.isPlaying = false
                         }
@@ -628,10 +621,58 @@ final class TTSService: NSObject, ObservableObject {
                 }
             }
         } else {
-            // TEMPORARY: iOS fallback disabled for testing
-            // fallbackToAVSpeech(text: text)
-            print("[TTSService] ⚠️ Synthesis queue unavailable, fallback disabled")
+            print("[TTSService] ⚠️ Synthesis queue unavailable")
             isPlaying = false
+        }
+    }
+
+    /// Play a sentence with chunk-level streaming
+    private func playSentenceWithChunks(sentence: String, isLast: Bool) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task { @MainActor in
+                // Store continuation for clean cancellation
+                activeContinuation = continuation
+
+                do {
+                    // Start streaming session
+                    audioPlayer.startStreaming { [weak self] in
+                        // Sentence finished playing
+                        print("[TTSService] 🏁 Sentence playback complete")
+                        self?.activeContinuation = nil
+                        continuation.resume()
+                    }
+
+                    // Create delegate to receive chunks
+                    let chunkDelegate = ChunkStreamDelegate(audioPlayer: audioPlayer)
+
+                    // Start synthesis with streaming - chunks will be scheduled as they arrive
+                    Task {
+                        do {
+                            // This will call chunkDelegate.didReceiveAudioChunk() for each chunk
+                            _ = try await synthesisQueue?.streamSentence(sentence, delegate: chunkDelegate)
+
+                            // All chunks synthesized - mark scheduling complete
+                            await MainActor.run {
+                                audioPlayer.finishScheduling()
+                            }
+                        } catch {
+                            print("[TTSService] ❌ Synthesis error: \(error)")
+                            await MainActor.run {
+                                activeContinuation = nil
+                                continuation.resume(throwing: error)
+                            }
+                        }
+                    }
+
+                    // Update playback state
+                    isPlaying = true
+                    shouldAutoAdvance = true
+
+                } catch {
+                    activeContinuation = nil
+                    continuation.resume(throwing: error)
+                }
+            }
         }
     }
 
@@ -759,20 +800,9 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Start timer for word highlighting during Piper playback (60 FPS)
     private func startHighlightTimer() {
-        // Only start timer if we have alignment data
-        guard currentAlignment != nil else { return }
-
-        // Clean up any existing timer
-        stopHighlightTimer()
-
-        // Reset timing validation tracking
-        lastHighlightedWordIndex = nil
-        lastHighlightChangeTime = 0
-
-        // Create timer running at ~60 FPS for smooth highlighting
-        highlightTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            self?.updateHighlightFromTime()
-        }
+        // TEMPORARY: Highlighting disabled during chunk streaming development
+        // Will revisit with better approach after streaming is stable
+        print("[TTSService] ⏸️ Word highlighting temporarily disabled")
     }
 
     /// Stop and clean up highlight timer
@@ -863,6 +893,25 @@ final class TTSService: NSObject, ObservableObject {
 extension Array {
     subscript(safe index: Index) -> Element? {
         return indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Chunk Stream Delegate
+
+/// Delegate that receives audio chunks and schedules them on audio player
+private class ChunkStreamDelegate: SynthesisStreamDelegate {
+    private weak var audioPlayer: StreamingAudioPlayer?
+
+    init(audioPlayer: StreamingAudioPlayer) {
+        self.audioPlayer = audioPlayer
+    }
+
+    nonisolated func didReceiveAudioChunk(_ chunk: Data, progress: Double) -> Bool {
+        Task { @MainActor in
+            // Schedule chunk immediately on audio player
+            audioPlayer?.scheduleChunk(chunk)
+        }
+        return true // Continue synthesis
     }
 }
 
