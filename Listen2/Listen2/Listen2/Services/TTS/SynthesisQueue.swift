@@ -717,6 +717,7 @@ actor SynthesisQueue {
         while elapsed < maxWaitTime {
             // Check if sentence is cached
             if let cached = sentenceCache[paragraphIndex]?.first(where: { $0.chunk.index == sentenceIndex }) {
+                print("[SynthesisQueue] ✅ CACHE HIT: Sentence \(paragraphIndex)-\(sentenceIndex) found in cache (synthesized at speed \(self.speed))")
                 return cached
             }
 
@@ -725,6 +726,7 @@ actor SynthesisQueue {
             elapsed += pollInterval
         }
 
+        print("[SynthesisQueue] ❌ CACHE MISS: Sentence \(paragraphIndex)-\(sentenceIndex) not found after \(maxWaitTime)s")
         throw TTSError.synthesisFailed(reason: "Sentence synthesis timeout")
     }
 

@@ -64,6 +64,9 @@ final class TTSService: NSObject, ObservableObject {
     // Active continuation for current audio playback (to prevent leaks during stop)
     private var activeContinuation: CheckedContinuation<Void, Error>?
 
+    // Active speak task (to cancel during voice/speed changes)
+    private var activeSpeakTask: Task<Void, Never>?
+
     // MARK: - Initialization
 
     override init() {
@@ -268,6 +271,13 @@ final class TTSService: NSObject, ObservableObject {
         // NOTE: We don't call stop() because it resets progress to .initial (paragraph 0)
         // Instead, we just stop audio and restart from current position
         if wasPlaying {
+            // Cancel active task FIRST - this sets Task.isCancelled which will break the sentence loop
+            if let task = activeSpeakTask {
+                print("[TTSService] 🛑 Cancelling active speak task for speed change")
+                task.cancel()
+                activeSpeakTask = nil
+            }
+
             Task {
                 // CRITICAL: Must await setSpeed BEFORE restarting playback
                 // Otherwise playback starts with old speed (race condition)
@@ -478,6 +488,13 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func stop() {
+        // Cancel active speak task first (this sets Task.isCancelled)
+        if let task = activeSpeakTask {
+            print("[TTSService] 🛑 Cancelling active speak task during stop()")
+            task.cancel()
+            activeSpeakTask = nil
+        }
+
         // CRITICAL: Resume any active continuation to prevent leaks
         // This happens when stop() is called while audio is playing (e.g., during voice/speed change)
         if let continuation = activeContinuation {
@@ -531,13 +548,32 @@ final class TTSService: NSObject, ObservableObject {
             rate: playbackRate
         )
 
+        // Cancel any existing speak task before starting a new one
+        if let existingTask = activeSpeakTask {
+            print("[TTSService] 🔄 Cancelling existing speak task before starting new one")
+            existingTask.cancel()
+        }
+
         // Try Piper TTS with synthesis queue first, fallback to AVSpeech if unavailable or on error
         if let queue = synthesisQueue {
-            Task {
+            let taskID = UUID().uuidString.prefix(8)
+            print("[TTSService] 🎬 Starting speak task \(taskID) for paragraph \(index)")
+
+            activeSpeakTask = Task {
+                defer {
+                    print("[TTSService] 🏁 Ending speak task \(taskID)")
+                    self.activeSpeakTask = nil
+                }
                 do {
                     // Use streaming playback with sentence bundles for word highlighting
                     // This plays each sentence as it becomes available with phoneme timing
                     for await bundle in await queue.streamSentenceBundles(for: index) {
+                        // CRITICAL: Check if task was cancelled (speed change, voice change, stop, etc.)
+                        guard !Task.isCancelled else {
+                            print("[TTSService] 🛑 Task cancelled during sentence stream - breaking loop")
+                            throw CancellationError()
+                        }
+
                         // Play sentence audio and wait for completion
                         // Note: word highlighting is started INSIDE playSentenceAudio after audio player initialization
                         try await playSentenceAudio(
@@ -547,7 +583,14 @@ final class TTSService: NSObject, ObservableObject {
                         )
                     }
 
+                    // Check cancellation one more time before advancing
+                    guard !Task.isCancelled else {
+                        print("[TTSService] 🛑 Task cancelled after sentences complete - not advancing")
+                        throw CancellationError()
+                    }
+
                     // All sentences played - trigger paragraph complete
+                    print("[TTSService] ✅ All sentences complete, advancing to next paragraph")
                     handleParagraphComplete()
                 } catch is CancellationError {
                     // Playback was cancelled (voice/speed change, user stopped, etc.)
@@ -557,7 +600,11 @@ final class TTSService: NSObject, ObservableObject {
                         self.isPlaying = false
                     }
                 } catch {
-                    print("[TTSService] ⚠️ Piper synthesis failed: \(error)")
+                    // Log detailed error information
+                    print("[TTSService] ❌ Error during playback:")
+                    print("[TTSService]   Type: \(type(of: error))")
+                    print("[TTSService]   Description: \(error)")
+                    print("[TTSService]   Is CancellationError? \(error is CancellationError)")
 
                     if useFallback {
                         print("[TTSService] Falling back to AVSpeech")
