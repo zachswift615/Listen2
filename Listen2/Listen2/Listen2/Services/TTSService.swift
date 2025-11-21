@@ -278,6 +278,10 @@ final class TTSService: NSObject, ObservableObject {
             }
 
             Task {
+                // CORRECT ORDER: Cancel → Clear → Update
+                // Buffer contents are speed-dependent and must be cleared BEFORE updating speed
+                await chunkBuffer.clearAll()
+
                 // CRITICAL: Must await setSpeed BEFORE restarting playback
                 // Otherwise playback starts with old speed (race condition)
                 await synthesisQueue?.setSpeed(newRate)
@@ -345,6 +349,10 @@ final class TTSService: NSObject, ObservableObject {
 
                     // Update properties (already on MainActor)
                     provider = piperProvider
+
+                    // CORRECT ORDER: Cancel → Clear → Update
+                    // Buffer contents are voice-dependent and must be cleared BEFORE creating new queue
+                    await chunkBuffer.clearAll()
 
                     // Update synthesis queue with new provider
                     synthesisQueue = SynthesisQueue(
@@ -471,6 +479,8 @@ final class TTSService: NSObject, ObservableObject {
     private func stopAudioOnly() {
         Task {
             await audioPlayer.stop()
+            // Clear chunk buffer (prevents stale pre-synthesized chunks from previous paragraph)
+            await chunkBuffer.clearAll()
             // Clear sentence cache for new paragraph
             await synthesisQueue?.clearAll()
             await MainActor.run {
