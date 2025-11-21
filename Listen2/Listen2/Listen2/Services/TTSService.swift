@@ -364,6 +364,14 @@ final class TTSService: NSObject, ObservableObject {
                         wordMap = savedWordMap
                         currentDocumentID = savedDocumentID
 
+                        // Initialize new queue with saved content
+                        await synthesisQueue?.setContent(
+                            paragraphs: savedText,
+                            speed: playbackRate,
+                            documentID: savedDocumentID,
+                            wordMap: savedWordMap
+                        )
+
                         // Restart playback from saved position
                         print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new voice")
                         speakParagraph(at: currentIndex)
