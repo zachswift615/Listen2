@@ -477,6 +477,12 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Stop audio playback without clearing document state (for skip buttons)
     private func stopAudioOnly() {
+        // Cancel active speak task to stop pre-synthesis and playback
+        if let task = activeSpeakTask {
+            task.cancel()
+            activeSpeakTask = nil
+        }
+
         Task {
             await audioPlayer.stop()
             // Clear chunk buffer (prevents stale pre-synthesized chunks from previous paragraph)
