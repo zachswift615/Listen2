@@ -183,6 +183,26 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         allBuffersScheduled = false
     }
 
+    func setRate(_ rate: Float) {
+        // TODO: Implement playback rate control for streaming audio
+        // This requires AVAudioEngine rate adjustment which is more complex than AVAudioPlayer
+        print("[StreamingAudioPlayer] ⚠️ setRate not yet implemented for chunk streaming (rate: \(rate))")
+    }
+
+    func pause() {
+        playerNode.pause()
+        isPlaying = false
+        stopDisplayLink()
+        print("[StreamingAudioPlayer] ⏸️ Paused")
+    }
+
+    func resume() {
+        playerNode.play()
+        isPlaying = true
+        startDisplayLink()
+        print("[StreamingAudioPlayer] ▶️ Resumed")
+    }
+
     // MARK: - Progress Tracking
 
     private func startDisplayLink() {

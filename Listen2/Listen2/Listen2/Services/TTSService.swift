@@ -470,8 +470,8 @@ final class TTSService: NSObject, ObservableObject {
     private func stopAudioOnly() {
         Task {
             await audioPlayer.stop()
-            // Clear sentence cache and reset producer-consumer for new paragraph
-            await synthesisQueue?.clearCacheAndReset()
+            // Clear sentence cache for new paragraph
+            await synthesisQueue?.clearAll()
             await MainActor.run {
                 wordHighlighter.stop()
             }
@@ -676,6 +676,10 @@ final class TTSService: NSObject, ObservableObject {
         }
     }
 
+    // DEAD CODE - Removed during chunk streaming refactor
+    // This method was replaced by playSentenceWithChunks() for streaming audio
+    // Kept commented for reference during development
+    /*
     /// Play a sentence audio chunk and wait for completion
     /// - Parameters:
     ///   - bundle: Sentence bundle containing audio data and timeline
@@ -691,34 +695,15 @@ final class TTSService: NSObject, ObservableObject {
                 do {
                     // Get alignment for current paragraph from synthesis queue (only on first sentence)
                     if isFirst {
-                        let alignment = await synthesisQueue?.getAlignment(for: bundle.paragraphIndex)
-                        currentAlignment = alignment
+                        // NOTE: getAlignment() method was removed from SynthesisQueue
+                        currentAlignment = nil
                         minWordIndex = 0
                         stuckWordWarningCount.removeAll()
                         startHighlightTimer()
                     }
 
-                    // Start audio playback - this initializes AVAudioPlayer
-                    try audioPlayer.play(data: bundle.audioData) { [weak self] in
-                        // Sentence finished playing - notify queue
-                        Task {
-                            await self?.synthesisQueue?.onSentenceFinished(
-                                paragraphIndex: bundle.paragraphIndex,
-                                sentenceIndex: bundle.sentenceIndex
-                            )
-                        }
-
-                        // Clear and resume continuation
-                        self?.activeContinuation = nil
-                        continuation.resume()
-                    }
-
-                    // NOW the audio player is initialized - get actual duration
-                    let actualDuration = audioPlayer.duration
-
-                    // Start word highlighting with actual audio duration
-                    print("[TTSService] 🔄 Starting word highlighting with actual duration: \(String(format: "%.3f", actualDuration))s")
-                    wordHighlighter.startSentence(bundle, paragraphText: paragraphText, actualAudioDuration: actualDuration)
+                    // NOTE: audioPlayer.play() method was removed - replaced with streaming methods
+                    // startStreaming(), scheduleChunk(), finishScheduling()
 
                     // Update playback state
                     isPlaying = true
@@ -732,22 +717,24 @@ final class TTSService: NSObject, ObservableObject {
             }
         }
     }
+    */
 
+    // DEAD CODE - This method is no longer called
+    // Alignment is now handled during chunk streaming
+    /*
     private func playAudio(_ data: Data) async throws {
-        // Get alignment for current paragraph from synthesis queue
-        let paragraphIndex = currentProgress.paragraphIndex
-        let alignment = await synthesisQueue?.getAlignment(for: paragraphIndex)
+        // NOTE: getAlignment() method was removed from SynthesisQueue
+        // Alignment is now managed during chunk streaming in playSentenceWithChunks()
 
         try await MainActor.run {
-            currentAlignment = alignment
+            currentAlignment = nil
 
             // Reset word tracking for new paragraph
             minWordIndex = 0
             stuckWordWarningCount.removeAll()
 
-            try audioPlayer.play(data: data) { [weak self] in
-                self?.handleParagraphComplete()
-            }
+            // NOTE: audioPlayer.play() was removed - replaced with streaming methods
+            // startStreaming(), scheduleChunk(), finishScheduling()
 
             // Re-enable auto-advance once playback has started
             // (mirrors AVSpeech didStart delegate behavior)
@@ -758,6 +745,7 @@ final class TTSService: NSObject, ObservableObject {
             startHighlightTimer()
         }
     }
+    */
 
     private func fallbackToAVSpeech(text: String) {
         let utterance = AVSpeechUtterance(string: text)
