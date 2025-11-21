@@ -573,39 +573,17 @@ final class TTSService: NSObject, ObservableObject {
                     let sentences = SentenceSplitter.split(text)
                     print("[TTSService] 📝 Split paragraph into \(sentences.count) sentences")
 
-                    // Start synthesis tasks for all sentences in parallel
-                    // This allows next sentence to synthesize while current sentence plays
-                    var synthesisTasks: [Task<Void, Error>] = []
-                    for (sentenceIndex, chunk) in sentences.enumerated() {
-                        let synthesisTask = Task {
-                            // Pre-synthesize this sentence (stores in cache)
-                            _ = try await synthesisQueue?.synthesizeSentence(chunk.text)
-                            print("[TTSService] ✅ Pre-synthesized sentence \(sentenceIndex+1)/\(sentences.count)")
-                        }
-                        synthesisTasks.append(synthesisTask)
-                    }
-
-                    // Play each sentence sequentially, but synthesis runs ahead in parallel
+                    // Play each sentence with chunk streaming
                     for (sentenceIndex, chunk) in sentences.enumerated() {
                         // Check cancellation
                         guard !Task.isCancelled else {
-                            // Cancel all pending synthesis tasks
-                            synthesisTasks.forEach { $0.cancel() }
                             print("[TTSService] 🛑 Task cancelled - breaking loop")
                             throw CancellationError()
                         }
 
-                        print("[TTSService] 🎤 Playing sentence \(sentenceIndex+1)/\(sentences.count)")
+                        print("[TTSService] 🎤 Starting sentence \(sentenceIndex+1)/\(sentences.count)")
 
-                        // Wait for this sentence's synthesis to complete (likely already done)
-                        do {
-                            try await synthesisTasks[sentenceIndex].value
-                        } catch {
-                            print("[TTSService] ⚠️ Synthesis task \(sentenceIndex+1) failed: \(error)")
-                            throw error
-                        }
-
-                        // Play sentence with chunk streaming (uses cached synthesis)
+                        // Play sentence with chunk streaming
                         try await playSentenceWithChunks(
                             sentence: chunk.text,
                             isLast: sentenceIndex == sentences.count - 1
