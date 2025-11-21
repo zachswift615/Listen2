@@ -574,21 +574,68 @@ final class TTSService: NSObject, ObservableObject {
                     let sentences = SentenceSplitter.split(text)
                     print("[TTSService] 📝 Split paragraph into \(sentences.count) sentences")
 
-                    // Play each sentence with chunk streaming
+                    // Track pre-synthesis task for cancellation
+                    var preSynthesisTask: Task<Void, Never>?
+
+                    // Cleanup function to cancel and clear
+                    func cleanup() async {
+                        preSynthesisTask?.cancel()
+                        await chunkBuffer.clearAll()
+                    }
+
+                    // Start pre-synthesis for first sentence (N+1 when N=0)
+                    if sentences.count > 1 {
+                        preSynthesisTask = startPreSynthesis(
+                            sentence: sentences[1].text,
+                            index: 1
+                        )
+                    }
+
+                    // Play each sentence with lookahead buffering
                     for (sentenceIndex, chunk) in sentences.enumerated() {
                         // Check cancellation
                         guard !Task.isCancelled else {
                             print("[TTSService] 🛑 Task cancelled - breaking loop")
+                            await cleanup()
                             throw CancellationError()
                         }
 
                         print("[TTSService] 🎤 Starting sentence \(sentenceIndex+1)/\(sentences.count)")
 
-                        // Play sentence with chunk streaming
-                        try await playSentenceWithChunks(
-                            sentence: chunk.text,
-                            isLast: sentenceIndex == sentences.count - 1
-                        )
+                        // Try to use buffered chunks if available
+                        if let bufferedChunks = await chunkBuffer.takeChunks(forSentence: sentenceIndex),
+                           !bufferedChunks.isEmpty {
+                            print("[TTSService] ⚡️ Playing from buffer (\(bufferedChunks.count) chunks)")
+                            try await playBufferedChunks(bufferedChunks)
+                        } else {
+                            // Buffer miss - synthesize on-demand
+                            print("[TTSService] 🔄 Buffer miss, synthesizing on-demand")
+                            try await playSentenceWithChunks(
+                                sentence: chunk.text,
+                                isLast: sentenceIndex == sentences.count - 1
+                            )
+                        }
+
+                        // Start pre-synthesis for next sentence (N+1)
+                        let nextIndex = sentenceIndex + 1
+                        if nextIndex < sentences.count {
+                            preSynthesisTask?.cancel() // Cancel previous if still running
+                            preSynthesisTask = startPreSynthesis(
+                                sentence: sentences[nextIndex].text,
+                                index: nextIndex
+                            )
+                        }
+                    }
+
+                    // Final cleanup
+                    await cleanup()
+
+                    // Log buffer performance
+                    let status = await chunkBuffer.getStatus()
+                    let hitRate = await chunkBuffer.getHitRate()
+                    print("[TTSService] 📊 Buffer performance: \(status)")
+                    if hitRate < 0.9 {
+                        print("[TTSService] ⚠️ Low buffer hit rate (\(String(format: "%.1f%%", hitRate * 100))), synthesis may be slower than playback")
                     }
 
                     // Check cancellation one more time before advancing
@@ -664,6 +711,98 @@ final class TTSService: NSObject, ObservableObject {
                             }
                         }
                     }
+
+                    // Update playback state
+                    isPlaying = true
+                    shouldAutoAdvance = true
+
+                } catch {
+                    activeContinuation = nil
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    /// Start pre-synthesis for a sentence in the background
+    /// Returns Task that can be cancelled
+    private func startPreSynthesis(sentence: String, index: Int) -> Task<Void, Never> {
+        return Task {
+            // Check cancellation before expensive work
+            guard !Task.isCancelled else {
+                print("[TTSService] 🛑 Pre-synthesis cancelled before starting for sentence \(index)")
+                return
+            }
+
+            guard let queue = await self.synthesisQueue else {
+                return
+            }
+
+            print("[TTSService] 🔮 Pre-synthesizing sentence \(index): '\(sentence.prefix(50))...'")
+
+            do {
+                let delegate = await BufferingChunkDelegate(
+                    buffer: chunkBuffer,
+                    sentenceIndex: index
+                )
+
+                // Check again after delegate creation
+                guard !Task.isCancelled else {
+                    print("[TTSService] 🛑 Pre-synthesis cancelled during setup for sentence \(index)")
+                    return
+                }
+
+                // Synthesize with streaming delegate
+                _ = try await queue.streamSentence(sentence, delegate: delegate)
+
+                // Check before waiting for completion
+                guard !Task.isCancelled else {
+                    print("[TTSService] 🛑 Pre-synthesis cancelled after synthesis for sentence \(index)")
+                    return
+                }
+
+                // CRITICAL: Wait for all chunk additions to complete!
+                await delegate.waitForCompletion()
+
+                // Now it's safe to mark complete
+                await chunkBuffer.markComplete(forSentence: index)
+
+                print("[TTSService] ✅ Pre-synthesis complete for sentence \(index)")
+            } catch is CancellationError {
+                print("[TTSService] 🛑 Pre-synthesis cancelled for sentence \(index)")
+            } catch {
+                print("[TTSService] ⚠️ Pre-synthesis failed for sentence \(index): \(error)")
+            }
+        }
+    }
+
+    /// Play buffered chunks that were pre-synthesized
+    private func playBufferedChunks(_ chunks: [Data]) async throws {
+        // Handle empty sentences (e.g., only punctuation)
+        guard !chunks.isEmpty else {
+            print("[TTSService] ⏭️ Skipping empty buffered sentence")
+            return
+        }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task { @MainActor in
+                activeContinuation = continuation
+
+                do {
+                    // Start streaming session
+                    audioPlayer.startStreaming { [weak self] in
+                        print("[TTSService] 🏁 Buffered playback complete")
+                        self?.activeContinuation = nil
+                        continuation.resume()
+                    }
+
+                    // Schedule all buffered chunks immediately
+                    for chunk in chunks {
+                        audioPlayer.scheduleChunk(chunk)
+                    }
+
+                    // Mark scheduling complete
+                    audioPlayer.finishScheduling()
 
                     // Update playback state
                     isPlaying = true
