@@ -35,6 +35,7 @@ final class TTSService: NSObject, ObservableObject {
     private let nowPlayingManager = NowPlayingInfoManager()
     private var audioPlayer: StreamingAudioPlayer!
     private var synthesisQueue: SynthesisQueue?
+    private let chunkBuffer = ChunkBuffer()
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
@@ -881,6 +882,59 @@ final class TTSService: NSObject, ObservableObject {
 extension Array {
     subscript(safe index: Index) -> Element? {
         return indices.contains(index) ? self[index] : nil
+    }
+}
+
+// MARK: - Buffering Chunk Delegate with Completion Tracking
+
+/// Delegate that receives audio chunks and stores them in ChunkBuffer
+/// Tracks pending async chunk additions to ensure all chunks are buffered before marking complete
+/// NOT @MainActor on class - runs in background pre-synthesis tasks
+private class BufferingChunkDelegate: SynthesisStreamDelegate {
+    private let buffer: ChunkBuffer
+    private let sentenceIndex: Int
+
+    // Track pending async chunk additions (main-actor isolated)
+    @MainActor private var pendingChunks: Int = 0
+    @MainActor private var completion: CheckedContinuation<Void, Never>?
+
+    init(buffer: ChunkBuffer, sentenceIndex: Int) {
+        self.buffer = buffer
+        self.sentenceIndex = sentenceIndex
+    }
+
+    /// Wait for all chunk additions to complete
+    /// CRITICAL: Call this before markComplete() to prevent race conditions!
+    @MainActor func waitForCompletion() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            if pendingChunks == 0 {
+                // All chunks already buffered
+                continuation.resume()
+            } else {
+                // Store continuation, will resume when pendingChunks reaches 0
+                self.completion = continuation
+            }
+        }
+    }
+
+    nonisolated func didReceiveAudioChunk(_ chunk: Data, progress: Double) -> Bool {
+        Task { @MainActor in
+            // Increment pending count
+            self.pendingChunks += 1
+
+            // Add chunk to buffer (async actor call)
+            await self.buffer.addChunk(chunk, forSentence: self.sentenceIndex)
+
+            // Decrement pending count
+            self.pendingChunks -= 1
+
+            // Check if all chunks are now buffered
+            if self.pendingChunks == 0, let continuation = self.completion {
+                self.completion = nil
+                continuation.resume()
+            }
+        }
+        return true // Continue synthesis
     }
 }
 
