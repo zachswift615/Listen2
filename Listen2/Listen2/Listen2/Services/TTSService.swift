@@ -9,6 +9,54 @@ import Combine
 import MediaPlayer
 import SwiftUI
 
+// MARK: - ContinuationResumer
+
+/// Thread-safe wrapper to ensure continuation is only resumed once
+/// Prevents crashes from race conditions between stop() and playback completion
+private final class ContinuationResumer<T, E: Error>: @unchecked Sendable {
+    private var continuation: CheckedContinuation<T, E>?
+    private let lock = NSLock()
+
+    init(_ continuation: CheckedContinuation<T, E>) {
+        self.continuation = continuation
+    }
+
+    /// Resume with success value. Safe to call multiple times - only first call takes effect.
+    func resume(returning value: T) {
+        lock.lock()
+        let cont = continuation
+        continuation = nil
+        lock.unlock()  // Unlock BEFORE calling resume to prevent deadlocks
+        #if DEBUG
+        if cont == nil {
+            print("[ContinuationResumer] ⚠️ Ignored duplicate resume(returning:)")
+        }
+        #endif
+        cont?.resume(returning: value)
+    }
+
+    /// Resume with error. Safe to call multiple times - only first call takes effect.
+    func resume(throwing error: E) {
+        lock.lock()
+        let cont = continuation
+        continuation = nil
+        lock.unlock()  // Unlock BEFORE calling resume to prevent deadlocks
+        #if DEBUG
+        if cont == nil {
+            print("[ContinuationResumer] ⚠️ Ignored duplicate resume(throwing:)")
+        }
+        #endif
+        cont?.resume(throwing: error)
+    }
+
+    /// Check if already resumed
+    var isResumed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return continuation == nil
+    }
+}
+
 @MainActor
 final class TTSService: NSObject, ObservableObject {
 
@@ -62,8 +110,8 @@ final class TTSService: NSObject, ObservableObject {
     // Subscription for word highlighting
     private var highlightSubscription: AnyCancellable?
 
-    // Active continuation for current audio playback (to prevent leaks during stop)
-    private var activeContinuation: CheckedContinuation<Void, Error>?
+    // Active continuation resumer for current audio playback (prevents double-resume crashes)
+    private var activeResumer: ContinuationResumer<Void, Error>?
 
     // Active speak task (to cancel during voice/speed changes)
     private var activeSpeakTask: Task<Void, Never>?
@@ -287,11 +335,11 @@ final class TTSService: NSObject, ObservableObject {
                 await synthesisQueue?.setSpeed(newRate)
                 print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate)")
 
-                // Resume continuation before stopping to prevent leak
-                if let continuation = activeContinuation {
+                // Resume continuation before stopping to prevent leak (safe - resumer prevents double-resume)
+                if let resumer = activeResumer {
                     print("[TTSService] ⚠️ Resuming active continuation during speed change")
-                    continuation.resume(throwing: CancellationError())
-                    activeContinuation = nil
+                    resumer.resume(throwing: CancellationError())
+                    activeResumer = nil
                 }
 
                 await audioPlayer.stop()
@@ -428,11 +476,11 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func pause() {
-        // Resume continuation before pausing to prevent leaks
-        if let continuation = activeContinuation {
+        // Resume continuation before pausing to prevent leaks (safe - resumer prevents double-resume)
+        if let resumer = activeResumer {
             print("[TTSService] ⚠️ Resuming active continuation during pause()")
-            continuation.resume(throwing: CancellationError())
-            activeContinuation = nil
+            resumer.resume(throwing: CancellationError())
+            activeResumer = nil
         }
 
         Task { @MainActor in
@@ -483,6 +531,14 @@ final class TTSService: NSObject, ObservableObject {
             activeSpeakTask = nil
         }
 
+        // CRITICAL: Resume any active continuation to prevent double-resume crash
+        // This was missing and caused crashes when skip buttons were pressed during playback
+        if let resumer = activeResumer {
+            print("[TTSService] ⚠️ Resuming active continuation during stopAudioOnly()")
+            resumer.resume(throwing: CancellationError())
+            activeResumer = nil
+        }
+
         Task {
             await audioPlayer.stop()
             // Clear chunk buffer (prevents stale pre-synthesized chunks from previous paragraph)
@@ -516,12 +572,13 @@ final class TTSService: NSObject, ObservableObject {
             activeSpeakTask = nil
         }
 
-        // CRITICAL: Resume any active continuation to prevent leaks
+        // CRITICAL: Resume any active continuation to prevent leaks and double-resume crashes
         // This happens when stop() is called while audio is playing (e.g., during voice/speed change)
-        if let continuation = activeContinuation {
+        // Safe - resumer prevents double-resume
+        if let resumer = activeResumer {
             print("[TTSService] ⚠️ Resuming active continuation during stop() to prevent leak")
-            continuation.resume(throwing: CancellationError())
-            activeContinuation = nil
+            resumer.resume(throwing: CancellationError())
+            activeResumer = nil
         }
 
         Task {
@@ -694,48 +751,43 @@ final class TTSService: NSObject, ObservableObject {
     private func playSentenceWithChunks(sentence: String, isLast: Bool) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
-                // Store continuation for clean cancellation
-                activeContinuation = continuation
+                // Wrap continuation in thread-safe resumer to prevent double-resume crashes
+                let resumer = ContinuationResumer(continuation)
+                activeResumer = resumer
 
-                do {
-                    // Start streaming session
-                    audioPlayer.startStreaming { [weak self] in
-                        // Sentence finished playing
-                        print("[TTSService] 🏁 Sentence playback complete")
-                        self?.activeContinuation = nil
-                        continuation.resume()
-                    }
+                // Start streaming session
+                audioPlayer.startStreaming { [weak self] in
+                    // Sentence finished playing
+                    print("[TTSService] 🏁 Sentence playback complete")
+                    self?.activeResumer = nil
+                    resumer.resume(returning: ())  // Safe - won't double-resume
+                }
 
-                    // Create delegate to receive chunks
-                    let chunkDelegate = ChunkStreamDelegate(audioPlayer: audioPlayer)
+                // Create delegate to receive chunks
+                let chunkDelegate = ChunkStreamDelegate(audioPlayer: audioPlayer)
 
-                    // Start synthesis with streaming - chunks will be scheduled as they arrive
-                    Task {
-                        do {
-                            // This will call chunkDelegate.didReceiveAudioChunk() for each chunk
-                            _ = try await synthesisQueue?.streamSentence(sentence, delegate: chunkDelegate)
+                // Start synthesis with streaming - chunks will be scheduled as they arrive
+                Task {
+                    do {
+                        // This will call chunkDelegate.didReceiveAudioChunk() for each chunk
+                        _ = try await synthesisQueue?.streamSentence(sentence, delegate: chunkDelegate)
 
-                            // All chunks synthesized - mark scheduling complete
-                            await MainActor.run {
-                                audioPlayer.finishScheduling()
-                            }
-                        } catch {
-                            print("[TTSService] ❌ Synthesis error: \(error)")
-                            await MainActor.run {
-                                activeContinuation = nil
-                                continuation.resume(throwing: error)
-                            }
+                        // All chunks synthesized - mark scheduling complete
+                        await MainActor.run {
+                            audioPlayer.finishScheduling()
+                        }
+                    } catch {
+                        print("[TTSService] ❌ Synthesis error: \(error)")
+                        await MainActor.run {
+                            self.activeResumer = nil
+                            resumer.resume(throwing: error)  // Safe - won't double-resume
                         }
                     }
-
-                    // Update playback state
-                    isPlaying = true
-                    shouldAutoAdvance = true
-
-                } catch {
-                    activeContinuation = nil
-                    continuation.resume(throwing: error)
                 }
+
+                // Update playback state
+                isPlaying = true
+                shouldAutoAdvance = true
             }
         }
     }
@@ -802,32 +854,28 @@ final class TTSService: NSObject, ObservableObject {
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
-                activeContinuation = continuation
+                // Wrap continuation in thread-safe resumer to prevent double-resume crashes
+                let resumer = ContinuationResumer(continuation)
+                activeResumer = resumer
 
-                do {
-                    // Start streaming session
-                    audioPlayer.startStreaming { [weak self] in
-                        print("[TTSService] 🏁 Buffered playback complete")
-                        self?.activeContinuation = nil
-                        continuation.resume()
-                    }
-
-                    // Schedule all buffered chunks immediately
-                    for chunk in chunks {
-                        audioPlayer.scheduleChunk(chunk)
-                    }
-
-                    // Mark scheduling complete
-                    audioPlayer.finishScheduling()
-
-                    // Update playback state
-                    isPlaying = true
-                    shouldAutoAdvance = true
-
-                } catch {
-                    activeContinuation = nil
-                    continuation.resume(throwing: error)
+                // Start streaming session
+                audioPlayer.startStreaming { [weak self] in
+                    print("[TTSService] 🏁 Buffered playback complete")
+                    self?.activeResumer = nil
+                    resumer.resume(returning: ())  // Safe - won't double-resume
                 }
+
+                // Schedule all buffered chunks immediately
+                for chunk in chunks {
+                    audioPlayer.scheduleChunk(chunk)
+                }
+
+                // Mark scheduling complete
+                audioPlayer.finishScheduling()
+
+                // Update playback state
+                isPlaying = true
+                shouldAutoAdvance = true
             }
         }
     }
