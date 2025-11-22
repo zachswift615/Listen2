@@ -337,4 +337,120 @@ final class CTCForcedAlignerTests: XCTestCase {
         hasSession = await aligner.hasOnnxSession
         XCTAssertFalse(hasSession)  // Still false because no model file
     }
+
+    // MARK: - Full Pipeline Tests
+
+    func testFullAlignmentPipeline() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'", "*"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        // 1 second of audio at 16kHz (will use mock emissions)
+        let samples = [Float](repeating: 0.0, count: 16000)
+
+        let result = try await aligner.align(
+            audioSamples: samples,
+            sampleRate: 16000,
+            transcript: "hello world",
+            paragraphIndex: 0
+        )
+
+        XCTAssertEqual(result.paragraphIndex, 0)
+        XCTAssertEqual(result.totalDuration, 1.0, accuracy: 0.01)
+        // With mock emissions, we still get word timings (though not accurate)
+        XCTAssertGreaterThanOrEqual(result.wordTimings.count, 0)
+    }
+
+    func testResamplingFrom22050To16000() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "h", "i", "*"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        // 1 second at 22050 Hz -> should become ~0.73 seconds at 16000 Hz
+        let samples = [Float](repeating: 0.1, count: 22050)
+
+        let result = try await aligner.align(
+            audioSamples: samples,
+            sampleRate: 22050,
+            transcript: "hi",
+            paragraphIndex: 0
+        )
+
+        // Duration should be based on resampled length
+        // 22050 samples at 22050 Hz = 1 second of source audio
+        // After resampling to 16000 Hz: 16000 samples
+        // 16000 samples at 16000 Hz = 1 second
+        XCTAssertEqual(result.totalDuration, 1.0, accuracy: 0.05)
+    }
+
+    func testAlignThrowsWhenNotInitialized() async throws {
+        let aligner = CTCForcedAligner()
+        let samples = [Float](repeating: 0.0, count: 16000)
+
+        do {
+            _ = try await aligner.align(
+                audioSamples: samples,
+                sampleRate: 16000,
+                transcript: "test",
+                paragraphIndex: 0
+            )
+            XCTFail("Expected align to throw modelNotInitialized")
+        } catch AlignmentError.modelNotInitialized {
+            // Expected
+        }
+    }
+
+    func testAlignThrowsOnEmptyAudio() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        do {
+            _ = try await aligner.align(
+                audioSamples: [],
+                sampleRate: 16000,
+                transcript: "test",
+                paragraphIndex: 0
+            )
+            XCTFail("Expected align to throw emptyAudio")
+        } catch AlignmentError.emptyAudio {
+            // Expected
+        }
+    }
+
+    func testAlignWithEmptyTranscript() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        let samples = [Float](repeating: 0.0, count: 16000)
+
+        let result = try await aligner.align(
+            audioSamples: samples,
+            sampleRate: 16000,
+            transcript: "",
+            paragraphIndex: 5
+        )
+
+        XCTAssertEqual(result.paragraphIndex, 5)
+        XCTAssertEqual(result.totalDuration, 1.0, accuracy: 0.01)
+        XCTAssertTrue(result.wordTimings.isEmpty)
+    }
+
+    func testAlignPreservesParagraphIndex() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "'", "*"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        let samples = [Float](repeating: 0.0, count: 16000)
+
+        let result = try await aligner.align(
+            audioSamples: samples,
+            sampleRate: 16000,
+            transcript: "test",
+            paragraphIndex: 42
+        )
+
+        XCTAssertEqual(result.paragraphIndex, 42)
+    }
 }

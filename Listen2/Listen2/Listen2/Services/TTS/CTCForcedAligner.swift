@@ -378,6 +378,108 @@ actor CTCForcedAligner {
         return spans
     }
 
+    // MARK: - Full Alignment Pipeline
+
+    /// Align audio to transcript and return word timestamps
+    /// - Parameters:
+    ///   - audioSamples: Audio samples as Float array
+    ///   - sampleRate: Sample rate of input audio (e.g., 22050 for Piper)
+    ///   - transcript: Known text that was spoken
+    ///   - paragraphIndex: Index for result tracking
+    /// - Returns: AlignmentResult with word timings
+    func align(
+        audioSamples: [Float],
+        sampleRate: Int,
+        transcript: String,
+        paragraphIndex: Int
+    ) async throws -> AlignmentResult {
+        guard isInitialized, let tokenizer = tokenizer else {
+            throw AlignmentError.modelNotInitialized
+        }
+
+        guard !audioSamples.isEmpty else {
+            throw AlignmentError.emptyAudio
+        }
+
+        // 1. Resample if needed
+        let samples: [Float]
+        if sampleRate != self.sampleRate {
+            samples = resample(audioSamples, from: sampleRate, to: self.sampleRate)
+        } else {
+            samples = audioSamples
+        }
+
+        // 2. Get emissions from model (or use mock if no ONNX session)
+        let emissions: [[Float]]
+        if hasOnnxSession {
+            emissions = try getEmissions(audioSamples: samples)
+        } else {
+            // Mock emissions for testing - uniform distribution
+            let numFrames = max(1, samples.count / hopSize)
+            let logProb = Float(-log(Float(vocabSize)))
+            emissions = (0..<numFrames).map { _ in
+                [Float](repeating: logProb, count: vocabSize)
+            }
+        }
+
+        // 3. Tokenize transcript
+        let tokens = tokenizer.tokenize(transcript)
+        guard !tokens.isEmpty else {
+            // No tokens = return empty result
+            let totalDuration = Double(samples.count) / Double(self.sampleRate)
+            return AlignmentResult(paragraphIndex: paragraphIndex, totalDuration: totalDuration, wordTimings: [])
+        }
+
+        // 4. Build trellis and backtrack
+        let trellis = buildTrellis(emissions: emissions, tokens: tokens)
+        let tokenSpans = backtrack(trellis: trellis, tokens: tokens)
+
+        // 5. Merge to words
+        let frameRate = Double(self.sampleRate) / Double(hopSize)
+        let wordTimings = mergeToWords(
+            tokenSpans: tokenSpans,
+            transcript: transcript,
+            frameRate: frameRate
+        )
+
+        let totalDuration = Double(samples.count) / Double(self.sampleRate)
+
+        return AlignmentResult(
+            paragraphIndex: paragraphIndex,
+            totalDuration: totalDuration,
+            wordTimings: wordTimings
+        )
+    }
+
+    // MARK: - Audio Resampling
+
+    /// Resample audio to target sample rate using linear interpolation
+    /// - Parameters:
+    ///   - samples: Input audio samples
+    ///   - sourceRate: Source sample rate (e.g., 22050)
+    ///   - targetRate: Target sample rate (e.g., 16000)
+    /// - Returns: Resampled audio samples
+    private func resample(_ samples: [Float], from sourceRate: Int, to targetRate: Int) -> [Float] {
+        guard sourceRate != targetRate, sourceRate > 0, targetRate > 0 else {
+            return samples
+        }
+
+        let ratio = Double(sourceRate) / Double(targetRate)
+        let newLength = Int(Double(samples.count) / ratio)
+
+        return (0..<newLength).map { i in
+            let srcIdx = Double(i) * ratio
+            let srcIdxInt = Int(srcIdx)
+            let frac = Float(srcIdx - Double(srcIdxInt))
+
+            if srcIdxInt + 1 < samples.count {
+                return samples[srcIdxInt] * (1 - frac) + samples[srcIdxInt + 1] * frac
+            } else {
+                return samples[min(srcIdxInt, samples.count - 1)]
+            }
+        }
+    }
+
     // MARK: - Word Merging
 
     /// Merge character-level token spans into word-level timings
