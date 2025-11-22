@@ -94,6 +94,10 @@ final class TTSService: NSObject, ObservableObject {
     // Alignment services
     private let alignmentService = PhonemeAlignmentService()
     private let alignmentCache = AlignmentCache()
+    private let ctcAligner = CTCForcedAligner()
+
+    // Feature flag: use CTC forced alignment for word highlighting
+    private var useCTCAlignment = true
 
     // Word highlighting for Piper playback
     private var highlightTimer: Timer?
@@ -191,6 +195,21 @@ final class TTSService: NSObject, ObservableObject {
         // PhonemeAlignmentService doesn't require initialization
         // It works directly with phoneme data from TTS synthesis
         print("[TTSService] ✅ Phoneme alignment service ready (no initialization needed)")
+
+        // Initialize CTC Forced Aligner (async)
+        if useCTCAlignment {
+            do {
+                try await ctcAligner.initialize()
+                let hasOnnx = await ctcAligner.hasOnnxSession
+                print("[TTSService] ✅ CTC Forced Aligner initialized (ONNX: \(hasOnnx ? "available" : "mock mode"))")
+            } catch {
+                print("[TTSService] ⚠️ CTC Forced Aligner init failed: \(error)")
+                print("[TTSService] 🔄 Falling back to phoneme alignment")
+                await MainActor.run {
+                    useCTCAlignment = false
+                }
+            }
+        }
     }
 
     // MARK: - Audio Session Configuration
@@ -679,7 +698,7 @@ final class TTSService: NSObject, ObservableObject {
                         if let bufferedChunks = await chunkBuffer.takeChunks(forSentence: sentenceIndex),
                            !bufferedChunks.isEmpty {
                             print("[TTSService] ⚡️ Playing from buffer (\(bufferedChunks.count) chunks)")
-                            try await playBufferedChunks(bufferedChunks)
+                            try await playBufferedChunks(bufferedChunks, sentence: chunk.text)
                         } else {
                             // Buffer miss - synthesize on-demand
                             print("[TTSService] 🔄 Buffer miss, synthesizing on-demand")
@@ -749,6 +768,9 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Play a sentence with chunk-level streaming
     private func playSentenceWithChunks(sentence: String, isLast: Bool) async throws {
+        // Capture paragraph index for alignment
+        let paragraphIndex = currentProgress.paragraphIndex
+
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
                 // Wrap continuation in thread-safe resumer to prevent double-resume crashes
@@ -776,6 +798,15 @@ final class TTSService: NSObject, ObservableObject {
                         await MainActor.run {
                             audioPlayer.finishScheduling()
                         }
+
+                        // Perform CTC alignment if enabled
+                        if self.useCTCAlignment {
+                            await self.performCTCAlignment(
+                                sentence: sentence,
+                                audioData: chunkDelegate.getAccumulatedAudio(),
+                                paragraphIndex: paragraphIndex
+                            )
+                        }
                     } catch {
                         print("[TTSService] ❌ Synthesis error: \(error)")
                         await MainActor.run {
@@ -790,6 +821,66 @@ final class TTSService: NSObject, ObservableObject {
                 shouldAutoAdvance = true
             }
         }
+    }
+
+    /// Perform CTC forced alignment on synthesized audio
+    /// - Parameters:
+    ///   - sentence: The sentence text that was synthesized
+    ///   - audioData: Raw audio data from synthesis
+    ///   - paragraphIndex: Current paragraph index
+    private func performCTCAlignment(sentence: String, audioData: Data, paragraphIndex: Int) async {
+        guard !audioData.isEmpty else {
+            print("[TTSService] ⚠️ CTC alignment skipped - no audio data")
+            return
+        }
+
+        let samples = extractSamples(from: audioData)
+        guard !samples.isEmpty else {
+            print("[TTSService] ⚠️ CTC alignment skipped - no samples extracted")
+            return
+        }
+
+        print("[TTSService] 🎯 Starting CTC alignment for '\(sentence.prefix(30))...' (\(samples.count) samples)")
+
+        do {
+            let alignment = try await ctcAligner.align(
+                audioSamples: samples,
+                sampleRate: 22050,  // Piper TTS output rate
+                transcript: sentence,
+                paragraphIndex: paragraphIndex
+            )
+
+            await MainActor.run {
+                // Store alignment for word highlighting
+                currentAlignment = alignment
+                print("[TTSService] ✅ CTC alignment complete: \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s")
+
+                // Reset word tracking for new alignment
+                minWordIndex = 0
+                stuckWordWarningCount.removeAll()
+
+                // Re-enable highlight timer now that we have alignment
+                startHighlightTimerWithCTCAlignment()
+            }
+        } catch {
+            print("[TTSService] ⚠️ CTC alignment failed: \(error)")
+        }
+    }
+
+    /// Start highlight timer using CTC alignment data
+    private func startHighlightTimerWithCTCAlignment() {
+        stopHighlightTimer()
+
+        guard currentAlignment != nil else {
+            print("[TTSService] ⏸️ No alignment available for highlighting")
+            return
+        }
+
+        // Use 60 FPS timer for smooth word highlighting
+        highlightTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
+            self?.updateHighlightFromTime()
+        }
+        print("[TTSService] 🎬 Started CTC word highlighting timer")
     }
 
     /// Start pre-synthesis for a sentence in the background
@@ -845,12 +936,21 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     /// Play buffered chunks that were pre-synthesized
-    private func playBufferedChunks(_ chunks: [Data]) async throws {
+    /// - Parameters:
+    ///   - chunks: Array of audio data chunks
+    ///   - sentence: The sentence text for CTC alignment
+    private func playBufferedChunks(_ chunks: [Data], sentence: String) async throws {
         // Handle empty sentences (e.g., only punctuation)
         guard !chunks.isEmpty else {
             print("[TTSService] ⏭️ Skipping empty buffered sentence")
             return
         }
+
+        // Capture paragraph index for alignment
+        let paragraphIndex = currentProgress.paragraphIndex
+
+        // Combine chunks for CTC alignment
+        let combinedAudio = chunks.reduce(Data()) { $0 + $1 }
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             Task { @MainActor in
@@ -872,6 +972,17 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Mark scheduling complete
                 audioPlayer.finishScheduling()
+
+                // Perform CTC alignment if enabled (in background)
+                if self.useCTCAlignment {
+                    Task {
+                        await self.performCTCAlignment(
+                            sentence: sentence,
+                            audioData: combinedAudio,
+                            paragraphIndex: paragraphIndex
+                        )
+                    }
+                }
 
                 // Update playback state
                 isPlaying = true
@@ -965,6 +1076,22 @@ final class TTSService: NSObject, ObservableObject {
         guard audioData.count > 44 else { return 0 }
         let sampleCount = (audioData.count - 44) / 2
         return Double(sampleCount) / 22050.0
+    }
+
+    /// Extract Float samples from raw audio Data (16-bit PCM)
+    /// Used for CTC forced alignment which requires normalized float samples
+    /// - Parameter audioData: Raw audio bytes (may include WAV header)
+    /// - Returns: Array of Float samples normalized to [-1, 1]
+    private func extractSamples(from audioData: Data) -> [Float] {
+        // Skip WAV header if present (44 bytes)
+        let offset = audioData.count > 44 ? 44 : 0
+        let pcmData = audioData.subdata(in: offset..<audioData.count)
+
+        // Convert 16-bit PCM samples to Float [-1, 1]
+        let int16Samples = pcmData.withUnsafeBytes { buffer in
+            Array(buffer.bindMemory(to: Int16.self))
+        }
+        return int16Samples.map { Float($0) / Float(Int16.max) }
     }
 
     private func handleParagraphComplete() {
@@ -1143,9 +1270,12 @@ private class BufferingChunkDelegate: SynthesisStreamDelegate {
 
 // MARK: - Chunk Stream Delegate
 
-/// Delegate that receives audio chunks and schedules them on audio player
+/// Delegate that receives audio chunks, schedules them on audio player, and accumulates for alignment
 private class ChunkStreamDelegate: SynthesisStreamDelegate {
     private weak var audioPlayer: StreamingAudioPlayer?
+
+    // Accumulated audio data for alignment
+    @MainActor private var accumulatedAudio = Data()
 
     init(audioPlayer: StreamingAudioPlayer) {
         self.audioPlayer = audioPlayer
@@ -1155,8 +1285,15 @@ private class ChunkStreamDelegate: SynthesisStreamDelegate {
         Task { @MainActor in
             // Schedule chunk immediately on audio player
             audioPlayer?.scheduleChunk(chunk)
+            // Also accumulate for alignment
+            accumulatedAudio.append(chunk)
         }
         return true // Continue synthesis
+    }
+
+    /// Get accumulated audio data for alignment
+    @MainActor func getAccumulatedAudio() -> Data {
+        return accumulatedAudio
     }
 }
 
