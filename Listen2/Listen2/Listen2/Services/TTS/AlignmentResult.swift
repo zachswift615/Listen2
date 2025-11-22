@@ -167,6 +167,8 @@ enum AlignmentError: Error, LocalizedError, Equatable {
     case invalidAudioFormat
     case cacheReadFailed(String)
     case cacheWriteFailed(String)
+    case emptyAudio
+    case inferenceFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -186,6 +188,10 @@ enum AlignmentError: Error, LocalizedError, Equatable {
             return "Failed to read alignment from cache: \(details)"
         case .cacheWriteFailed(let details):
             return "Failed to write alignment to cache: \(details)"
+        case .emptyAudio:
+            return "Audio samples array is empty or too short for alignment"
+        case .inferenceFailed(let details):
+            return "ONNX model inference failed: \(details)"
         }
     }
 }

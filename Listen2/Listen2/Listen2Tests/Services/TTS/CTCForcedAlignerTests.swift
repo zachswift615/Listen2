@@ -287,4 +287,54 @@ final class CTCForcedAlignerTests: XCTestCase {
         XCTAssertEqual(wordTimings[0].rangeLocation, 0)
         XCTAssertEqual(wordTimings[0].rangeLength, 2)
     }
+
+    // MARK: - ONNX Inference Tests
+
+    func testGetEmissionsThrowsWhenNoOnnxSession() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        // No ONNX session when initialized with mock labels
+        let hasSession = await aligner.hasOnnxSession
+        XCTAssertFalse(hasSession)
+
+        // Should throw when trying to get emissions without ONNX session
+        let audioSamples = [Float](repeating: 0.0, count: 16000)  // 1 second of audio
+        do {
+            _ = try await aligner.getEmissions(audioSamples: audioSamples)
+            XCTFail("Expected getEmissions to throw")
+        } catch AlignmentError.modelNotInitialized {
+            // Expected
+        }
+    }
+
+    func testGetEmissionsThrowsOnEmptyAudio() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "c"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        // This would throw emptyAudio if session existed, but will throw modelNotInitialized first
+        // Test documents expected behavior
+        do {
+            _ = try await aligner.getEmissions(audioSamples: [])
+            XCTFail("Expected getEmissions to throw")
+        } catch {
+            // Either modelNotInitialized or emptyAudio is acceptable
+            XCTAssertTrue(error is AlignmentError)
+        }
+    }
+
+    func testHasOnnxSessionPropertyExists() async throws {
+        let aligner = CTCForcedAligner()
+
+        // Before initialization
+        var hasSession = await aligner.hasOnnxSession
+        XCTAssertFalse(hasSession)
+
+        // After mock initialization (no real ONNX model)
+        try await aligner.initializeWithLabels(["-", "a"])
+        hasSession = await aligner.hasOnnxSession
+        XCTAssertFalse(hasSession)  // Still false because no model file
+    }
 }

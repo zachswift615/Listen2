@@ -26,6 +26,9 @@ actor CTCForcedAligner {
     /// Tokenizer for converting text to tokens
     private var tokenizer: CTCTokenizer?
 
+    /// ONNX session for MMS_FA model inference
+    private var onnxSession: OpaquePointer?
+
     /// Whether initialized
     private(set) var isInitialized = false
 
@@ -34,6 +37,15 @@ actor CTCForcedAligner {
 
     /// Frame hop size in samples (MMS_FA uses 320)
     private let hopSize: Int = 320
+
+    /// Vocabulary size for MMS_FA model
+    private let vocabSize: Int = 29
+
+    /// Model input name
+    private let inputName = "input"
+
+    /// Model output name
+    private let outputName = "logits"
 
     // MARK: - Initialization
 
@@ -53,6 +65,7 @@ actor CTCForcedAligner {
     /// Initialize with custom model directory
     func initialize(modelDirectory: URL) async throws {
         let labelsURL = modelDirectory.appendingPathComponent("labels.txt")
+        let modelURL = modelDirectory.appendingPathComponent("mms-fa.onnx")
 
         guard FileManager.default.fileExists(atPath: labelsURL.path) else {
             throw AlignmentError.modelNotInitialized
@@ -61,7 +74,21 @@ actor CTCForcedAligner {
         // Initialize tokenizer
         tokenizer = try CTCTokenizer(labelsURL: labelsURL)
 
-        // TODO: Initialize ONNX session in Task 6
+        // Initialize ONNX session if model exists
+        if FileManager.default.fileExists(atPath: modelURL.path) {
+            let session = OnnxSessionCreate(modelURL.path, 2, 1)  // 2 threads, use CoreML
+            if session != nil {
+                onnxSession = session
+                print("[CTCForcedAligner] ONNX session created successfully")
+            } else {
+                let error = OnnxSessionGetLastError()
+                let errorMsg = error != nil ? String(cString: error!) : "Unknown error"
+                print("[CTCForcedAligner] Warning: Failed to create ONNX session: \(errorMsg)")
+                // Don't fail initialization - allow testing with mock emissions
+            }
+        } else {
+            print("[CTCForcedAligner] Warning: Model file not found at \(modelURL.path)")
+        }
 
         isInitialized = true
         print("[CTCForcedAligner] Initialized with vocab size: \(tokenizer?.vocabSize ?? 0)")
@@ -73,11 +100,93 @@ actor CTCForcedAligner {
         isInitialized = true
     }
 
-    // MARK: - Public API (stubs for now)
+    // MARK: - Public API
 
     /// Get the tokenizer (for testing)
     func getTokenizer() -> CTCTokenizer? {
         return tokenizer
+    }
+
+    /// Whether ONNX session is available for inference
+    var hasOnnxSession: Bool {
+        return onnxSession != nil
+    }
+
+    // MARK: - ONNX Inference
+
+    /// Get emission probabilities from audio samples using MMS_FA model
+    ///
+    /// - Parameter audioSamples: Audio samples at 16kHz, normalized to [-1, 1]
+    /// - Returns: 2D array of log probabilities [frames x vocab_size]
+    /// - Throws: AlignmentError if inference fails
+    func getEmissions(audioSamples: [Float]) throws -> [[Float]] {
+        guard let session = onnxSession else {
+            throw AlignmentError.modelNotInitialized
+        }
+
+        guard !audioSamples.isEmpty else {
+            throw AlignmentError.emptyAudio
+        }
+
+        // Input shape: [batch=1, samples]
+        var inputShape: [Int64] = [1, Int64(audioSamples.count)]
+        let inputShapeLen = inputShape.count
+
+        // Calculate expected output size
+        let numFrames = audioSamples.count / hopSize
+        guard numFrames > 0 else {
+            throw AlignmentError.emptyAudio
+        }
+
+        // Allocate output buffer
+        let outputSize = numFrames * vocabSize
+        var outputData = [Float](repeating: 0, count: outputSize)
+        var outputShape: [Int64] = [0, 0, 0]  // [batch, frames, vocab]
+        var outputShapeLen = outputShape.count
+
+        // Run inference
+        let result = OnnxSessionRun(
+            session,
+            inputName,
+            audioSamples,
+            &inputShape,
+            inputShapeLen,
+            outputName,
+            &outputData,
+            &outputShape,
+            &outputShapeLen
+        )
+
+        if result != 0 {
+            let error = OnnxSessionGetLastError()
+            let errorMsg = error != nil ? String(cString: error!) : "Unknown inference error"
+            print("[CTCForcedAligner] Inference failed: \(errorMsg)")
+            throw AlignmentError.modelNotInitialized
+        }
+
+        // Verify output shape
+        guard outputShapeLen >= 2 else {
+            print("[CTCForcedAligner] Invalid output shape: \(outputShapeLen) dimensions")
+            throw AlignmentError.modelNotInitialized
+        }
+
+        let actualFrames = Int(outputShape[1])
+        let actualVocab = outputShapeLen > 2 ? Int(outputShape[2]) : vocabSize
+
+        print("[CTCForcedAligner] Inference complete: \(actualFrames) frames x \(actualVocab) vocab")
+
+        // Reshape output into 2D array [frames x vocab]
+        var emissions: [[Float]] = []
+        for f in 0..<actualFrames {
+            let startIdx = f * actualVocab
+            let endIdx = startIdx + actualVocab
+            if endIdx <= outputData.count {
+                let frame = Array(outputData[startIdx..<endIdx])
+                emissions.append(frame)
+            }
+        }
+
+        return emissions
     }
 
     // MARK: - CTC Trellis Algorithm
@@ -374,6 +483,9 @@ actor CTCForcedAligner {
     }
 
     deinit {
-        // Cleanup will be added when ONNX session is implemented
+        // Clean up ONNX session
+        if let session = onnxSession {
+            OnnxSessionDestroy(session)
+        }
     }
 }

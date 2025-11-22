@@ -14,4 +14,7 @@
 // Import VoxPDF C API
 #import "voxpdf.h"
 
+// Import ONNX Runtime wrapper for CTCForcedAligner
+#import "OnnxInference.h"
+
 #endif /* Listen2_Bridging_Header_h */
