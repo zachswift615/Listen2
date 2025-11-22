@@ -8,6 +8,7 @@
 import XCTest
 @testable import Listen2
 
+@MainActor
 final class SentenceStreamingTests: XCTestCase {
 
     var service: TTSService!

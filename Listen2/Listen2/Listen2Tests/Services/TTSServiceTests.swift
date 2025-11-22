@@ -7,6 +7,7 @@ import XCTest
 import AVFoundation
 @testable import Listen2
 
+@MainActor
 final class TTSServiceTests: XCTestCase {
 
     var service: TTSService!
