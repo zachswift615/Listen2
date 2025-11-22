@@ -269,6 +269,110 @@ actor CTCForcedAligner {
         return spans
     }
 
+    // MARK: - Word Merging
+
+    /// Merge character-level token spans into word-level timings
+    ///
+    /// The key insight is that token spans are ordered by position in the tokenized text
+    /// (which has unknown chars stripped and spaces converted to space tokens).
+    /// We need to:
+    /// 1. Split transcript into words with their character positions
+    /// 2. Count how many tokens each word contributes (using tokenizer)
+    /// 3. Map token spans to words based on token count, skipping space tokens
+    ///
+    /// - Parameters:
+    ///   - tokenSpans: Character spans from backtracking (ordered by token index)
+    ///   - transcript: Original text (may contain chars not in vocabulary)
+    ///   - frameRate: Frames per second for time conversion
+    /// - Returns: Word-level timing information
+    func mergeToWords(
+        tokenSpans: [TokenSpan],
+        transcript: String,
+        frameRate: Double
+    ) -> [AlignmentResult.WordTiming] {
+        guard let tokenizer = tokenizer else { return [] }
+        guard !tokenSpans.isEmpty else { return [] }
+
+        // 1. Split transcript into words with their character positions
+        var words: [(text: String, startOffset: Int, endOffset: Int)] = []
+        var currentWord = ""
+        var wordStart = 0
+
+        for (i, char) in transcript.enumerated() {
+            if char == " " {
+                if !currentWord.isEmpty {
+                    words.append((text: currentWord, startOffset: wordStart, endOffset: i - 1))
+                    currentWord = ""
+                }
+                wordStart = i + 1
+            } else {
+                if currentWord.isEmpty {
+                    wordStart = i
+                }
+                currentWord.append(char)
+            }
+        }
+        if !currentWord.isEmpty {
+            words.append((text: currentWord, startOffset: wordStart, endOffset: transcript.count - 1))
+        }
+
+        guard !words.isEmpty else { return [] }
+
+        // 2. Count tokens per word (using tokenizer - this excludes space tokens)
+        var tokenCountPerWord: [Int] = []
+        for word in words {
+            let wordTokens = tokenizer.tokenize(word.text)
+            tokenCountPerWord.append(wordTokens.count)
+        }
+
+        // 3. Map token spans to words, skipping space token spans
+        var wordTimings: [AlignmentResult.WordTiming] = []
+        var spanIndex = 0
+
+        for (wordIdx, word) in words.enumerated() {
+            let tokenCount = tokenCountPerWord[wordIdx]
+            guard tokenCount > 0, spanIndex < tokenSpans.count else { continue }
+
+            // Collect spans for this word (exactly tokenCount spans)
+            var wordSpans: [TokenSpan] = []
+            var collected = 0
+            while collected < tokenCount && spanIndex < tokenSpans.count {
+                wordSpans.append(tokenSpans[spanIndex])
+                spanIndex += 1
+                collected += 1
+            }
+
+            if let firstSpan = wordSpans.first, let lastSpan = wordSpans.last {
+                let startTime = Double(firstSpan.startFrame) / frameRate
+                // +1 because endFrame is inclusive (frame N ends at time (N+1)/frameRate)
+                let endTime = Double(lastSpan.endFrame + 1) / frameRate
+
+                wordTimings.append(AlignmentResult.WordTiming(
+                    wordIndex: wordIdx,
+                    startTime: startTime,
+                    duration: endTime - startTime,
+                    text: word.text,
+                    rangeLocation: word.startOffset,
+                    rangeLength: word.text.count
+                ))
+            }
+
+            // Skip space token spans between words
+            // Handle multiple consecutive spaces by counting spaces in transcript
+            if wordIdx < words.count - 1 {
+                let nextWordStart = words[wordIdx + 1].startOffset
+                let currentWordEnd = word.startOffset + word.text.count
+                let spaceCount = nextWordStart - currentWordEnd
+
+                // Skip that many space token spans
+                let spansToSkip = min(spaceCount, tokenSpans.count - spanIndex)
+                spanIndex += spansToSkip
+            }
+        }
+
+        return wordTimings
+    }
+
     deinit {
         // Cleanup will be added when ONNX session is implemented
     }

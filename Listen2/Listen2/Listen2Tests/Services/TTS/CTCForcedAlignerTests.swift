@@ -156,4 +156,135 @@ final class CTCForcedAlignerTests: XCTestCase {
         XCTAssertEqual(spans.count, 1)
         XCTAssertEqual(spans[0].tokenIndex, 0)
     }
+
+    // MARK: - Word Merging Tests
+
+    func testMergeToWords() async throws {
+        let aligner = CTCForcedAligner()
+        // Using subset of MMS_FA labels
+        let testLabels = ["-", "a", "d", "e", "h", "l", "o", "r", "w", "*"]
+        // Indices:         0    1    2    3    4    5    6    7    8    9
+        try await aligner.initializeWithLabels(testLabels)
+
+        let transcript = "hello world"
+
+        // Token spans for "hello world" (h=4, e=3, l=5, l=5, o=6, space=9, w=8, o=6, r=7, l=5, d=2)
+        let tokenSpans: [CTCForcedAligner.TokenSpan] = [
+            CTCForcedAligner.TokenSpan(tokenIndex: 0, startFrame: 0, endFrame: 4),    // h
+            CTCForcedAligner.TokenSpan(tokenIndex: 1, startFrame: 5, endFrame: 9),    // e
+            CTCForcedAligner.TokenSpan(tokenIndex: 2, startFrame: 10, endFrame: 14),  // l
+            CTCForcedAligner.TokenSpan(tokenIndex: 3, startFrame: 15, endFrame: 19),  // l
+            CTCForcedAligner.TokenSpan(tokenIndex: 4, startFrame: 20, endFrame: 24),  // o
+            // Space token span (tokenIndex 5) is skipped - word boundary
+            CTCForcedAligner.TokenSpan(tokenIndex: 5, startFrame: 25, endFrame: 29),  // space (implicit word break)
+            CTCForcedAligner.TokenSpan(tokenIndex: 6, startFrame: 30, endFrame: 34),  // w
+            CTCForcedAligner.TokenSpan(tokenIndex: 7, startFrame: 35, endFrame: 39),  // o
+            CTCForcedAligner.TokenSpan(tokenIndex: 8, startFrame: 40, endFrame: 44),  // r
+            CTCForcedAligner.TokenSpan(tokenIndex: 9, startFrame: 45, endFrame: 49),  // l
+            CTCForcedAligner.TokenSpan(tokenIndex: 10, startFrame: 50, endFrame: 54), // d
+        ]
+
+        let frameRate = 50.0  // 50 fps for easy math
+        let wordTimings = await aligner.mergeToWords(
+            tokenSpans: tokenSpans,
+            transcript: transcript,
+            frameRate: frameRate
+        )
+
+        XCTAssertEqual(wordTimings.count, 2)
+
+        // First word: "hello" at frames 0-24 = 0.0s to 0.5s
+        XCTAssertEqual(wordTimings[0].text, "hello")
+        XCTAssertEqual(wordTimings[0].startTime, 0.0, accuracy: 0.02)
+        XCTAssertEqual(wordTimings[0].rangeLocation, 0)
+        XCTAssertEqual(wordTimings[0].rangeLength, 5)
+
+        // Second word: "world" at frames 30-54 = 0.6s to 1.1s
+        XCTAssertEqual(wordTimings[1].text, "world")
+        XCTAssertEqual(wordTimings[1].startTime, 0.6, accuracy: 0.02)
+        XCTAssertEqual(wordTimings[1].rangeLocation, 6)
+        XCTAssertEqual(wordTimings[1].rangeLength, 5)
+    }
+
+    func testMergeToWordsWithApostrophe() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "d", "i", "n", "o", "t", "'", "*"]
+        // Indices:         0    1    2    3    4    5    6    7
+        try await aligner.initializeWithLabels(testLabels)
+
+        let transcript = "don't do it"
+
+        // Simplified token spans
+        let tokenSpans: [CTCForcedAligner.TokenSpan] = [
+            CTCForcedAligner.TokenSpan(tokenIndex: 0, startFrame: 0, endFrame: 9),   // d
+            CTCForcedAligner.TokenSpan(tokenIndex: 1, startFrame: 10, endFrame: 19), // o
+            CTCForcedAligner.TokenSpan(tokenIndex: 2, startFrame: 20, endFrame: 29), // n
+            CTCForcedAligner.TokenSpan(tokenIndex: 3, startFrame: 30, endFrame: 34), // '
+            CTCForcedAligner.TokenSpan(tokenIndex: 4, startFrame: 35, endFrame: 44), // t
+            CTCForcedAligner.TokenSpan(tokenIndex: 5, startFrame: 45, endFrame: 49), // space
+            CTCForcedAligner.TokenSpan(tokenIndex: 6, startFrame: 50, endFrame: 59), // d
+            CTCForcedAligner.TokenSpan(tokenIndex: 7, startFrame: 60, endFrame: 69), // o
+            CTCForcedAligner.TokenSpan(tokenIndex: 8, startFrame: 70, endFrame: 74), // space
+            CTCForcedAligner.TokenSpan(tokenIndex: 9, startFrame: 75, endFrame: 84), // i
+            CTCForcedAligner.TokenSpan(tokenIndex: 10, startFrame: 85, endFrame: 99), // t
+        ]
+
+        let frameRate = 100.0
+        let wordTimings = await aligner.mergeToWords(
+            tokenSpans: tokenSpans,
+            transcript: transcript,
+            frameRate: frameRate
+        )
+
+        XCTAssertEqual(wordTimings.count, 3)
+        XCTAssertEqual(wordTimings[0].text, "don't")
+        XCTAssertEqual(wordTimings[0].rangeLocation, 0)
+        XCTAssertEqual(wordTimings[0].rangeLength, 5)
+
+        XCTAssertEqual(wordTimings[1].text, "do")
+        XCTAssertEqual(wordTimings[1].rangeLocation, 6)
+
+        XCTAssertEqual(wordTimings[2].text, "it")
+        XCTAssertEqual(wordTimings[2].rangeLocation, 9)
+    }
+
+    func testMergeToWordsEmpty() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "a", "b", "*"]
+        try await aligner.initializeWithLabels(testLabels)
+
+        let wordTimings = await aligner.mergeToWords(
+            tokenSpans: [],
+            transcript: "",
+            frameRate: 50.0
+        )
+
+        XCTAssertTrue(wordTimings.isEmpty)
+    }
+
+    func testMergeToWordsSingleWord() async throws {
+        let aligner = CTCForcedAligner()
+        let testLabels = ["-", "h", "i", "*"]
+        // Indices:         0    1    2    3
+        try await aligner.initializeWithLabels(testLabels)
+
+        let transcript = "hi"
+        let tokenSpans: [CTCForcedAligner.TokenSpan] = [
+            CTCForcedAligner.TokenSpan(tokenIndex: 0, startFrame: 0, endFrame: 4),   // h
+            CTCForcedAligner.TokenSpan(tokenIndex: 1, startFrame: 5, endFrame: 9),   // i
+        ]
+
+        let frameRate = 50.0
+        let wordTimings = await aligner.mergeToWords(
+            tokenSpans: tokenSpans,
+            transcript: transcript,
+            frameRate: frameRate
+        )
+
+        XCTAssertEqual(wordTimings.count, 1)
+        XCTAssertEqual(wordTimings[0].text, "hi")
+        XCTAssertEqual(wordTimings[0].startTime, 0.0, accuracy: 0.02)
+        XCTAssertEqual(wordTimings[0].rangeLocation, 0)
+        XCTAssertEqual(wordTimings[0].rangeLength, 2)
+    }
 }
