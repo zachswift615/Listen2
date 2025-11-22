@@ -51,15 +51,50 @@ actor CTCForcedAligner {
 
     /// Initialize with bundled model
     func initialize() async throws {
-        guard let modelURL = Bundle.main.url(forResource: "mms-fa", withExtension: nil, subdirectory: "Models") else {
-            // Try alternative path without Models subdirectory
-            guard let labelsURL = Bundle.main.url(forResource: "labels", withExtension: "txt", subdirectory: "mms-fa") else {
-                throw AlignmentError.modelNotInitialized
-            }
+        // Try multiple locations for the model files:
+        // 1. Models/mms-fa/ subdirectory
+        // 2. mms-fa/ subdirectory
+        // 3. Bundle root (Xcode 16 flattens synchronized folders)
+
+        if let modelURL = Bundle.main.url(forResource: "mms-fa", withExtension: nil, subdirectory: "Models") {
+            try await initialize(modelDirectory: modelURL)
+            return
+        }
+
+        if let labelsURL = Bundle.main.url(forResource: "labels", withExtension: "txt", subdirectory: "mms-fa") {
             try await initialize(modelDirectory: labelsURL.deletingLastPathComponent())
             return
         }
-        try await initialize(modelDirectory: modelURL)
+
+        // Xcode 16 flattens files to bundle root - check there
+        if let labelsURL = Bundle.main.url(forResource: "labels", withExtension: "txt"),
+           let modelURL = Bundle.main.url(forResource: "mms-fa", withExtension: "onnx") {
+            // Files are at bundle root, create a virtual directory reference
+            try await initializeFromBundleRoot(labelsURL: labelsURL, modelURL: modelURL)
+            return
+        }
+
+        throw AlignmentError.modelNotInitialized
+    }
+
+    /// Initialize from files at bundle root (Xcode 16 synchronized folders)
+    private func initializeFromBundleRoot(labelsURL: URL, modelURL: URL) async throws {
+        // Initialize tokenizer
+        tokenizer = try CTCTokenizer(labelsURL: labelsURL)
+
+        // Initialize ONNX session
+        let session = OnnxSessionCreate(modelURL.path, 2, 1)
+        if session != nil {
+            onnxSession = session
+            print("[CTCForcedAligner] ONNX session created successfully (bundle root)")
+        } else {
+            let error = OnnxSessionGetLastError()
+            let errorMsg = error != nil ? String(cString: error!) : "Unknown error"
+            print("[CTCForcedAligner] Warning: Failed to create ONNX session: \(errorMsg)")
+        }
+
+        isInitialized = true
+        print("[CTCForcedAligner] Initialized with vocab size: \(tokenizer?.vocabSize ?? 0)")
     }
 
     /// Initialize with custom model directory
