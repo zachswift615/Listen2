@@ -37,15 +37,18 @@ final class WordHighlightSchedulerTests: XCTestCase {
     // MARK: - Test Helpers
 
     private func makeAlignment(words: [(text: String, start: Double, duration: Double)]) -> AlignmentResult {
+        var currentLocation = 0
         let timings = words.enumerated().map { index, word in
-            AlignmentResult.WordTiming(
+            let timing = AlignmentResult.WordTiming(
                 wordIndex: index,
                 startTime: word.start,
                 duration: word.duration,
                 text: word.text,
-                rangeLocation: 0,
+                rangeLocation: currentLocation,
                 rangeLength: word.text.count
             )
+            currentLocation += word.text.count + 1  // +1 for space between words
+            return timing
         }
         let totalDuration = words.last.map { $0.start + $0.duration } ?? 0
         return AlignmentResult(
@@ -286,6 +289,54 @@ func testHandleFramePositionEmitsWordChange() async {
     // Then - should only emit when word changes
     XCTAssertEqual(receivedWords, ["The", "Knowledge"])
 }
+
+func testHandleFramePositionContinuesAfterPauseResume() async {
+    // Given - simulates pause/resume where tap stops and restarts mid-word
+    let alignment = makeAlignment(words: [
+        ("The", 0.0, 0.1),
+        ("Knowledge", 0.1, 0.5)
+    ])
+    let scheduler = WordHighlightScheduler(alignment: alignment)
+
+    var receivedWords: [String] = []
+    scheduler.onWordChange = { timing in
+        receivedWords.append(timing.text)
+    }
+
+    // When - play starts
+    await scheduler.testHandleFramePosition(0)      // "The" at 0.0s
+
+    // Pause happens (no callbacks during pause)
+
+    // Resume - tap fires again from where audio left off
+    await scheduler.testHandleFramePosition(1103)   // Still "The" at 0.05s (mid-word)
+    await scheduler.testHandleFramePosition(2205)   // "Knowledge" at 0.1s
+
+    // Then - should emit "The" once (not again on resume), then "Knowledge"
+    XCTAssertEqual(receivedWords, ["The", "Knowledge"])
+}
+
+func testHandleFramePositionIgnoredWhenInactive() async {
+    // Given - scheduler that was stopped (simulates race condition)
+    let alignment = makeAlignment(words: [
+        ("The", 0.0, 0.1),
+        ("Knowledge", 0.1, 0.5)
+    ])
+    let scheduler = WordHighlightScheduler(alignment: alignment)
+
+    var receivedWords: [String] = []
+    scheduler.onWordChange = { timing in
+        receivedWords.append(timing.text)
+    }
+
+    // When - callbacks arrive but scheduler is not active
+    // (simulates callbacks queued before stop() but delivered after)
+    await scheduler.testHandleFramePosition(0)
+    await scheduler.testHandleFramePosition(2205)
+
+    // Then - no callbacks because isActive is false (never started)
+    XCTAssertEqual(receivedWords, [])
+}
 ```
 
 **Step 2: Run test to verify it fails**
@@ -305,6 +356,10 @@ Add to `WordHighlightScheduler.swift`:
 /// Called on main thread after dispatch from audio callback
 /// - Parameter framePosition: Current frame position in samples
 private func handleFramePosition(_ framePosition: Int64) {
+    // Ignore callbacks that arrive after stop() was called
+    // (they may have been queued before stop() but dispatched after)
+    guard isActive else { return }
+
     // Convert frame position to seconds
     let currentTime = Double(framePosition) / sampleRate
 
@@ -349,6 +404,8 @@ Only emits when word actually changes (not every frame)."
 
 **Files:**
 - Modify: `Listen2/Listen2/Listen2/Services/TTS/WordHighlightScheduler.swift`
+
+**Testing Note:** This task does not add a new unit test because `AVAudioPlayerNode.installTap()` requires a real audio engine and cannot be easily mocked. The tap functionality is tested via integration testing in Task 11 (manual testing). The existing unit tests from Tasks 1-3 verify the core logic (word lookup, frame handling) which is the complex part. The tap is just a thin callback wrapper.
 
 **Step 1: Add playerNode dependency and tap methods**
 
@@ -644,26 +701,51 @@ Replace stopHighlightTimer with stopWordScheduler in sentence setup."
 **Files:**
 - Modify: `Listen2/Listen2/Listen2/Services/TTSService.swift`
 
+**Design Note:** The audio tap naturally stops firing when `playerNode.pause()` is called because no new buffers are rendered. Therefore:
+- `pause()` does NOT stop the scheduler - the tap just stops firing naturally
+- `stop()` DOES stop the scheduler - we're ending playback entirely
+- `handleParagraphComplete()` stops scheduler - moving to next paragraph
+- Speed change stops scheduler - audio is restarted from current position
+
 **Step 1: Update pause() method**
 
-Find the `pause()` method (around line 514). Replace `stopHighlightTimer()` with `stopWordScheduler()`:
+Find the `pause()` method (around line 514). Remove `stopHighlightTimer()` entirely - DO NOT replace with `stopWordScheduler()`:
 
 ```swift
 func pause() {
-    // Stop word scheduler - no more highlights
-    stopWordScheduler()
+    // NOTE: Don't stop word scheduler here!
+    // The tap naturally stops firing when playerNode.pause() is called.
+    // This allows resume() to continue highlighting without recreating the scheduler.
 
     Task { @MainActor in
         audioPlayer.pause()
         wordHighlighter.pause()
     }
     fallbackSynthesizer.pauseSpeaking(at: .word)
+    stopHighlightTimer()  // REMOVE this line (old timer code)
     isPlaying = false
     nowPlayingManager.updatePlaybackState(isPlaying: false)
 }
 ```
 
-**Step 2: Update stop() method**
+**Step 2: Update resume() method**
+
+Find the `resume()` method (around line 529). Remove `startHighlightTimer()`:
+
+```swift
+func resume() {
+    Task { @MainActor in
+        audioPlayer.resume()
+        wordHighlighter.resume()
+    }
+    fallbackSynthesizer.continueSpeaking()
+    // REMOVE: startHighlightTimer()  // Scheduler tap resumes automatically
+    isPlaying = true
+    nowPlayingManager.updatePlaybackState(isPlaying: true)
+}
+```
+
+**Step 3: Update stop() method**
 
 Find the `stop()` method (around line 601). Replace `stopHighlightTimer()` with `stopWordScheduler()`:
 
@@ -675,7 +757,7 @@ stopHighlightTimer()
 stopWordScheduler()
 ```
 
-**Step 3: Update handleParagraphComplete()**
+**Step 4: Update handleParagraphComplete()**
 
 Find `handleParagraphComplete()` (around line 1271). Replace:
 
@@ -689,26 +771,28 @@ With:
 stopWordScheduler()
 ```
 
-**Step 4: Update other stopHighlightTimer calls**
+**Step 5: Update other stopHighlightTimer calls**
 
 Search for remaining `stopHighlightTimer()` calls and replace with `stopWordScheduler()`:
-- Line 374 (in setPlaybackRate)
-- Line 587 (in stopAudioOnly)
+- Line 374 (in setPlaybackRate) - scheduler needs restart because audio is restarted
+- Line 587 (in stopAudioOnly) - stopping playback entirely
 
-**Step 5: Verify build succeeds**
+**Step 6: Verify build succeeds**
 
 Run: `xcodebuild build -project Listen2/Listen2.xcodeproj -scheme Listen2 -destination 'platform=iOS Simulator,name=iPhone 16' 2>&1 | tail -10`
 
 Expected: BUILD SUCCEEDED
 
-**Step 6: Commit**
+**Step 7: Commit**
 
 ```bash
 git add -u
 git commit -m "feat(tts): update pause/stop to use word scheduler
 
-All stopHighlightTimer() calls replaced with stopWordScheduler().
-Pause clears highlight (Voice Dream UX - rewind to sentence start)."
+- pause(): Don't stop scheduler - tap naturally pauses with audio
+- resume(): Don't restart scheduler - tap resumes with audio
+- stop()/handleParagraphComplete(): Stop scheduler - ending playback
+- setPlaybackRate()/stopAudioOnly(): Stop scheduler - restarting audio"
 ```
 
 ---
@@ -806,13 +890,16 @@ Delete these entire methods:
 **Step 3: Remove dead code references**
 
 Search for and remove any remaining references to:
-- `currentAlignment` (except in dead code comments)
+- `currentAlignment` - assignments in `playBufferedChunks()` (~lines 1113-1122), `playSentenceWithChunks()` (~line 888), `performCTCAlignmentSync()` (~line 943)
 - `minWordIndex`
 - `stuckWordWarningCount`
 - `lastHighlightedWordIndex`
 - `lastHighlightChangeTime`
+- `startHighlightTimer()` references in `resume()` method
 
-These may appear in methods like `playReadySentence`, `performCTCAlignmentSync`, etc.
+**Note:** Keep `wordHighlighter` property and `highlightSubscription` - these are used for AVSpeech fallback, not Piper highlighting.
+
+These may appear in methods like `playReadySentence`, `performCTCAlignmentSync`, `resume()`, etc.
 
 **Step 4: Verify build succeeds**
 
