@@ -21,7 +21,7 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     // MARK: - Private Properties
 
     private let audioEngine = AVAudioEngine()
-    private let playerNode = AVAudioPlayerNode()
+    let playerNode = AVAudioPlayerNode()
     private var displayLink: CADisplayLink?
     private var onFinished: (() -> Void)?
     private var currentFormat: AVAudioFormat?
