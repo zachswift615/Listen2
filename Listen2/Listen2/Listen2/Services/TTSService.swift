@@ -1269,6 +1269,11 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func handleParagraphComplete() {
+        // CRITICAL: Stop highlight timer and clear alignment BEFORE advancing
+        // This prevents the old paragraph's wordRange from being applied to the new paragraph
+        stopHighlightTimer()
+        currentAlignment = nil
+
         // Don't set isPlaying to false yet if we're auto-advancing
         // This prevents flicker when transitioning between paragraphs
 
