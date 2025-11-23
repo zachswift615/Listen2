@@ -472,14 +472,19 @@ actor ReadyQueue {
         if wordHighlightingEnabled {
             let alignmentStartTime = CFAbsoluteTimeGetCurrent()
 
-            // Extract Float32 samples from combined audio
-            let samples = combinedAudio.withUnsafeBytes { buffer in
-                Array(buffer.bindMemory(to: Float.self))
+            // FIX: Use raw Float32 chunks instead of WAV-encoded combinedAudio
+            // The chunks from PipelineChunkDelegate are raw Float32 samples
+            // The combinedAudio from synthesisQueue is WAV format (Int16 PCM with header)
+            var allSamples: [Float] = []
+            for chunk in chunks {
+                chunk.withUnsafeBytes { buffer in
+                    allSamples.append(contentsOf: buffer.bindMemory(to: Float.self))
+                }
             }
 
             do {
                 alignment = try await ctcAligner.align(
-                    audioSamples: samples,
+                    audioSamples: allSamples,
                     sampleRate: ReadyQueueConstants.sampleRate,
                     transcript: text,
                     paragraphIndex: paragraphIndex,
