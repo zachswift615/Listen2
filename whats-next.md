@@ -76,11 +76,21 @@ Implement the ReadyQueue pipeline from the comprehensive plan at `docs/plans/202
    - Added logs at all session check points in `runPipeline()` and `processSentence()`
    - Will help diagnose if sentence skipping is caused by session invalidation
 
+4. **FALSE SENTENCE SKIPPING FIXED** (fb2d7b1 -> 56904e7):
+   - Root cause: `processSentence()` returns nil for BOTH empty sentences AND session-invalidated sentences
+   - When session invalidated during long alignment (4-5s), sentence was incorrectly marked "skipped"
+   - Fix: Now checks session validity BEFORE marking as skipped - only truly empty sentences get skipped flag
+   - Also reset `lastHighlightedWordIndex` when starting new sentence
+
+5. **DEBUG LOGGING FOR HIGHLIGHT RANGE**: Added logging to show exact range being applied
+   - Will show `[TTSService] 🎯 HIGHLIGHT: applying range X..<Y = 'text' to P#`
+   - Helps diagnose highlight offset issues
+
 ### Remaining Plan Tasks
 
 - **Task 8** (Optional): Clean up old code - defer until bugs fixed
 - **Task 9**: Integration testing - needs re-test after fixes
-- Monitor for sentence skipping issue - may now be visible in logs
+- **Highlight offset issue**: Still investigating - new debug logging will help
 
 ## Attempted Approaches
 
