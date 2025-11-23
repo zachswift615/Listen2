@@ -1,212 +1,193 @@
-# Handoff: CTC Forced Alignment Implementation
+# What's Next - ReadyQueue Pipeline Debug Session
 
-<original_task>
-Implement CTC forced alignment to replace the drifty phoneme-duration and error-prone ASR+DTW word highlighting approaches. The goal is frame-accurate (<50ms drift) word highlighting that works with ALL Piper voices without requiring model re-export. User wants to clean up all legacy alignment code as part of this effort.
-</original_task>
+## Original Task
 
-<work_completed>
+Implement the ReadyQueue pipeline from the comprehensive plan at `docs/plans/2025-11-22-ready-queue-pipeline.md`. This creates a unified synthesis + CTC alignment pipeline with 5-sentence lookahead buffer across paragraph boundaries, word highlighting toggle, and loading indicator.
 
-## 1. Brainstorming & Design (Complete)
-- Used superpowers:brainstorming skill to refine requirements
-- User confirmed: Frame-accurate highlighting, all voices, bundle size not a concern, remove legacy code
+## Work Completed
 
-## 2. Implementation Plan (Complete)
-- Created comprehensive plan: `docs/plans/2025-11-21-ctc-forced-alignment.md`
-- 11 tasks with TDD approach, exact file paths, code snippets
-- Plan was reviewed by superpowers:code-reviewer subagent (score 6.5/10)
+### Commits Made (from d64b77e baseline)
 
-## 3. Code Review Findings (Addressed)
-Key issues identified:
-- ONNX Runtime integration was undefined (BLOCKER - now resolved via spike)
-- MMS_FA export not validated (BLOCKER - now resolved via spike)
-- Word merging algorithm has bugs (needs fixing during implementation)
-- Linear resampling causes artifacts (consider Accelerate framework)
-- TTSService integration oversimplified (needs more detail)
+1. **226264f** - `feat: add Sendable conformance to AlignmentResult for concurrency safety`
+   - Added `Sendable` to `AlignmentResult` and `WordTiming` structs
 
-## 4. Spike Validation (Complete)
-Created and ran `scripts/spike_mms_fa.py` to validate approach:
+2. **494402e** - `feat: add ReadySentence model and ReadyQueueConstants`
+   - Created `Listen2/Listen2/Listen2/Services/TTS/ReadySentence.swift`
+   - Contains: `ReadySentence`, `SentenceKey`, `ReadyQueueConstants`
 
-**CRITICAL FINDINGS:**
-| Aspect | Result |
-|--------|--------|
-| Model loads | ✅ torchaudio.pipelines.MMS_FA |
-| Labels | 29 chars: `'-', 'a', 'i', 'e', 'n', 'o', 'u', 't', 's', 'r', 'm', 'k', 'l', 'd', 'g', 'h', 'y', 'b', 'p', 'w', 'c', 'v', 'j', 'z', 'f', "'", 'q', 'x', '*'` |
-| **ONNX size** | **3.1 MB** (not 1.2GB as feared!) |
-| ONNX inference | ✅ Matches PyTorch output |
-| Frame rate | 49 fps (20ms per frame) |
-| Variable length | ✅ Dynamic axes work |
+3. **2cddda3** - `feat: add ReadyQueue actor with sliding window and cross-paragraph lookahead`
+   - Created `Listen2/Listen2/Listen2/Services/TTS/ReadyQueue.swift` (~535 lines)
+   - Pipeline actor with session-based invalidation, sliding window
 
-**Token indices:**
-- Blank `-` = index 0
-- Space `*` = index 28
-- Apostrophe `'` = index 25
+4. **e1170c4** - `feat: add word highlighting toggle to settings`
+   - Modified `SettingsViewModel.swift` - added `@AppStorage("wordHighlightingEnabled")`
+   - Modified `SettingsView.swift` - added Toggle UI
 
-## 5. Workshop Decision Recorded
+5. **2fa4217** - `feat: add isPreparing state and readyQueue to TTSService`
+   - Added `isPreparing`, `wordHighlightingEnabled`, `readyQueue` properties
+   - Initialized `readyQueue` in `initializePiperProvider()`
+
+6. **227abfe** - `feat: integrate ReadyQueue into playback flow with buffer preservation`
+   - Rewrote `speakParagraph(at:)` to use ReadyQueue
+   - Updated `handleParagraphComplete()` (removed duplicate startFrom call)
+   - Added `playReadySentence()` and `speakParagraphLegacy()` methods
+
+7. **b896775** - `feat: clear readyQueue on stop/rate/voice/skip changes`
+   - Added `readyQueue?.stopPipeline()` calls to `stop()`, `setPlaybackRate()`, `setVoice()`, `stopAudioOnly()`
+   - Added `isPreparing = false` reset in `stop()`
+
+8. **611bb9c** - `feat: add loading indicator for audio preparation`
+   - Modified `ReaderView.swift` - added "Preparing audio..." overlay
+
+9. **cabc374** - `fix: resolve race condition and empty alignment in ReadyQueue pipeline`
+   - Merged two separate Tasks in `speakParagraph` into one sequential Task
+   - Check `isReady()` before showing loading indicator
+   - Added `createUniformWordTimings()` fallback in `CTCForcedAligner.swift`
+
+10. **c288f2c** - `fix: use raw Float32 chunks for CTC alignment instead of WAV data`
+    - Changed `ReadyQueue.processSentence()` to use chunks (raw Float32) instead of `combinedAudio` (WAV format)
+    - This fixed the timing being half of actual duration
+
+### Key Files Modified
+
+- `Listen2/Listen2/Listen2/Services/TTS/AlignmentResult.swift` - Sendable conformance
+- `Listen2/Listen2/Listen2/Services/TTS/ReadySentence.swift` - NEW FILE
+- `Listen2/Listen2/Listen2/Services/TTS/ReadyQueue.swift` - NEW FILE
+- `Listen2/Listen2/Listen2/Services/TTS/CTCForcedAligner.swift` - Added uniform fallback
+- `Listen2/Listen2/Listen2/Services/TTSService.swift` - Major integration changes
+- `Listen2/Listen2/Listen2/ViewModels/SettingsViewModel.swift` - Word highlighting setting
+- `Listen2/Listen2/Listen2/Views/SettingsView.swift` - Word highlighting toggle
+- `Listen2/Listen2/Listen2/Views/ReaderView.swift` - Loading indicator
+
+## Work Remaining
+
+### Fixes Applied (2025-11-22)
+
+1. **MEMORY LEAK FIXED**: Added eviction of `ready` and `skipped` sentences in `slideWindowTo()`
+   - Root cause: `slideWindowTo()` only evicted `paragraphWindow` and `paragraphSentences`, not the `ready` dictionary
+   - Fix: Now evicts ready/skipped sentences for paragraphs being removed from window
+   - Added logging to show freed memory when window slides
+
+2. **FIRST WORD HIGHLIGHT FIXED**: Changed `wordTiming(at:)` to return first word when time < startTime
+   - Root cause: Binary search returned `nil` when `currentTime=0.000s` and first word started at 0.021s
+   - Fix: Now returns `wordTimings[0]` when time is before first word's start (audio is already playing)
+
+3. **SESSION INVALIDATION LOGGING ADDED**: Added diagnostic logging throughout ReadyQueue
+   - Added logs at all session check points in `runPipeline()` and `processSentence()`
+   - Will help diagnose if sentence skipping is caused by session invalidation
+
+### Remaining Plan Tasks
+
+- **Task 8** (Optional): Clean up old code - defer until bugs fixed
+- **Task 9**: Integration testing - needs re-test after fixes
+- Monitor for sentence skipping issue - may now be visible in logs
+
+## Attempted Approaches
+
+### What Worked
+
+1. **Subagent-driven development with code review gates** - Effective for systematic implementation
+2. **Merging fire-and-forget Task into sequential flow** - Fixed race condition where buffer was cleared
+3. **Using raw Float32 chunks for alignment** - Fixed timing being half of actual duration
+
+### What Didn't Work / Issues Found
+
+1. **Fire-and-forget Task for pipeline setup** - Caused race condition with playback Task
+2. **Using `combinedAudio` from `synthesisQueue.streamSentence()`** - It's WAV format (Int16 PCM), not raw Float32
+3. **Duplicate `startFrom` calls** - `handleParagraphComplete` was calling `startFrom` before `speakParagraph`, both cleared buffer
+
+### Dead Ends to Avoid
+
+- Don't interpret WAV data as Float32 samples - `synthesisQueue.streamSentence()` returns WAV!
+- Don't have separate Tasks for pipeline setup and consumption - causes race
+- Don't call `startFrom` from `handleParagraphComplete` - `speakParagraph` handles it
+
+## Critical Context
+
+### Architecture Understanding
+
+1. **Audio Data Flow**:
+   - `SynthesisQueue.streamSentence()` returns **WAV format** Data (Int16 PCM with 44-byte header)
+   - `PipelineChunkDelegate` collects **raw Float32** chunks from streaming callbacks
+   - `ReadySentence.chunks` are raw Float32 - use these for alignment!
+
+2. **Sample Rate Constants**:
+   - Piper TTS: 22050 Hz (stored in `ReadyQueueConstants.sampleRate`)
+   - CTC Model (MMS-FA): 16000 Hz (resamples internally in CTCForcedAligner)
+   - Frame rate: ~49 fps (varies slightly)
+
+3. **Session ID Pattern** (Important for debugging sentence skipping):
+   - `ReadyQueue.sessionID` increments on `startFrom()` and `stopPipeline()`
+   - All pipeline operations check `session == sessionID` before/after async work
+   - If session changes mid-operation, operation returns nil/skips
+
+4. **Buffer Management**:
+   - Max 5 sentences lookahead (`maxSentenceLookahead`)
+   - Max 5 paragraphs in window (`maxParagraphWindow`)
+   - Max 10MB buffer (`maxBufferBytes`)
+   - **NOTE**: Check if these limits are being enforced!
+
+### Important Files to Debug
+
+- **ReadyQueue.swift** (lines ~430-515): `processSentence()` - memory accumulation here?
+- **ReadyQueue.swift** (lines ~248-288): `slideWindowTo()` - eviction working?
+- **TTSService.swift** (lines ~1310-1380): `updateHighlightFromTime()` - first word handling
+- **TTSService.swift** (lines ~690-760): `speakParagraph()` - sentence loop and session handling
+
+### Latest Log Analysis (from `/Users/zachswift/listen-2-logs-2025-11-14`)
+
+**Good news - CTC alignment IS working**:
 ```
-workshop decision "Spike validated MMS_FA model export to ONNX for forced alignment"
-```
-
-## 6. Plan Updated with Spike Results
-Added spike findings section to `docs/plans/2025-11-21-ctc-forced-alignment.md`
-
-## 7. Python Environment Created
-- `venv-mms-spike/` with torch, torchaudio, onnx, onnxruntime, onnxscript installed
-- Can be reused for model export
-
-</work_completed>
-
-<work_remaining>
-
-## Execute Plan Using Subagent-Driven Development
-
-TodoWrite was set up with 11 tasks:
-
-1. **Task 1: Export MMS_FA Model** (IN_PROGRESS)
-   - Use existing `venv-mms-spike` environment
-   - Fix export script to save to `Listen2/Listen2/Listen2/Listen2/Resources/Models/mms-fa/`
-   - Save `mms-fa.onnx` (~3.1MB) and `labels.txt`
-   - Add to Git LFS, commit
-
-2. **Task 2: Create CTCTokenizer**
-   - Create `Listen2/Listen2/Listen2/Listen2/Services/TTS/CTCTokenizer.swift`
-   - Create test file
-   - Use 29-label vocabulary from spike
-   - Follow TDD
-
-3. **Task 3: Create CTCForcedAligner Core Structure**
-   - Actor-based Swift service
-   - Initialize with ONNX model and labels
-
-4. **Task 4: Implement CTC Trellis Algorithm**
-   - Build trellis matrix [frames x (2*tokens+1)]
-   - Implement Viterbi backtracking
-
-5. **Task 5: Implement Word Merging**
-   - FIX bug identified in code review: don't skip spans unconditionally
-   - Track character positions explicitly
-   - Handle punctuation, apostrophes
-
-6. **Task 6: Implement ONNX Inference**
-   - Use sherpa-onnx's ONNX Runtime (already bundled)
-   - Or add onnxruntime-objc CocoaPod
-   - Test with real audio samples
-
-7. **Task 7: Implement Full Alignment Pipeline**
-   - `align(audioSamples:, sampleRate:, transcript:, paragraphIndex:)` -> `AlignmentResult`
-   - Include resampling 22050->16000 Hz
-
-8. **Task 8: Integrate with TTSService**
-   - Replace `PhonemeAlignmentService` usage
-   - Wire up with streaming architecture
-
-9. **Task 9: Remove Legacy Phoneme Duration Code**
-   - Delete `PhonemeAlignmentService.swift`
-   - Delete `TextNormalizationMapper.swift`
-   - Delete `DynamicAlignmentEngine.swift`
-
-10. **Task 10: Remove ASR Alignment Code**
-    - Delete `WordAlignmentService.swift`
-    - Delete `Resources/ASRModels/nemo-ctc-conformer-small/`
-    - Delete `Resources/ASRModels/whisper-tiny/`
-
-11. **Task 11: Update Tests and Manual Validation**
-    - Update/remove affected tests
-    - Manual testing with edge cases
-
-## Execution Approach
-Use **superpowers:subagent-driven-development** skill:
-- Dispatch fresh subagent per task
-- Code review after each task
-- Fix issues before proceeding
-- Final review when complete
-
-</work_remaining>
-
-<attempted_approaches>
-
-## Spike Export Issues (Resolved)
-1. **Model returns tuple** - Fixed by checking `isinstance(output, tuple)` and taking `output[0]`
-2. **Missing onnxscript** - Installed via `pip install onnxscript`
-3. **ONNX version conversion warning** - Ignorable, model exports successfully at opset 18
-
-## Previous Approaches (Historical)
-1. **Phoneme Duration Extraction** - Drifty, requires model re-export, abandoned
-2. **ASR + DTW (NeMo CTC)** - Error-prone, crashes on apostrophes, abandoned
-
-</attempted_approaches>
-
-<critical_context>
-
-## Key Architecture Decisions
-- **CTC Forced Alignment** uses known transcript (not ASR transcription)
-- **MMS_FA model** from torchaudio.pipelines - 315M params but only 3.1MB ONNX
-- **Frame rate**: ~49 fps (20ms per frame) - good for word-level accuracy
-- **No fallback** - User chose to remove all legacy code
-
-## Important File Paths
-```
-Listen2/Listen2/Listen2/Listen2/Services/TTS/  # All TTS services
-Listen2/Listen2/Listen2/Listen2/Resources/Models/mms-fa/  # New model location
-docs/plans/2025-11-21-ctc-forced-alignment.md  # Full implementation plan
-scripts/spike_mms_fa.py  # Spike script (working)
-venv-mms-spike/  # Python environment with all deps
+[CTCForcedAligner] 🔗 Created 2 word timings:
+[CTCForcedAligner]   [0] 'The' @ 0.021-0.124s, range=0...3
+[CTCForcedAligner]   [1] 'Knowledge' @ 0.124-0.766s, range=4...13
 ```
 
-## Existing Code to Understand
-- `AlignmentResult.swift` - Reuse this struct (WordTiming with startTime, duration, rangeLocation, rangeLength)
-- `AlignmentCache.swift` - Reuse for caching
-- `WordHighlighter.swift` - Consumer of alignment results, uses CADisplayLink
-- `TTSService.swift` - Integration point, has `PhonemeAlignmentService` and `ctcAligner` placeholders
-
-## ONNX Runtime Options for iOS
-1. **sherpa-onnx's ONNX Runtime** - Already bundled in the xcframework
-2. **onnxruntime-objc CocoaPod** - Alternative if sherpa-onnx doesn't expose generic inference
-
-## Code Review Issues to Address
-1. Word merging algorithm must track character positions (not index counting)
-2. Consider Accelerate framework for resampling (not linear interpolation)
-3. Need to show how CTC integrates with SynthesisQueue/ChunkBuffer streaming
-
-## Labels Vocabulary (29 chars)
+**But first word doesn't start at 0**:
 ```
-Index 0: '-' (blank)
-Index 1-27: 'a', 'i', 'e', 'n', 'o', 'u', 't', 's', 'r', 'm', 'k', 'l', 'd', 'g', 'h', 'y', 'b', 'p', 'w', 'c', 'v', 'j', 'z', 'f', "'", 'q', 'x'
-Index 28: '*' (space/word boundary)
+[TTSService] 🎬 Starting CTC word highlighting timer at audioPlayer.currentTime = 0.000s
+[TTSService] 🎬 DEBUG: First word starts at 0.021s
 ```
+This 21ms gap causes the "starts on 2nd word" issue.
 
-</critical_context>
+### Known Gotchas
 
-<current_state>
+- CTC backtrack can return empty `tokenSpans` for short sentences - uniform fallback handles this
+- `Publishing changes from within view updates` warnings are pre-existing, unrelated
+- `[StreamingAudioPlayer] setRate not yet implemented` - playback rate for streaming is TODO
 
-## Deliverable Status
-| Item | Status |
-|------|--------|
-| Implementation plan | ✅ Complete |
-| Code review | ✅ Complete |
-| Spike validation | ✅ Complete |
-| Model export script | 🟡 Working (needs finalization) |
-| CTCTokenizer | ⏳ Not started |
-| CTCForcedAligner | ⏳ Not started |
-| TTSService integration | ⏳ Not started |
-| Legacy code removal | ⏳ Not started |
+## Current State
 
-## Git State
-- Branch: main
-- No uncommitted changes related to this feature
-- spike_mms_fa.py created but not committed
+### Status
 
-## Python Environment
-- `venv-mms-spike/` ready with all dependencies
-- Can export model immediately
+- **Tasks 0-7**: Complete, code reviewed, committed
+- **Task 8 (cleanup)**: Not started (waiting for bugs to be fixed)
+- **Task 9 (testing)**: In progress, bugs found
 
-## Next Immediate Action
-Start fresh session and:
-1. Run `/taches-cc-resources:run-prompt` with the plan OR
-2. Use `superpowers:subagent-driven-development` to dispatch Task 1 subagent
+### Git State
 
-## Command to Resume
+- All changes committed to `main` branch
+- 10 new commits since baseline `d64b77e`
+- HEAD is `c288f2c`
+
+### Next Steps for New Session
+
+1. **TEST FIXES** - Run app and verify:
+   - Memory stays bounded (monitor in Xcode Instruments or Debug Navigator)
+   - First word highlights immediately at playback start
+   - Check console logs for session invalidation warnings (⚠️ messages)
+
+2. **If sentence skipping persists**, check logs for:
+   - `[ReadyQueue] ⚠️ Session invalidated...` messages
+   - Whether it's session mismatch, timeout, or Task cancellation
+
+3. **Consider Task 8 cleanup** only after all bugs confirmed fixed
+
+### Command to Resume
+
 ```
-Read docs/plans/2025-11-21-ctc-forced-alignment.md and execute using subagent-driven development starting from Task 1
+Test the ReadyQueue pipeline fixes:
+1. Memory leak fix in slideWindowTo()
+2. First word highlight fix in wordTiming(at:)
+3. Session invalidation logging for debugging skips
 ```
-
-</current_state>

@@ -88,8 +88,10 @@ struct AlignmentResult: Codable, Equatable, Sendable {
         guard !wordTimings.isEmpty else { return nil }
 
         // Handle time before first word or after last word
+        // Return first word when time is before its start - the audio is already playing
+        // and the listener hears the first word, so highlight it
         if time < wordTimings[0].startTime {
-            return nil
+            return wordTimings[0]
         }
         if time >= wordTimings[wordTimings.count - 1].endTime {
             // Return last word if we're past the end (prevents getting stuck)

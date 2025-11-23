@@ -247,14 +247,35 @@ actor ReadyQueue {
     /// Evicts paragraphs that are now behind the playback position
     private func slideWindowTo(paragraphIndex: Int) {
         // Remove paragraphs before current position
-        let keysToRemove = paragraphWindow.keys.filter { $0 < paragraphIndex }
-        for key in keysToRemove {
-            paragraphWindow.removeValue(forKey: key)
-            paragraphSentences.removeValue(forKey: key)
+        let paragraphsToRemove = paragraphWindow.keys.filter { $0 < paragraphIndex }
+        for pIdx in paragraphsToRemove {
+            paragraphWindow.removeValue(forKey: pIdx)
+            paragraphSentences.removeValue(forKey: pIdx)
         }
 
-        if !keysToRemove.isEmpty {
-            print("[ReadyQueue] 🪟 Window slid: evicted \(keysToRemove.count) old paragraph(s), keeping P\(paragraphIndex)+")
+        // Also evict ready/skipped sentences for removed paragraphs (prevents memory leak)
+        if !paragraphsToRemove.isEmpty {
+            var evictedSentences = 0
+            var freedBytes = 0
+
+            for pIdx in paragraphsToRemove {
+                // Evict ready sentences
+                let readyKeysToEvict = ready.keys.filter { $0.paragraphIndex == pIdx }
+                for key in readyKeysToEvict {
+                    if let sentence = ready.removeValue(forKey: key) {
+                        let bytes = sentence.chunks.reduce(0) { $0 + $1.count }
+                        currentBufferBytes -= bytes
+                        freedBytes += bytes
+                        evictedSentences += 1
+                    }
+                }
+
+                // Evict skipped sentences
+                skipped = skipped.filter { $0.paragraphIndex != pIdx }
+            }
+
+            let freedMB = Double(freedBytes) / (1024 * 1024)
+            print("[ReadyQueue] 🪟 Window slid: evicted \(paragraphsToRemove.count) paragraph(s), \(evictedSentences) sentence(s), freed \(String(format: "%.2f", freedMB))MB, keeping P\(paragraphIndex)+")
         }
     }
 
@@ -399,7 +420,10 @@ actor ReadyQueue {
             print("[ReadyQueue] 🔄 Processing \(key): '\(text.prefix(30))...'")
 
             // Check cancellation/session before slow operation
-            guard !Task.isCancelled && !shouldStop && session == sessionID else { break }
+            guard !Task.isCancelled && !shouldStop && session == sessionID else {
+                print("[ReadyQueue] ⚠️ Session invalidated before processing \(key) (was: \(session), now: \(sessionID))")
+                break
+            }
 
             // Process the sentence (synthesis + alignment if enabled)
             if let readySentence = await processSentence(
@@ -410,7 +434,10 @@ actor ReadyQueue {
                 session: session
             ) {
                 // Check cancellation/session after slow operation
-                guard !Task.isCancelled && !shouldStop && session == sessionID else { break }
+                guard !Task.isCancelled && !shouldStop && session == sessionID else {
+                    print("[ReadyQueue] ⚠️ Session invalidated after processing \(key) (was: \(session), now: \(sessionID))")
+                    break
+                }
 
                 // Add to ready buffer
                 ready[key] = readySentence
@@ -447,10 +474,9 @@ actor ReadyQueue {
         // STEP 1: Synthesize audio
         let chunkDelegate = PipelineChunkDelegate()
 
-        let combinedAudio: Data
         do {
-            // Use the returned combined audio directly (avoid redundant computation)
-            combinedAudio = try await synthesisQueue.streamSentence(text, delegate: chunkDelegate)
+            // streamSentence returns WAV data, but we use raw chunks from delegate for alignment
+            _ = try await synthesisQueue.streamSentence(text, delegate: chunkDelegate)
         } catch {
             print("[ReadyQueue] ❌ Synthesis failed: \(error)")
             return nil
@@ -464,7 +490,10 @@ actor ReadyQueue {
         }
 
         // Check cancellation/session between synthesis and alignment
-        guard !Task.isCancelled && !shouldStop && session == sessionID else { return nil }
+        guard !Task.isCancelled && !shouldStop && session == sessionID else {
+            print("[ReadyQueue] ⚠️ Session invalidated after synthesis (was: \(session), now: \(sessionID), stopped: \(shouldStop), cancelled: \(Task.isCancelled))")
+            return nil
+        }
 
         // STEP 2: Run CTC alignment (only if highlighting enabled)
         var alignment: AlignmentResult? = nil
@@ -500,7 +529,10 @@ actor ReadyQueue {
             }
 
             // Check cancellation/session after alignment
-            guard !Task.isCancelled && !shouldStop && session == sessionID else { return nil }
+            guard !Task.isCancelled && !shouldStop && session == sessionID else {
+                print("[ReadyQueue] ⚠️ Session invalidated after alignment (was: \(session), now: \(sessionID), stopped: \(shouldStop), cancelled: \(Task.isCancelled))")
+                return nil
+            }
         } else {
             print("[ReadyQueue] ⏭️ Skipping alignment (highlighting disabled)")
         }
