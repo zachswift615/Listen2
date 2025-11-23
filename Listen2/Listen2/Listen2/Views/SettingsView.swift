@@ -66,6 +66,21 @@ struct SettingsView: View {
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
+
+                    Divider()
+
+                    // Word Highlighting Toggle
+                    Toggle(isOn: $viewModel.wordHighlightingEnabled) {
+                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
+                            Text("Word Highlighting")
+                                .font(DesignSystem.Typography.body)
+                            Text("Highlight words as they're spoken. Disabling improves performance.")
+                                .font(DesignSystem.Typography.caption)
+                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                        }
+                    }
+                    .tint(DesignSystem.Colors.primary)
+                    .padding(.vertical, DesignSystem.Spacing.xs)
                 } header: {
                     Text("Playback")
                 }
