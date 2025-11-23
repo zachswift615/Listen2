@@ -64,6 +64,7 @@ final class TTSService: NSObject, ObservableObject {
 
     @AppStorage("paragraphPauseDelay") private var paragraphPauseDelay: Double = 0.3
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
+    @AppStorage("wordHighlightingEnabled") private var wordHighlightingEnabled: Bool = true
 
     // MARK: - Published Properties
 
@@ -71,6 +72,7 @@ final class TTSService: NSObject, ObservableObject {
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var playbackRate: Float = 1.0
     @Published private(set) var isInitializing: Bool = true
+    @Published private(set) var isPreparing: Bool = false
 
     // MARK: - Private Properties
 
@@ -84,6 +86,7 @@ final class TTSService: NSObject, ObservableObject {
     private var audioPlayer: StreamingAudioPlayer!
     private var synthesisQueue: SynthesisQueue?
     private let chunkBuffer = ChunkBuffer()
+    private var readyQueue: ReadyQueue?
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
     private var currentTitle: String = "Document"
@@ -178,6 +181,9 @@ final class TTSService: NSObject, ObservableObject {
             self.synthesisQueue = SynthesisQueue(
                 provider: piperProvider
             )
+
+            // Initialize ready queue with dependencies
+            self.readyQueue = ReadyQueue(synthesisQueue: self.synthesisQueue!, ctcAligner: self.ctcAligner)
 
             print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
         } catch {
