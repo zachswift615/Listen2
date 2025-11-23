@@ -475,6 +475,15 @@ final class TTSService: NSObject, ObservableObject {
         self.wordMap = wordMap
         self.currentDocumentID = documentID
 
+        // Set document source in ready queue (uses callbacks to avoid storing entire document)
+        Task { [weak self] in
+            guard let self = self else { return }
+            await self.readyQueue?.setDocumentSource(
+                totalCount: { [weak self] in self?.currentText.count ?? 0 },
+                fetchParagraph: { [weak self] index in self?.currentText[safe: index] }
+            )
+        }
+
         guard index < paragraphs.count else { return }
 
         // Initialize synthesis queue with new content
@@ -635,8 +644,6 @@ final class TTSService: NSObject, ObservableObject {
     private func speakParagraph(at index: Int) {
         guard index < currentText.count else { return }
 
-        let text = currentText[index]
-
         currentProgress = ReadingProgress(
             paragraphIndex: index,
             wordRange: nil,
@@ -657,122 +664,144 @@ final class TTSService: NSObject, ObservableObject {
             existingTask.cancel()
         }
 
-        // Use chunk-level streaming with synthesis queue
-        if let queue = synthesisQueue {
-            let taskID = UUID().uuidString.prefix(8)
-            print("[TTSService] 🎬 Starting streaming task \(taskID) for paragraph \(index)")
+        // Use ReadyQueue for unified pipeline
+        guard let readyQueue = readyQueue else {
+            print("[TTSService] ⚠️ ReadyQueue unavailable, falling back to legacy")
+            speakParagraphLegacy(at: index)
+            return
+        }
 
-            activeSpeakTask = Task {
-                defer {
-                    print("[TTSService] 🏁 Ending streaming task \(taskID)")
-                    self.activeSpeakTask = nil
-                }
-                do {
-                    // Split into sentences
-                    let sentences = SentenceSplitter.split(text)
-                    print("[TTSService] 📝 Split paragraph into \(sentences.count) sentences")
+        let taskID = UUID().uuidString.prefix(8)
+        print("[TTSService] 🎬 Starting ReadyQueue task \(taskID) for paragraph \(index)")
 
-                    // Track pre-synthesis task for cancellation
-                    var preSynthesisTask: Task<Void, Never>?
+        // Show loading indicator
+        isPreparing = true
 
-                    // Cleanup function to cancel and clear
-                    func cleanup() async {
-                        preSynthesisTask?.cancel()
-                        await chunkBuffer.clearAll()
-                    }
+        // Configure and start pipeline
+        Task {
+            await readyQueue.setWordHighlightingEnabled(wordHighlightingEnabled)
+            await readyQueue.startFrom(paragraphIndex: index)
+        }
 
-                    // Start pre-synthesis for first sentence (N+1 when N=0)
-                    if sentences.count > 1 {
-                        preSynthesisTask = startPreSynthesis(
-                            sentence: sentences[1].text,
-                            index: 1
-                        )
-                    }
+        activeSpeakTask = Task {
+            defer {
+                print("[TTSService] 🏁 Ending ReadyQueue task \(taskID)")
+                self.activeSpeakTask = nil
+            }
 
-                    // Play each sentence with lookahead buffering
-                    for (sentenceIndex, chunk) in sentences.enumerated() {
-                        // Check cancellation
-                        guard !Task.isCancelled else {
-                            print("[TTSService] 🛑 Task cancelled - breaking loop")
-                            await cleanup()
-                            throw CancellationError()
-                        }
+            do {
+                let sentenceCount = await readyQueue.getSentenceCount(forParagraph: index)
+                print("[TTSService] 📝 Paragraph \(index) has \(sentenceCount) sentences")
 
-                        print("[TTSService] 🎤 Starting sentence \(sentenceIndex+1)/\(sentences.count)")
-
-                        // Try to use buffered chunks if available
-                        // FIX: Pass sentence start offset for correct paragraph-relative highlighting
-                        let sentenceOffset = chunk.range.lowerBound
-                        if let bufferedChunks = await chunkBuffer.takeChunks(forSentence: sentenceIndex),
-                           !bufferedChunks.isEmpty {
-                            print("[TTSService] ⚡️ Playing from buffer (\(bufferedChunks.count) chunks)")
-                            try await playBufferedChunks(bufferedChunks, sentence: chunk.text, sentenceStartOffset: sentenceOffset)
-                        } else {
-                            // Buffer miss - synthesize on-demand
-                            print("[TTSService] 🔄 Buffer miss, synthesizing on-demand")
-                            try await playSentenceWithChunks(
-                                sentence: chunk.text,
-                                isLast: sentenceIndex == sentences.count - 1,
-                                sentenceStartOffset: sentenceOffset
-                            )
-                        }
-
-                        // Start pre-synthesis for next sentence (N+1)
-                        let nextIndex = sentenceIndex + 1
-                        if nextIndex < sentences.count {
-                            preSynthesisTask?.cancel() // Cancel previous if still running
-                            preSynthesisTask = startPreSynthesis(
-                                sentence: sentences[nextIndex].text,
-                                index: nextIndex
-                            )
-                        }
-                    }
-
-                    // Final cleanup
-                    await cleanup()
-
-                    // Log buffer performance
-                    let status = await chunkBuffer.getStatus()
-                    let hitRate = await chunkBuffer.getHitRate()
-                    print("[TTSService] 📊 Buffer performance: \(status)")
-                    if hitRate < 0.9 {
-                        print("[TTSService] ⚠️ Low buffer hit rate (\(String(format: "%.1f%%", hitRate * 100))), synthesis may be slower than playback")
-                    }
-
-                    // Check cancellation one more time before advancing
+                // Play sentences sequentially
+                for sentenceIndex in 0..<sentenceCount {
                     guard !Task.isCancelled else {
-                        print("[TTSService] 🛑 Task cancelled after sentences complete")
                         throw CancellationError()
                     }
 
-                    // All sentences played - advance to next paragraph
-                    print("[TTSService] ✅ Paragraph complete, advancing")
-                    handleParagraphComplete()
+                    // Wait for and take sentence atomically
+                    if let readySentence = await readyQueue.waitAndTake(
+                        paragraphIndex: index,
+                        sentenceIndex: sentenceIndex
+                    ) {
+                        // Hide loading indicator after first sentence
+                        if sentenceIndex == 0 {
+                            await MainActor.run {
+                                isPreparing = false
+                            }
+                        }
 
-                } catch is CancellationError {
-                    print("[TTSService] ⏸️ Playback cancelled")
-                    await MainActor.run {
-                        self.isPlaying = false
-                    }
-                } catch {
-                    print("[TTSService] ❌ Error during playback: \(error)")
-                    if useFallback {
-                        print("[TTSService] Falling back to AVSpeech")
-                        await MainActor.run {
-                            self.fallbackToAVSpeech(text: text)
+                        // Play the ready sentence
+                        try await playReadySentence(readySentence)
+
+                    } else if await readyQueue.wasSkipped(paragraphIndex: index, sentenceIndex: sentenceIndex) {
+                        // Empty sentence, skip it
+                        if sentenceIndex == 0 {
+                            await MainActor.run {
+                                isPreparing = false
+                            }
                         }
+                        print("[TTSService] ⏭️ Skipping empty sentence \(sentenceIndex)")
+                        continue
                     } else {
-                        print("[TTSService] Fallback disabled - stopping")
+                        // Cancelled, stopped, or timed out - reset isPreparing before throwing
                         await MainActor.run {
-                            self.isPlaying = false
+                            isPreparing = false
                         }
+                        throw CancellationError()
                     }
                 }
+
+                // All sentences played
+                print("[TTSService] ✅ Paragraph \(index) complete, advancing")
+                handleParagraphComplete()
+
+            } catch is CancellationError {
+                print("[TTSService] ⏸️ Playback cancelled")
+                await MainActor.run {
+                    isPreparing = false
+                    isPlaying = false
+                }
+            } catch {
+                print("[TTSService] ❌ Playback error: \(error)")
+                await MainActor.run {
+                    isPreparing = false
+                    isPlaying = false
+                }
             }
-        } else {
-            print("[TTSService] ⚠️ Synthesis queue unavailable")
-            isPlaying = false
         }
+    }
+
+    /// Play a ready sentence (audio + highlighting if available)
+    private func playReadySentence(_ sentence: ReadySentence) async throws {
+        // Store alignment for highlighting (if available)
+        if let alignment = sentence.alignment {
+            currentAlignment = alignment
+            minWordIndex = 0
+            stuckWordWarningCount.removeAll()
+        } else {
+            currentAlignment = nil
+        }
+
+        // Play audio with continuation
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            Task { @MainActor in
+                let resumer = ContinuationResumer(continuation)
+                activeResumer = resumer
+
+                // Start streaming session
+                audioPlayer.startStreaming { [weak self] in
+                    print("[TTSService] 🏁 Sentence playback complete")
+                    self?.activeResumer = nil
+                    resumer.resume(returning: ())
+                }
+
+                // Schedule all chunks
+                for chunk in sentence.chunks {
+                    audioPlayer.scheduleChunk(chunk)
+                }
+
+                // Mark scheduling complete
+                audioPlayer.finishScheduling()
+
+                // Start highlight timer only if we have alignment AND highlighting enabled
+                if sentence.alignment != nil && wordHighlightingEnabled {
+                    startHighlightTimerWithCTCAlignment()
+                }
+
+                // Update state
+                isPlaying = true
+                shouldAutoAdvance = true
+            }
+        }
+    }
+
+    /// Legacy playback method (fallback when ReadyQueue unavailable)
+    private func speakParagraphLegacy(at index: Int) {
+        // This is the old implementation - copy the existing speakParagraph body here
+        // before replacing it, or simply log an error
+        print("[TTSService] ⚠️ Legacy playback not implemented - ReadyQueue required")
+        isPlaying = false
     }
 
     /// Play a sentence with chunk-level streaming
@@ -1234,6 +1263,7 @@ final class TTSService: NSObject, ObservableObject {
         if nextIndex < currentText.count {
             // Auto-advance to next paragraph WITHOUT setting isPlaying to false
             // The next paragraph will maintain isPlaying = true
+            // Note: speakParagraph will call readyQueue.startFrom() - no duplicate call needed
             speakParagraph(at: nextIndex)
         } else {
             // Reached end of document - now we can set to false
