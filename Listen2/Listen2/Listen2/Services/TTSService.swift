@@ -768,6 +768,10 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Play a ready sentence (audio + highlighting if available)
     private func playReadySentence(_ sentence: ReadySentence) async throws {
+        // IMPORTANT: Stop any existing highlight timer BEFORE changing alignment
+        // This prevents the old timer from firing with the new alignment (wrong paragraph)
+        stopHighlightTimer()
+
         // Store alignment for highlighting (if available)
         if let alignment = sentence.alignment {
             currentAlignment = alignment
@@ -1310,6 +1314,13 @@ final class TTSService: NSObject, ObservableObject {
 
     private func updateHighlightFromTime() {
         guard let alignment = currentAlignment else { return }
+
+        // IMPORTANT: Ensure alignment belongs to the current paragraph
+        // This prevents applying wrong paragraph's alignment after paragraph switch
+        guard alignment.paragraphIndex == currentProgress.paragraphIndex else {
+            // Alignment is stale - will be updated when new sentence starts
+            return
+        }
 
         // Get current playback time from audio player
         Task { @MainActor in
