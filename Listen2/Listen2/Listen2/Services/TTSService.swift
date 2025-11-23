@@ -65,6 +65,8 @@ final class TTSService: NSObject, ObservableObject {
     @AppStorage("paragraphPauseDelay") private var paragraphPauseDelay: Double = 0.3
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
     @AppStorage("wordHighlightingEnabled") private var wordHighlightingEnabled: Bool = true
+    /// Track previous highlighting setting to detect changes
+    private var previousHighlightingSetting: Bool = true
 
     // MARK: - Published Properties
 
@@ -161,6 +163,9 @@ final class TTSService: NSObject, ObservableObject {
 
         // Setup audio session observers
         setupAudioSessionObservers()
+
+        // Track initial highlighting setting
+        previousHighlightingSetting = wordHighlightingEnabled
     }
 
     private func initializePiperProvider() async {
@@ -471,6 +476,15 @@ final class TTSService: NSObject, ObservableObject {
     // MARK: - Playback Control
 
     func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil, documentID: UUID? = nil) {
+        // Check if highlighting setting changed - invalidate cache if so
+        if wordHighlightingEnabled != previousHighlightingSetting {
+            print("[TTSService] Highlighting setting changed, invalidating pipeline")
+            Task {
+                await readyQueue?.stopPipeline()
+            }
+            previousHighlightingSetting = wordHighlightingEnabled
+        }
+
         // Configure audio session on first playback (lazy initialization)
         configureAudioSession()
 
