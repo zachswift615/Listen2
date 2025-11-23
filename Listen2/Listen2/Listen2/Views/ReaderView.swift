@@ -71,6 +71,12 @@ private struct ReaderViewContent: View {
                     Color.clear
                         .loadingOverlay(isLoading: true, message: "Opening book...")
                 }
+
+                // Preparing audio overlay
+                if viewModel.ttsService.isPreparing {
+                    Color.clear
+                        .loadingOverlay(isLoading: true, message: "Preparing audio...")
+                }
             }
             .navigationTitle(viewModel.document.title)
             .navigationBarTitleDisplayMode(.inline)
