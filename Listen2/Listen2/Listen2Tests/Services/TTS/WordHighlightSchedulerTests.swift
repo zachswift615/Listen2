@@ -73,4 +73,83 @@ final class WordHighlightSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.testFindWordIndex(at: -0.1), 0)  // Before first word -> first word
         XCTAssertEqual(scheduler.testFindWordIndex(at: 1.0), 2)   // After last word -> last word
     }
+
+    func testHandleFramePositionEmitsWordChange() async {
+        // Given
+        let alignment = makeAlignment(words: [
+            ("The", 0.0, 0.1),
+            ("Knowledge", 0.1, 0.5)
+        ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        var receivedWords: [String] = []
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+        }
+
+        // When - simulate frame positions (22050 Hz sample rate)
+        // Frame 0 = time 0.0s -> "The"
+        await scheduler.testHandleFramePosition(0)
+
+        // Frame 2205 = time 0.1s -> "Knowledge"
+        await scheduler.testHandleFramePosition(2205)
+
+        // Frame 4410 = time 0.2s -> still "Knowledge" (no change)
+        await scheduler.testHandleFramePosition(4410)
+
+        // Then - should only emit when word changes
+        XCTAssertEqual(receivedWords, ["The", "Knowledge"])
+    }
+
+    func testHandleFramePositionContinuesAfterPauseResume() async {
+        // Given - simulates pause/resume where tap stops and restarts mid-word
+        let alignment = makeAlignment(words: [
+            ("The", 0.0, 0.1),
+            ("Knowledge", 0.1, 0.5)
+        ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        var receivedWords: [String] = []
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+        }
+
+        // When - play starts
+        await scheduler.testHandleFramePosition(0)      // "The" at 0.0s
+
+        // Pause happens (no callbacks during pause)
+
+        // Resume - tap fires again from where audio left off
+        await scheduler.testHandleFramePosition(1103)   // Still "The" at 0.05s (mid-word)
+        await scheduler.testHandleFramePosition(2205)   // "Knowledge" at 0.1s
+
+        // Then - should emit "The" once (not again on resume), then "Knowledge"
+        XCTAssertEqual(receivedWords, ["The", "Knowledge"])
+    }
+
+    func testHandleFramePositionIgnoredAfterDeactivation() async {
+        // Given - scheduler that was stopped (simulates race condition)
+        let alignment = makeAlignment(words: [
+            ("The", 0.0, 0.1),
+            ("Knowledge", 0.1, 0.5)
+        ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        var receivedWords: [String] = []
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+        }
+
+        // When - first callback works
+        await scheduler.testHandleFramePosition(0)  // "The" - works, sets isActive = true
+
+        // Then stop() is called (simulated)
+        scheduler.testDeactivate()
+
+        // More callbacks arrive (queued before stop() but delivered after)
+        await scheduler.testHandleFramePosition(2205)  // Ignored because isActive = false
+
+        // Then - only "The" received, "Knowledge" ignored
+        XCTAssertEqual(receivedWords, ["The"])
+    }
 }

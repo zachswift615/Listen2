@@ -70,10 +70,54 @@ final class WordHighlightScheduler {
         return nil
     }
 
+    // MARK: - Frame Position Handling
+
+    /// Handle a frame position update from the audio tap
+    /// Called on main thread after dispatch from audio callback
+    /// - Parameter framePosition: Current frame position in samples
+    private func handleFramePosition(_ framePosition: Int64) {
+        // Ignore callbacks that arrive after stop() was called
+        // (they may have been queued before stop() but dispatched after)
+        guard isActive else { return }
+
+        // Convert frame position to seconds
+        let currentTime = Double(framePosition) / sampleRate
+
+        // Find which word should be highlighted
+        guard let wordIndex = findWordIndex(at: currentTime) else { return }
+
+        // Only emit if word changed
+        if wordIndex != currentWordIndex {
+            currentWordIndex = wordIndex
+            let timing = alignment.wordTimings[wordIndex]
+            onWordChange?(timing)
+        }
+    }
+
     #if DEBUG
+    /// Track whether testDeactivate was called (for testing only)
+    private var testWasDeactivated: Bool = false
+
     /// Test-only access to findWordIndex
     func testFindWordIndex(at time: TimeInterval) -> Int? {
         return findWordIndex(at: time)
+    }
+
+    /// Test-only access to handleFramePosition
+    /// Automatically sets isActive = true to allow callbacks in test context,
+    /// unless testDeactivate() was called (simulating stop())
+    func testHandleFramePosition(_ framePosition: Int64) async {
+        if !testWasDeactivated {
+            isActive = true  // Allow callbacks without installing real tap
+        }
+        handleFramePosition(framePosition)
+    }
+
+    /// Test-only: manually deactivate scheduler (simulates stop() being called)
+    func testDeactivate() {
+        isActive = false
+        currentWordIndex = -1
+        testWasDeactivated = true
     }
     #endif
 }
