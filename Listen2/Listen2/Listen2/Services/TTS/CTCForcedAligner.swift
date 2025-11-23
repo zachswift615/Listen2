@@ -35,17 +35,18 @@ actor CTCForcedAligner {
     /// Expected sample rate (MMS_FA uses 16kHz)
     nonisolated let sampleRate: Int = 16000
 
-    /// Frame hop size in samples (MMS_FA uses 320)
-    private let hopSize: Int = 320
+    /// Frame hop size in samples (MMS_FA actual: 16000/49 ≈ 327)
+    /// Note: This is approximate - actual frame rate is calculated dynamically from model output
+    private let hopSize: Int = 327
 
     /// Vocabulary size for MMS_FA model
     private let vocabSize: Int = 29
 
-    /// Model input name
-    private let inputName = "input"
+    /// Model input name (MMS_FA model uses "audio")
+    private let inputName = "audio"
 
-    /// Model output name
-    private let outputName = "logits"
+    /// Model output name (MMS_FA model uses "emissions")
+    private let outputName = "emissions"
 
     // MARK: - Initialization
 
@@ -179,7 +180,8 @@ actor CTCForcedAligner {
         var outputShape: [Int64] = [0, 0, 0]  // [batch, frames, vocab]
         var outputShapeLen = outputShape.count
 
-        // Run inference
+        // Run inference with timing
+        let inferenceStart = CFAbsoluteTimeGetCurrent()
         let result = OnnxSessionRun(
             session,
             inputName,
@@ -191,6 +193,8 @@ actor CTCForcedAligner {
             &outputShape,
             &outputShapeLen
         )
+        let inferenceElapsed = CFAbsoluteTimeGetCurrent() - inferenceStart
+        print("[CTCForcedAligner] ONNX inference took \(String(format: "%.3f", inferenceElapsed))s for \(audioSamples.count) samples")
 
         if result != 0 {
             let error = OnnxSessionGetLastError()
@@ -421,12 +425,14 @@ actor CTCForcedAligner {
     ///   - sampleRate: Sample rate of input audio (e.g., 22050 for Piper)
     ///   - transcript: Known text that was spoken
     ///   - paragraphIndex: Index for result tracking
+    ///   - sentenceStartOffset: Character offset where this sentence starts in the paragraph (for correct highlight ranges)
     /// - Returns: AlignmentResult with word timings
     func align(
         audioSamples: [Float],
         sampleRate: Int,
         transcript: String,
-        paragraphIndex: Int
+        paragraphIndex: Int,
+        sentenceStartOffset: Int = 0
     ) async throws -> AlignmentResult {
         guard isInitialized, let tokenizer = tokenizer else {
             throw AlignmentError.modelNotInitialized
@@ -457,8 +463,10 @@ actor CTCForcedAligner {
             }
         }
 
-        // 3. Tokenize transcript
-        let tokens = tokenizer.tokenize(transcript)
+        // 3. Tokenize transcript WITHOUT spaces
+        // FIX: Exclude spaces from tokenization so backtrack produces spans only for non-space characters
+        // This makes token spans align 1:1 with word characters, eliminating the space-skip bug
+        let tokens = tokenizer.tokenize(transcript, includeSpaces: false)
         guard !tokens.isEmpty else {
             // No tokens = return empty result
             let totalDuration = Double(samples.count) / Double(self.sampleRate)
@@ -469,12 +477,18 @@ actor CTCForcedAligner {
         let trellis = buildTrellis(emissions: emissions, tokens: tokens)
         let tokenSpans = backtrack(trellis: trellis, tokens: tokens)
 
-        // 5. Merge to words
-        let frameRate = Double(self.sampleRate) / Double(hopSize)
+        // 5. Merge to words (pass sentenceStartOffset for correct paragraph-relative ranges)
+        // Calculate actual frame rate from model output for accurate timing
+        // MMS_FA produces ~49 frames per second (20.4ms per frame)
+        let actualFrameCount = emissions.count
+        let audioDurationSecs = Double(samples.count) / Double(self.sampleRate)
+        let frameRate = Double(actualFrameCount) / audioDurationSecs
+        print("[CTCForcedAligner] Frame rate: \(String(format: "%.1f", frameRate)) fps (\(actualFrameCount) frames / \(String(format: "%.3f", audioDurationSecs))s)")
         let wordTimings = mergeToWords(
             tokenSpans: tokenSpans,
             transcript: transcript,
-            frameRate: frameRate
+            frameRate: frameRate,
+            sentenceStartOffset: sentenceStartOffset
         )
 
         let totalDuration = Double(samples.count) / Double(self.sampleRate)
@@ -530,14 +544,19 @@ actor CTCForcedAligner {
     ///   - tokenSpans: Character spans from backtracking (ordered by token index)
     ///   - transcript: Original text (may contain chars not in vocabulary)
     ///   - frameRate: Frames per second for time conversion
-    /// - Returns: Word-level timing information
+    ///   - sentenceStartOffset: Character offset where this sentence starts in the paragraph
+    /// - Returns: Word-level timing information with paragraph-relative ranges
     func mergeToWords(
         tokenSpans: [TokenSpan],
         transcript: String,
-        frameRate: Double
+        frameRate: Double,
+        sentenceStartOffset: Int = 0
     ) -> [AlignmentResult.WordTiming] {
         guard let tokenizer = tokenizer else { return [] }
         guard !tokenSpans.isEmpty else { return [] }
+
+        print("[CTCForcedAligner] 🔗 mergeToWords: \(tokenSpans.count) token spans, frameRate=\(frameRate), sentenceOffset=\(sentenceStartOffset)")
+        print("[CTCForcedAligner] 🔗 Transcript: '\(transcript.prefix(50))...'")
 
         // 1. Split transcript into words with their character positions
         var words: [(text: String, startOffset: Int, endOffset: Int)] = []
@@ -593,27 +612,28 @@ actor CTCForcedAligner {
                 // +1 because endFrame is inclusive (frame N ends at time (N+1)/frameRate)
                 let endTime = Double(lastSpan.endFrame + 1) / frameRate
 
+                // FIX: Add sentenceStartOffset to get paragraph-relative position
                 wordTimings.append(AlignmentResult.WordTiming(
                     wordIndex: wordIdx,
                     startTime: startTime,
                     duration: endTime - startTime,
                     text: word.text,
-                    rangeLocation: word.startOffset,
+                    rangeLocation: word.startOffset + sentenceStartOffset,  // Paragraph-relative!
                     rangeLength: word.text.count
                 ))
             }
 
-            // Skip space token spans between words
-            // Handle multiple consecutive spaces by counting spaces in transcript
-            if wordIdx < words.count - 1 {
-                let nextWordStart = words[wordIdx + 1].startOffset
-                let currentWordEnd = word.startOffset + word.text.count
-                let spaceCount = nextWordStart - currentWordEnd
+            // NOTE: Space skipping logic removed - we now tokenize WITHOUT spaces
+            // so token spans directly map to word characters without any gaps
+        }
 
-                // Skip that many space token spans
-                let spansToSkip = min(spaceCount, tokenSpans.count - spanIndex)
-                spanIndex += spansToSkip
-            }
+        // DEBUG: Log first few word timings
+        print("[CTCForcedAligner] 🔗 Created \(wordTimings.count) word timings:")
+        for (i, timing) in wordTimings.prefix(5).enumerated() {
+            print("[CTCForcedAligner]   [\(i)] '\(timing.text)' @ \(String(format: "%.3f", timing.startTime))-\(String(format: "%.3f", timing.startTime + timing.duration))s, range=\(timing.rangeLocation)...\(timing.rangeLocation + timing.rangeLength)")
+        }
+        if wordTimings.count > 5 {
+            print("[CTCForcedAligner]   ... and \(wordTimings.count - 5) more")
         }
 
         return wordTimings

@@ -67,14 +67,23 @@ final class CTCTokenizer {
     /// - Parameter text: Text to tokenize
     /// - Returns: Array of token indices (unknown chars are skipped)
     func tokenize(_ text: String) -> [Int] {
+        return tokenize(text, includeSpaces: true)
+    }
+
+    /// Tokenize text into token indices with option to skip spaces
+    /// - Parameters:
+    ///   - text: Text to tokenize
+    ///   - includeSpaces: Whether to include space tokens (default true)
+    /// - Returns: Array of token indices (unknown chars are skipped)
+    func tokenize(_ text: String, includeSpaces: Bool) -> [Int] {
         var tokens: [Int] = []
 
         let normalized = text.lowercased()
 
         for char in normalized {
             if char == " " {
-                // Add space token if available
-                if let spaceIdx = spaceIndex {
+                // Add space token only if requested and available
+                if includeSpaces, let spaceIdx = spaceIndex {
                     tokens.append(spaceIdx)
                 }
             } else if let idx = labelToIndex[char] {

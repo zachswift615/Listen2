@@ -218,9 +218,17 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
 
     @objc private func updateCurrentTime() {
         if isPlaying {
-            // Estimate current time based on elapsed time
-            let elapsed = CACurrentMediaTime() - startTime
-            currentTime = elapsed
+            // FIX: Use actual audio position from AVAudioPlayerNode instead of wall-clock time
+            // This ensures accurate timing even after pause/resume and avoids drift
+            if let nodeTime = playerNode.lastRenderTime,
+               nodeTime.isSampleTimeValid,
+               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
+                currentTime = Double(playerTime.sampleTime) / playerTime.sampleRate
+            } else {
+                // Fallback to wall-clock elapsed time if node time unavailable
+                let elapsed = CACurrentMediaTime() - startTime
+                currentTime = elapsed
+            }
         }
     }
 
