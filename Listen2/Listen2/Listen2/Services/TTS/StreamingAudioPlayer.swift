@@ -42,6 +42,15 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         setupAudioEngine()
     }
 
+    deinit {
+        // CRITICAL: Clean up audio engine to prevent system audio corruption
+        playerNode.stop()
+        audioEngine.stop()
+        audioEngine.reset()
+        displayLink?.invalidate()
+        print("[StreamingAudioPlayer] 🧹 Deinitialized and cleaned up audio engine")
+    }
+
     // MARK: - Setup
 
     private func setupAudioEngine() {
@@ -181,6 +190,19 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         scheduledBufferCount = 0
         playedBufferCount = 0
         allBuffersScheduled = false
+    }
+
+    /// Emergency reset to clear any corrupted audio state
+    /// Call this if audio becomes distorted or corrupted
+    func emergencyReset() {
+        print("[StreamingAudioPlayer] 🚨 Emergency reset initiated")
+        stop()
+        audioEngine.stop()
+        audioEngine.reset()
+
+        // Re-setup the audio engine from scratch
+        setupAudioEngine()
+        print("[StreamingAudioPlayer] ✅ Emergency reset complete")
     }
 
     func setRate(_ rate: Float) {

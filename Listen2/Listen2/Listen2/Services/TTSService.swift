@@ -1338,9 +1338,22 @@ final class TTSService: NSObject, ObservableObject {
                 // Enforce minimum word index to prevent going backwards after forcing forward
                 let effectiveWordIndex = max(wordTiming.wordIndex, minWordIndex)
 
-                // If alignment wants to go backwards, skip to the minimum word instead
+                // IMPORTANT: Ensure sequential word progression to avoid skipping short words
+                // If audio jumped ahead (e.g., from word 2 to word 4), show word 3 first
+                let nextExpectedIndex = (lastHighlightedWordIndex ?? -1) + 1
+                let sequentialIndex: Int
+                if effectiveWordIndex > nextExpectedIndex && nextExpectedIndex < alignment.wordTimings.count {
+                    // We're trying to skip words - show the next sequential word instead
+                    sequentialIndex = nextExpectedIndex
+                } else {
+                    sequentialIndex = effectiveWordIndex
+                }
+
+                // Get the timing for the sequential word (or fallback to effective)
                 let effectiveTiming: AlignmentResult.WordTiming
-                if effectiveWordIndex != wordTiming.wordIndex && effectiveWordIndex < alignment.wordTimings.count {
+                if sequentialIndex < alignment.wordTimings.count {
+                    effectiveTiming = alignment.wordTimings[sequentialIndex]
+                } else if effectiveWordIndex < alignment.wordTimings.count {
                     effectiveTiming = alignment.wordTimings[effectiveWordIndex]
                 } else {
                     effectiveTiming = wordTiming
