@@ -8,9 +8,9 @@
 import Foundation
 
 /// Result of aligning audio to text using ASR
-struct AlignmentResult: Codable, Equatable {
+struct AlignmentResult: Codable, Equatable, Sendable {
     /// Individual word timing information
-    struct WordTiming: Codable, Equatable {
+    struct WordTiming: Codable, Equatable, Sendable {
         /// Index of the word in the paragraph's word array
         let wordIndex: Int
 
