@@ -105,18 +105,9 @@ final class TTSService: NSObject, ObservableObject {
     private var useCTCAlignment = true
 
     // Word highlighting for Piper playback
-    private var highlightTimer: Timer?
     /// Event-driven word highlighting scheduler
     private var wordScheduler: WordHighlightScheduler?
-    private var currentAlignment: AlignmentResult?
     private let wordHighlighter = WordHighlighter()
-
-    // Timing validation to prevent getting stuck
-    private var lastHighlightedWordIndex: Int?
-    private var lastHighlightChangeTime: TimeInterval = 0
-    private let maxStuckDuration: TimeInterval = 2.0  // Force move if stuck for > 2 seconds
-    private var minWordIndex: Int = 0  // Minimum word index to prevent going backwards after forcing forward
-    private var stuckWordWarningCount: [Int: Int] = [:]  // Track warning count per word to limit spam
 
     // Subscription for word highlighting
     private var highlightSubscription: AnyCancellable?
@@ -616,8 +607,6 @@ final class TTSService: NSObject, ObservableObject {
             wordRange: nil,
             isPlaying: false
         )
-        lastHighlightedWordIndex = nil
-        lastHighlightChangeTime = 0
     }
 
     func stop() {
@@ -657,11 +646,6 @@ final class TTSService: NSObject, ObservableObject {
         currentProgress = .initial
         wordMap = nil
         currentDocumentID = nil
-        currentAlignment = nil
-
-        // Reset timing validation tracking
-        lastHighlightedWordIndex = nil
-        lastHighlightChangeTime = 0
 
         nowPlayingManager.clearNowPlayingInfo()
     }
@@ -787,21 +771,9 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Play a ready sentence (audio + highlighting if available)
     private func playReadySentence(_ sentence: ReadySentence) async throws {
-        // IMPORTANT: Stop any existing word scheduler BEFORE changing alignment
+        // IMPORTANT: Stop any existing word scheduler BEFORE starting new playback
         // This prevents the old scheduler from firing with the new alignment (wrong paragraph)
         stopWordScheduler()
-
-        // Store alignment for highlighting (if available)
-        if let alignment = sentence.alignment {
-            currentAlignment = alignment
-            minWordIndex = 0
-            stuckWordWarningCount.removeAll()
-            // Reset highlight tracking for new sentence
-            lastHighlightedWordIndex = nil
-            lastHighlightChangeTime = 0
-        } else {
-            currentAlignment = nil
-        }
 
         // Play audio with continuation
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -906,11 +878,6 @@ final class TTSService: NSObject, ObservableObject {
                 // Mark scheduling complete
                 audioPlayer.finishScheduling()
 
-                // FIX: Start highlight timer IMMEDIATELY when playback starts
-                if self.currentAlignment != nil {
-                    self.startHighlightTimerWithCTCAlignment()
-                }
-
                 // Update playback state
                 isPlaying = true
                 shouldAutoAdvance = true
@@ -959,104 +926,11 @@ final class TTSService: NSObject, ObservableObject {
             )
 
             let alignmentElapsed = CFAbsoluteTimeGetCurrent() - alignmentStartTime
-            await MainActor.run {
-                // Store alignment for word highlighting
-                currentAlignment = alignment
-                print("[TTSService] ✅ CTC alignment (sync) complete: \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s audio, took \(String(format: "%.3f", alignmentElapsed))s")
-
-                // Reset word tracking for new alignment
-                minWordIndex = 0
-                stuckWordWarningCount.removeAll()
-
-                // NOTE: Timer is NOT started here - caller starts it after playback begins
-            }
+            print("[TTSService] ✅ CTC alignment (sync) complete: \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s audio, took \(String(format: "%.3f", alignmentElapsed))s")
+            // NOTE: Alignment result is not used - legacy path; new path uses WordHighlightScheduler
         } catch {
             print("[TTSService] ⚠️ CTC alignment failed: \(error)")
         }
-    }
-
-    /// Perform CTC forced alignment on synthesized audio (legacy async version)
-    /// NOTE: This version starts the timer after alignment, causing a race condition
-    /// Prefer performCTCAlignmentSync() called BEFORE playback starts
-    /// - Parameters:
-    ///   - sentence: The sentence text that was synthesized
-    ///   - audioData: Raw audio data from synthesis
-    ///   - paragraphIndex: Current paragraph index
-    private func performCTCAlignment(sentence: String, audioData: Data, paragraphIndex: Int) async {
-        guard !audioData.isEmpty else {
-            print("[TTSService] ⚠️ CTC alignment skipped - no audio data")
-            return
-        }
-
-        let samples = extractSamples(from: audioData)
-        guard !samples.isEmpty else {
-            print("[TTSService] ⚠️ CTC alignment skipped - no samples extracted")
-            return
-        }
-
-        // DEBUG: Capture current playback time BEFORE alignment starts
-        let preAlignTime = await MainActor.run { audioPlayer.currentTime }
-        print("[TTSService] 🎯 Starting CTC alignment for '\(sentence.prefix(30))...' (\(samples.count) samples)")
-        print("[TTSService] 🕐 DEBUG: audioPlayer.currentTime at alignment START = \(String(format: "%.3f", preAlignTime))s")
-
-        do {
-            let alignment = try await ctcAligner.align(
-                audioSamples: samples,
-                sampleRate: 22050,  // Piper TTS output rate
-                transcript: sentence,
-                paragraphIndex: paragraphIndex
-            )
-
-            await MainActor.run {
-                // DEBUG: Log timing when alignment completes
-                let postAlignTime = audioPlayer.currentTime
-                print("[TTSService] 🕐 DEBUG: audioPlayer.currentTime at alignment END = \(String(format: "%.3f", postAlignTime))s")
-                print("[TTSService] 🕐 DEBUG: Alignment took \(String(format: "%.3f", postAlignTime - preAlignTime))s of playback time")
-
-                // DEBUG: Log word timings
-                print("[TTSService] 📊 DEBUG: Word timings from CTC alignment:")
-                for (i, word) in alignment.wordTimings.prefix(5).enumerated() {
-                    print("[TTSService]   Word[\(i)]: '\(word.text)' @ \(String(format: "%.3f", word.startTime))-\(String(format: "%.3f", word.endTime))s, range=\(word.rangeLocation)...\(word.rangeLocation + word.rangeLength)")
-                }
-                if alignment.wordTimings.count > 5 {
-                    print("[TTSService]   ... and \(alignment.wordTimings.count - 5) more words")
-                }
-
-                // Store alignment for word highlighting
-                currentAlignment = alignment
-                print("[TTSService] ✅ CTC alignment complete: \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s")
-
-                // Reset word tracking for new alignment
-                minWordIndex = 0
-                stuckWordWarningCount.removeAll()
-
-                // Re-enable highlight timer now that we have alignment
-                startHighlightTimerWithCTCAlignment()
-            }
-        } catch {
-            print("[TTSService] ⚠️ CTC alignment failed: \(error)")
-        }
-    }
-
-    /// Start highlight timer using CTC alignment data
-    private func startHighlightTimerWithCTCAlignment() {
-        stopHighlightTimer()
-
-        guard let alignment = currentAlignment else {
-            print("[TTSService] ⏸️ No alignment available for highlighting")
-            return
-        }
-
-        // DEBUG: Log timer start time
-        let startTime = audioPlayer.currentTime
-        print("[TTSService] 🎬 Starting CTC word highlighting timer at audioPlayer.currentTime = \(String(format: "%.3f", startTime))s")
-        print("[TTSService] 🎬 DEBUG: First word starts at \(String(format: "%.3f", alignment.wordTimings.first?.startTime ?? -1))s")
-
-        // Use 60 FPS timer for smooth word highlighting
-        highlightTimer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
-            self?.updateHighlightFromTime()
-        }
-        print("[TTSService] 🎬 Started CTC word highlighting timer")
     }
 
     /// Start pre-synthesis for a sentence in the background
@@ -1164,88 +1038,12 @@ final class TTSService: NSObject, ObservableObject {
                 // Mark scheduling complete
                 audioPlayer.finishScheduling()
 
-                // FIX: Start highlight timer IMMEDIATELY when playback starts (alignment already done)
-                if self.currentAlignment != nil {
-                    self.startHighlightTimerWithCTCAlignment()
-                }
-
                 // Update playback state
                 isPlaying = true
                 shouldAutoAdvance = true
             }
         }
     }
-
-    // DEAD CODE - Removed during chunk streaming refactor
-    // This method was replaced by playSentenceWithChunks() for streaming audio
-    // Kept commented for reference during development
-    /*
-    /// Play a sentence audio chunk and wait for completion
-    /// - Parameters:
-    ///   - bundle: Sentence bundle containing audio data and timeline
-    ///   - paragraphText: Full paragraph text for word position mapping
-    ///   - isFirst: Whether this is the first sentence (for initialization)
-    private func playSentenceAudio(bundle: SentenceBundle, paragraphText: String, isFirst: Bool) async throws {
-        // Use a continuation to wait for audio playback to complete
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            Task { @MainActor in
-                // Store the continuation so we can resume it during stop() to prevent leaks
-                activeContinuation = continuation
-
-                do {
-                    // Get alignment for current paragraph from synthesis queue (only on first sentence)
-                    if isFirst {
-                        // NOTE: getAlignment() method was removed from SynthesisQueue
-                        currentAlignment = nil
-                        minWordIndex = 0
-                        stuckWordWarningCount.removeAll()
-                        startHighlightTimer()
-                    }
-
-                    // NOTE: audioPlayer.play() method was removed - replaced with streaming methods
-                    // startStreaming(), scheduleChunk(), finishScheduling()
-
-                    // Update playback state
-                    isPlaying = true
-                    if isFirst {
-                        shouldAutoAdvance = true
-                    }
-                } catch {
-                    activeContinuation = nil
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
-    */
-
-    // DEAD CODE - This method is no longer called
-    // Alignment is now handled during chunk streaming
-    /*
-    private func playAudio(_ data: Data) async throws {
-        // NOTE: getAlignment() method was removed from SynthesisQueue
-        // Alignment is now managed during chunk streaming in playSentenceWithChunks()
-
-        try await MainActor.run {
-            currentAlignment = nil
-
-            // Reset word tracking for new paragraph
-            minWordIndex = 0
-            stuckWordWarningCount.removeAll()
-
-            // NOTE: audioPlayer.play() was removed - replaced with streaming methods
-            // startStreaming(), scheduleChunk(), finishScheduling()
-
-            // Re-enable auto-advance once playback has started
-            // (mirrors AVSpeech didStart delegate behavior)
-            isPlaying = true
-            shouldAutoAdvance = true
-
-            // Start word highlighting timer for Piper playback
-            startHighlightTimer()
-        }
-    }
-    */
 
     private func fallbackToAVSpeech(text: String) {
         let utterance = AVSpeechUtterance(string: text)
@@ -1316,21 +1114,6 @@ final class TTSService: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Word Highlighting
-
-    /// Start timer for word highlighting during Piper playback (60 FPS)
-    private func startHighlightTimer() {
-        // TEMPORARY: Highlighting disabled during chunk streaming development
-        // Will revisit with better approach after streaming is stable
-        print("[TTSService] ⏸️ Word highlighting temporarily disabled")
-    }
-
-    /// Stop and clean up highlight timer
-    private func stopHighlightTimer() {
-        highlightTimer?.invalidate()
-        highlightTimer = nil
-    }
-
     // MARK: - Event-Driven Word Highlighting
 
     /// Set up word highlighting scheduler for a sentence
@@ -1373,109 +1156,6 @@ final class TTSService: NSObject, ObservableObject {
     private func stopWordScheduler() {
         wordScheduler?.stop()
         wordScheduler = nil
-    }
-
-    /// Update current word highlight based on audio playback time
-    /// DEBUG counter to throttle logging
-    private static var highlightLogCounter = 0
-
-    private func updateHighlightFromTime() {
-        guard let alignment = currentAlignment else { return }
-
-        // IMPORTANT: Ensure alignment belongs to the current paragraph
-        // This prevents applying wrong paragraph's alignment after paragraph switch
-        guard alignment.paragraphIndex == currentProgress.paragraphIndex else {
-            // Alignment is stale - will be updated when new sentence starts
-            return
-        }
-
-        // Get current playback time from audio player
-        Task { @MainActor in
-            let currentTime = audioPlayer.currentTime
-
-            // DEBUG: Log first few calls and then every 60th call (1 per second at 60fps)
-            TTSService.highlightLogCounter += 1
-            let shouldLog = TTSService.highlightLogCounter <= 5 || TTSService.highlightLogCounter % 60 == 0
-
-            // Find the word being spoken at this time
-            if let wordTiming = alignment.wordTiming(at: currentTime),
-               let paragraphText = currentText[safe: currentProgress.paragraphIndex],
-               let _ = wordTiming.stringRange(in: paragraphText) {
-
-                // Enforce minimum word index to prevent going backwards after forcing forward
-                let effectiveWordIndex = max(wordTiming.wordIndex, minWordIndex)
-
-                // Get the timing for the effective word
-                let effectiveTiming: AlignmentResult.WordTiming
-                if effectiveWordIndex != wordTiming.wordIndex && effectiveWordIndex < alignment.wordTimings.count {
-                    effectiveTiming = alignment.wordTimings[effectiveWordIndex]
-                } else {
-                    effectiveTiming = wordTiming
-                }
-
-                guard let effectiveRange = effectiveTiming.stringRange(in: paragraphText) else {
-                    return
-                }
-
-                // Check if we're stuck on the same word for too long
-                let wordChanged = lastHighlightedWordIndex != effectiveTiming.wordIndex
-
-                // DEBUG: Log word selection
-                if shouldLog || wordChanged {
-                    print("[TTSService] 🔍 DEBUG updateHighlight: time=\(String(format: "%.3f", currentTime))s → word[\(effectiveTiming.wordIndex)]='\(effectiveTiming.text)' (start=\(String(format: "%.3f", effectiveTiming.startTime))s, changed=\(wordChanged))")
-                }
-
-                if wordChanged {
-                    // Word changed - update tracking and reset stuck counter
-                    lastHighlightedWordIndex = effectiveTiming.wordIndex
-                    lastHighlightChangeTime = currentTime
-                    stuckWordWarningCount[effectiveTiming.wordIndex] = 0
-                } else {
-                    // Same word - check if we're stuck
-                    let stuckDuration = currentTime - lastHighlightChangeTime
-                    if stuckDuration > maxStuckDuration {
-                        // Limit warning spam to 3 times per word
-                        let warningCount = stuckWordWarningCount[effectiveTiming.wordIndex, default: 0]
-                        if warningCount < 3 {
-                            print("⚠️  Highlight stuck on word '\(effectiveTiming.text)' for \(String(format: "%.2f", stuckDuration))s, forcing next word")
-                            stuckWordWarningCount[effectiveTiming.wordIndex] = warningCount + 1
-                        }
-
-                        // Try to find the next word in the alignment
-                        let nextWordIndex = effectiveTiming.wordIndex + 1
-                        if nextWordIndex < alignment.wordTimings.count {
-                            let nextTiming = alignment.wordTimings[nextWordIndex]
-                            if let nextRange = nextTiming.stringRange(in: paragraphText) {
-                                // Force move to next word and update minimum to prevent going back
-                                minWordIndex = nextWordIndex
-                                currentProgress = ReadingProgress(
-                                    paragraphIndex: currentProgress.paragraphIndex,
-                                    wordRange: nextRange,
-                                    isPlaying: true
-                                )
-                                lastHighlightedWordIndex = nextTiming.wordIndex
-                                lastHighlightChangeTime = currentTime
-                                return
-                            }
-                        }
-                    }
-                }
-
-                // Update progress with word range for highlighting
-                // DEBUG: Log the actual range being applied
-                if shouldLog || wordChanged {
-                    let rangeStart = paragraphText.distance(from: paragraphText.startIndex, to: effectiveRange.lowerBound)
-                    let rangeEnd = paragraphText.distance(from: paragraphText.startIndex, to: effectiveRange.upperBound)
-                    let highlightedText = String(paragraphText[effectiveRange])
-                    print("[TTSService] 🎯 HIGHLIGHT: applying range \(rangeStart)..<\(rangeEnd) = '\(highlightedText)' to P\(currentProgress.paragraphIndex)")
-                }
-                currentProgress = ReadingProgress(
-                    paragraphIndex: currentProgress.paragraphIndex,
-                    wordRange: effectiveRange,
-                    isPlaying: true
-                )
-            }
-        }
     }
 }
 
