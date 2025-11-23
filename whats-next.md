@@ -86,11 +86,27 @@ Implement the ReadyQueue pipeline from the comprehensive plan at `docs/plans/202
    - Will show `[TTSService] 🎯 HIGHLIGHT: applying range X..<Y = 'text' to P#`
    - Helps diagnose highlight offset issues
 
+6. **HIGHLIGHT PARAGRAPH MISMATCH FIXED** (237e7a1):
+   - Root cause: Previous paragraph's timer was still firing when switching paragraphs
+   - The old alignment's word range was being applied to the new paragraph's text
+   - Fix: Stop highlight timer BEFORE setting new alignment; guard in updateHighlightFromTime()
+     to verify alignment.paragraphIndex == currentProgress.paragraphIndex
+
+7. **WORD SKIPPING IN HIGHLIGHTS FIXED** (f372e54):
+   - Root cause: Timer runs at ~60fps; short words spoken between ticks were skipped
+   - Fix: Ensure sequential word progression - if audio jumped from word[2] to word[4],
+     now shows word[3] first before moving on
+
+8. **AUDIO SYSTEM CORRUPTION FIXED** (f372e54):
+   - Root cause: AVAudioEngine not cleaned up in deinit could corrupt system audio
+   - Fix: Added deinit to StreamingAudioPlayer that stops/resets audioEngine
+   - Added emergencyReset() method for recovering from corrupted state
+
 ### Remaining Plan Tasks
 
-- **Task 8** (Optional): Clean up old code - defer until bugs fixed
+- **Task 8** (Optional): Clean up old code - bugs mostly fixed
 - **Task 9**: Integration testing - needs re-test after fixes
-- **Highlight offset issue**: Still investigating - new debug logging will help
+- **Crash at ReaderView.swift:41**: Needs investigation - may be related to audio corruption
 
 ## Attempted Approaches
 
