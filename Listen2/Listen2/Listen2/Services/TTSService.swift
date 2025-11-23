@@ -512,12 +512,9 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func pause() {
-        // Resume continuation before pausing to prevent leaks (safe - resumer prevents double-resume)
-        if let resumer = activeResumer {
-            print("[TTSService] ⚠️ Resuming active continuation during pause()")
-            resumer.resume(throwing: CancellationError())
-            activeResumer = nil
-        }
+        // DO NOT throw CancellationError to continuation during pause!
+        // The continuation should stay active so the task can resume properly.
+        // When audio resumes, it will eventually complete and resume the continuation normally.
 
         Task { @MainActor in
             audioPlayer.pause()
@@ -1338,22 +1335,9 @@ final class TTSService: NSObject, ObservableObject {
                 // Enforce minimum word index to prevent going backwards after forcing forward
                 let effectiveWordIndex = max(wordTiming.wordIndex, minWordIndex)
 
-                // IMPORTANT: Ensure sequential word progression to avoid skipping short words
-                // If audio jumped ahead (e.g., from word 2 to word 4), show word 3 first
-                let nextExpectedIndex = (lastHighlightedWordIndex ?? -1) + 1
-                let sequentialIndex: Int
-                if effectiveWordIndex > nextExpectedIndex && nextExpectedIndex < alignment.wordTimings.count {
-                    // We're trying to skip words - show the next sequential word instead
-                    sequentialIndex = nextExpectedIndex
-                } else {
-                    sequentialIndex = effectiveWordIndex
-                }
-
-                // Get the timing for the sequential word (or fallback to effective)
+                // Get the timing for the effective word
                 let effectiveTiming: AlignmentResult.WordTiming
-                if sequentialIndex < alignment.wordTimings.count {
-                    effectiveTiming = alignment.wordTimings[sequentialIndex]
-                } else if effectiveWordIndex < alignment.wordTimings.count {
+                if effectiveWordIndex != wordTiming.wordIndex && effectiveWordIndex < alignment.wordTimings.count {
                     effectiveTiming = alignment.wordTimings[effectiveWordIndex]
                 } else {
                     effectiveTiming = wordTiming
