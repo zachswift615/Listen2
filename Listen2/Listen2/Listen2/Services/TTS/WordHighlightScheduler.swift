@@ -24,6 +24,9 @@ final class WordHighlightScheduler {
     /// The alignment data for this sentence
     private let alignment: AlignmentResult
 
+    /// The audio player node to install tap on
+    private weak var playerNode: AVAudioPlayerNode?
+
     /// Sample rate of the audio (Piper TTS uses 22050 Hz)
     private let sampleRate: Double = 22050
 
@@ -38,8 +41,69 @@ final class WordHighlightScheduler {
 
     // MARK: - Initialization
 
-    init(alignment: AlignmentResult) {
+    init(playerNode: AVAudioPlayerNode, alignment: AlignmentResult) {
+        self.playerNode = playerNode
         self.alignment = alignment
+    }
+
+    /// Convenience init for testing without playerNode
+    init(alignment: AlignmentResult) {
+        self.playerNode = nil
+        self.alignment = alignment
+    }
+
+    // MARK: - Lifecycle
+
+    /// Start monitoring audio playback for word highlighting
+    func start() {
+        guard !isActive else { return }
+        installTap()
+        isActive = true
+    }
+
+    /// Stop monitoring and clean up
+    func stop() {
+        guard isActive else { return }
+        removeTap()
+        isActive = false
+        currentWordIndex = -1
+    }
+
+    // MARK: - Audio Tap
+
+    private func installTap() {
+        guard let playerNode = playerNode else {
+            print("[WordHighlightScheduler] No playerNode available")
+            return
+        }
+
+        // Get format from player node
+        let format = playerNode.outputFormat(forBus: 0)
+
+        // Install tap - callback runs on audio thread
+        playerNode.installTap(
+            onBus: 0,
+            bufferSize: 1024,  // ~46ms at 22050Hz
+            format: format
+        ) { [weak self] buffer, time in
+            // AUDIO THREAD - minimal work only!
+            guard let self = self else { return }
+
+            // Get frame position from audio time
+            let framePosition = time.sampleTime
+
+            // Dispatch to main thread for processing
+            DispatchQueue.main.async {
+                self.handleFramePosition(framePosition)
+            }
+        }
+
+        print("[WordHighlightScheduler] Tap installed")
+    }
+
+    private func removeTap() {
+        playerNode?.removeTap(onBus: 0)
+        print("[WordHighlightScheduler] Tap removed")
     }
 
     // MARK: - Word Lookup
