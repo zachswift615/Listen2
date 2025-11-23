@@ -682,15 +682,6 @@ final class TTSService: NSObject, ObservableObject {
         let taskID = UUID().uuidString.prefix(8)
         print("[TTSService] 🎬 Starting ReadyQueue task \(taskID) for paragraph \(index)")
 
-        // Show loading indicator
-        isPreparing = true
-
-        // Configure and start pipeline
-        Task {
-            await readyQueue.setWordHighlightingEnabled(wordHighlightingEnabled)
-            await readyQueue.startFrom(paragraphIndex: index)
-        }
-
         activeSpeakTask = Task {
             defer {
                 print("[TTSService] 🏁 Ending ReadyQueue task \(taskID)")
@@ -698,6 +689,21 @@ final class TTSService: NSObject, ObservableObject {
             }
 
             do {
+                // STEP 1: Configure word highlighting setting
+                await readyQueue.setWordHighlightingEnabled(wordHighlightingEnabled)
+
+                // STEP 2: Check if first sentence is already buffered (from cross-paragraph lookahead)
+                let firstReady = await readyQueue.isReady(paragraphIndex: index, sentenceIndex: 0)
+
+                if firstReady {
+                    // Content already buffered - no need to restart pipeline or show loading
+                    print("[TTSService] ✅ First sentence already buffered for P\(index)")
+                } else {
+                    // Show loading indicator and start pipeline
+                    await MainActor.run { isPreparing = true }
+                    await readyQueue.startFrom(paragraphIndex: index)
+                }
+
                 let sentenceCount = await readyQueue.getSentenceCount(forParagraph: index)
                 print("[TTSService] 📝 Paragraph \(index) has \(sentenceCount) sentences")
 

@@ -484,7 +484,8 @@ actor CTCForcedAligner {
         let audioDurationSecs = Double(samples.count) / Double(self.sampleRate)
         let frameRate = Double(actualFrameCount) / audioDurationSecs
         print("[CTCForcedAligner] Frame rate: \(String(format: "%.1f", frameRate)) fps (\(actualFrameCount) frames / \(String(format: "%.3f", audioDurationSecs))s)")
-        let wordTimings = mergeToWords(
+
+        var wordTimings = mergeToWords(
             tokenSpans: tokenSpans,
             transcript: transcript,
             frameRate: frameRate,
@@ -492,6 +493,18 @@ actor CTCForcedAligner {
         )
 
         let totalDuration = Double(samples.count) / Double(self.sampleRate)
+
+        // FALLBACK: If alignment failed (empty tokenSpans), create uniform word timings
+        // This ensures highlighting still works, even if timing is approximate
+        if wordTimings.isEmpty {
+            print("[CTCForcedAligner] ⚠️ Backtrack returned empty - using uniform word distribution")
+            wordTimings = createUniformWordTimings(
+                transcript: transcript,
+                totalDuration: totalDuration,
+                paragraphIndex: paragraphIndex,
+                sentenceStartOffset: sentenceStartOffset
+            )
+        }
 
         return AlignmentResult(
             paragraphIndex: paragraphIndex,
@@ -527,6 +540,49 @@ actor CTCForcedAligner {
                 return samples[min(srcIdxInt, samples.count - 1)]
             }
         }
+    }
+
+    // MARK: - Fallback Word Timing
+
+    /// Create uniform word timings when CTC alignment fails
+    /// Distributes total duration evenly across words
+    private func createUniformWordTimings(
+        transcript: String,
+        totalDuration: TimeInterval,
+        paragraphIndex: Int,
+        sentenceStartOffset: Int
+    ) -> [AlignmentResult.WordTiming] {
+        // Split transcript into words
+        let words = transcript.split(separator: " ", omittingEmptySubsequences: true)
+        guard !words.isEmpty else { return [] }
+
+        let wordCount = words.count
+        let durationPerWord = totalDuration / Double(wordCount)
+
+        var timings: [AlignmentResult.WordTiming] = []
+        var currentOffset = 0
+
+        for (index, word) in words.enumerated() {
+            let wordText = String(word)
+            // Find actual position in transcript (accounting for spaces)
+            if let range = transcript.range(of: wordText, range: transcript.index(transcript.startIndex, offsetBy: currentOffset)..<transcript.endIndex) {
+                let rangeLocation = transcript.distance(from: transcript.startIndex, to: range.lowerBound)
+
+                timings.append(AlignmentResult.WordTiming(
+                    wordIndex: index,
+                    startTime: Double(index) * durationPerWord,
+                    duration: durationPerWord,
+                    text: wordText,
+                    rangeLocation: rangeLocation + sentenceStartOffset,
+                    rangeLength: wordText.count
+                ))
+
+                currentOffset = transcript.distance(from: transcript.startIndex, to: range.upperBound)
+            }
+        }
+
+        print("[CTCForcedAligner] 📊 Created \(timings.count) uniform word timings (\(String(format: "%.3f", durationPerWord))s each)")
+        return timings
     }
 
     // MARK: - Word Merging
