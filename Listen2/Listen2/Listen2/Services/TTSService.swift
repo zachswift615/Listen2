@@ -104,6 +104,8 @@ final class TTSService: NSObject, ObservableObject {
 
     // Word highlighting for Piper playback
     private var highlightTimer: Timer?
+    /// Event-driven word highlighting scheduler
+    private var wordScheduler: WordHighlightScheduler?
     private var currentAlignment: AlignmentResult?
     private let wordHighlighter = WordHighlighter()
 
@@ -1308,6 +1310,50 @@ final class TTSService: NSObject, ObservableObject {
     private func stopHighlightTimer() {
         highlightTimer?.invalidate()
         highlightTimer = nil
+    }
+
+    // MARK: - Event-Driven Word Highlighting
+
+    /// Set up word highlighting scheduler for a sentence
+    private func setupWordScheduler(alignment: AlignmentResult) {
+        // Tear down any existing scheduler
+        wordScheduler?.stop()
+
+        // Create new scheduler
+        let scheduler = WordHighlightScheduler(
+            playerNode: audioPlayer.playerNode,
+            alignment: alignment
+        )
+
+        scheduler.onWordChange = { [weak self] timing in
+            self?.handleScheduledWordChange(timing)
+        }
+
+        scheduler.start()
+        wordScheduler = scheduler
+
+        print("[TTSService] Word scheduler started for \(alignment.wordTimings.count) words")
+    }
+
+    /// Handle word change from scheduler
+    private func handleScheduledWordChange(_ timing: AlignmentResult.WordTiming) {
+        guard let paragraphText = currentText[safe: currentProgress.paragraphIndex],
+              let range = timing.stringRange(in: paragraphText) else {
+            return
+        }
+
+        // Update published progress - UI reacts automatically
+        currentProgress = ReadingProgress(
+            paragraphIndex: currentProgress.paragraphIndex,
+            wordRange: range,
+            isPlaying: true
+        )
+    }
+
+    /// Stop word scheduler
+    private func stopWordScheduler() {
+        wordScheduler?.stop()
+        wordScheduler = nil
     }
 
     /// Update current word highlight based on audio playback time
