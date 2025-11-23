@@ -373,7 +373,7 @@ final class TTSService: NSObject, ObservableObject {
                 await audioPlayer.stop()
                 wordHighlighter.stop()
                 fallbackSynthesizer.stopSpeaking(at: .immediate)
-                stopHighlightTimer()
+                stopWordScheduler()
 
                 // Now speed is set, restart playback
                 print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new speed")
@@ -518,23 +518,29 @@ final class TTSService: NSObject, ObservableObject {
         // The continuation should stay active so the task can resume properly.
         // When audio resumes, it will eventually complete and resume the continuation normally.
 
+        // NOTE: Don't stop word scheduler here!
+        // The tap naturally stops firing when playerNode.pause() is called.
+        // This allows resume() to continue highlighting without recreating the scheduler.
+
         Task { @MainActor in
             audioPlayer.pause()
             wordHighlighter.pause()
         }
         fallbackSynthesizer.pauseSpeaking(at: .word)
-        stopHighlightTimer()
         isPlaying = false
         nowPlayingManager.updatePlaybackState(isPlaying: false)
     }
 
     func resume() {
+        // NOTE: Don't restart word scheduler here!
+        // The tap automatically resumes firing when playerNode.resume() is called.
+        // The scheduler remains active and continues highlighting from where it left off.
+
         Task { @MainActor in
             audioPlayer.resume()
             wordHighlighter.resume()
         }
         fallbackSynthesizer.continueSpeaking()
-        startHighlightTimer()
         isPlaying = true
         nowPlayingManager.updatePlaybackState(isPlaying: true)
     }
@@ -586,7 +592,7 @@ final class TTSService: NSObject, ObservableObject {
             }
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
-        stopHighlightTimer()
+        stopWordScheduler()
         isPlaying = false
 
         // DON'T clear currentText, wordMap, etc. - keep document loaded
@@ -629,7 +635,7 @@ final class TTSService: NSObject, ObservableObject {
             wordHighlighter.stop()
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
-        stopHighlightTimer()
+        stopWordScheduler()
         isPlaying = false
 
         // Reset state to prevent stale content when switching documents
@@ -1271,10 +1277,9 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func handleParagraphComplete() {
-        // CRITICAL: Stop highlight timer and clear alignment BEFORE advancing
+        // CRITICAL: Stop word scheduler BEFORE advancing
         // This prevents the old paragraph's wordRange from being applied to the new paragraph
-        stopHighlightTimer()
-        currentAlignment = nil
+        stopWordScheduler()
 
         // Don't set isPlaying to false yet if we're auto-advancing
         // This prevents flicker when transitioning between paragraphs
