@@ -767,9 +767,9 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Play a ready sentence (audio + highlighting if available)
     private func playReadySentence(_ sentence: ReadySentence) async throws {
-        // IMPORTANT: Stop any existing highlight timer BEFORE changing alignment
-        // This prevents the old timer from firing with the new alignment (wrong paragraph)
-        stopHighlightTimer()
+        // IMPORTANT: Stop any existing word scheduler BEFORE changing alignment
+        // This prevents the old scheduler from firing with the new alignment (wrong paragraph)
+        stopWordScheduler()
 
         // Store alignment for highlighting (if available)
         if let alignment = sentence.alignment {
@@ -804,9 +804,9 @@ final class TTSService: NSObject, ObservableObject {
                 // Mark scheduling complete
                 audioPlayer.finishScheduling()
 
-                // Start highlight timer only if we have alignment AND highlighting enabled
-                if sentence.alignment != nil && wordHighlightingEnabled {
-                    startHighlightTimerWithCTCAlignment()
+                // Start word scheduler only if we have alignment AND highlighting enabled
+                if let alignment = sentence.alignment, wordHighlightingEnabled {
+                    setupWordScheduler(alignment: alignment)
                 }
 
                 // Update state
