@@ -773,6 +773,9 @@ final class TTSService: NSObject, ObservableObject {
             currentAlignment = alignment
             minWordIndex = 0
             stuckWordWarningCount.removeAll()
+            // Reset highlight tracking for new sentence
+            lastHighlightedWordIndex = nil
+            lastHighlightChangeTime = 0
         } else {
             currentAlignment = nil
         }
@@ -1381,6 +1384,13 @@ final class TTSService: NSObject, ObservableObject {
                 }
 
                 // Update progress with word range for highlighting
+                // DEBUG: Log the actual range being applied
+                if shouldLog || wordChanged {
+                    let rangeStart = paragraphText.distance(from: paragraphText.startIndex, to: effectiveRange.lowerBound)
+                    let rangeEnd = paragraphText.distance(from: paragraphText.startIndex, to: effectiveRange.upperBound)
+                    let highlightedText = String(paragraphText[effectiveRange])
+                    print("[TTSService] 🎯 HIGHLIGHT: applying range \(rangeStart)..<\(rangeEnd) = '\(highlightedText)' to P\(currentProgress.paragraphIndex)")
+                }
                 currentProgress = ReadingProgress(
                     paragraphIndex: currentProgress.paragraphIndex,
                     wordRange: effectiveRange,

@@ -446,10 +446,19 @@ actor ReadyQueue {
 
                 print("[ReadyQueue] ✅ \(key) ready (buffer: \(ready.count)/\(ReadyQueueConstants.maxSentenceLookahead))")
             } else {
-                // Sentence was skipped (empty) or failed
+                // processSentence returned nil - check if it was due to session invalidation
+                // IMPORTANT: Don't mark as "skipped" if session was invalidated during processing
+                // because the sentence content is NOT actually empty - it just wasn't processed
+                guard session == sessionID && !Task.isCancelled && !shouldStop else {
+                    print("[ReadyQueue] ⚠️ Session invalidated during processing of \(key) - NOT marking as skipped")
+                    processing.remove(key)
+                    break
+                }
+
+                // Session is still valid, so this was truly an empty/failed sentence
                 skipped.insert(key)
                 processing.remove(key)
-                print("[ReadyQueue] ⏭️ \(key) skipped")
+                print("[ReadyQueue] ⏭️ \(key) skipped (empty sentence)")
             }
         }
 
