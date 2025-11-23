@@ -354,6 +354,7 @@ final class TTSService: NSObject, ObservableObject {
                 // CORRECT ORDER: Cancel → Clear → Update
                 // Buffer contents are speed-dependent and must be cleared BEFORE updating speed
                 await chunkBuffer.clearAll()
+                await readyQueue?.stopPipeline()
 
                 // CRITICAL: Must await setSpeed BEFORE restarting playback
                 // Otherwise playback starts with old speed (race condition)
@@ -426,6 +427,7 @@ final class TTSService: NSObject, ObservableObject {
                     // CORRECT ORDER: Cancel → Clear → Update
                     // Buffer contents are voice-dependent and must be cleared BEFORE creating new queue
                     await chunkBuffer.clearAll()
+                    await readyQueue?.stopPipeline()
 
                     // Update synthesis queue with new provider
                     synthesisQueue = SynthesisQueue(
@@ -579,6 +581,7 @@ final class TTSService: NSObject, ObservableObject {
             await chunkBuffer.clearAll()
             // Clear sentence cache for new paragraph
             await synthesisQueue?.clearAll()
+            await readyQueue?.stopPipeline()
             await MainActor.run {
                 wordHighlighter.stop()
             }
@@ -606,18 +609,23 @@ final class TTSService: NSObject, ObservableObject {
             activeSpeakTask = nil
         }
 
+        // Reset preparing state immediately
+        isPreparing = false
+
         // CRITICAL: Resume any active continuation to prevent leaks and double-resume crashes
-        // This happens when stop() is called while audio is playing (e.g., during voice/speed change)
-        // Safe - resumer prevents double-resume
         if let resumer = activeResumer {
             print("[TTSService] ⚠️ Resuming active continuation during stop() to prevent leak")
             resumer.resume(throwing: CancellationError())
             activeResumer = nil
         }
 
+        // Stop ready queue pipeline (fire-and-forget is OK here because sessionID prevents races)
+        Task {
+            await readyQueue?.stopPipeline()
+        }
+
         Task {
             await audioPlayer.stop()
-            // Clear synthesis queue cache when stopped
             await synthesisQueue?.clearAll()
             wordHighlighter.stop()
         }
