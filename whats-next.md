@@ -1,219 +1,180 @@
-# What's Next - ReadyQueue Pipeline Debug Session
+# Listen2 ReadyQueue Pipeline - Handoff Document
 
 ## Original Task
 
-Implement the ReadyQueue pipeline from the comprehensive plan at `docs/plans/2025-11-22-ready-queue-pipeline.md`. This creates a unified synthesis + CTC alignment pipeline with 5-sentence lookahead buffer across paragraph boundaries, word highlighting toggle, and loading indicator.
+Debug and fix issues in the ReadyQueue TTS pipeline for the Listen2 iOS app, specifically:
+1. Word highlighting synchronization issues (highlight not matching audio)
+2. Playback freezing/stopping and not continuing after pause
+3. Memory crashes and audio system corruption
+4. Sentence/paragraph skipping issues
 
 ## Work Completed
 
-### Commits Made (from d64b77e baseline)
+### Commits Made This Session
 
-1. **226264f** - `feat: add Sendable conformance to AlignmentResult for concurrency safety`
-   - Added `Sendable` to `AlignmentResult` and `WordTiming` structs
+1. **fb2d7b1** - Memory leak fix and first word highlight
+   - Fixed `slideWindowTo()` to evict `ready` and `skipped` sentences when window slides
+   - Fixed `wordTiming(at:)` to return first word when time < startTime
 
-2. **494402e** - `feat: add ReadySentence model and ReadyQueueConstants`
-   - Created `Listen2/Listen2/Listen2/Services/TTS/ReadySentence.swift`
-   - Contains: `ReadySentence`, `SentenceKey`, `ReadyQueueConstants`
+2. **56904e7** - False sentence skipping fix
+   - `processSentence()` was returning nil for both empty AND session-invalidated sentences
+   - Now checks session validity BEFORE marking as skipped
 
-3. **2cddda3** - `feat: add ReadyQueue actor with sliding window and cross-paragraph lookahead`
-   - Created `Listen2/Listen2/Listen2/Services/TTS/ReadyQueue.swift` (~535 lines)
-   - Pipeline actor with session-based invalidation, sliding window
+3. **237e7a1** - Highlight paragraph mismatch fix
+   - Stop highlight timer BEFORE setting new alignment in `playReadySentence()`
+   - Added guard in `updateHighlightFromTime()` to verify alignment.paragraphIndex matches
 
-4. **e1170c4** - `feat: add word highlighting toggle to settings`
-   - Modified `SettingsViewModel.swift` - added `@AppStorage("wordHighlightingEnabled")`
-   - Modified `SettingsView.swift` - added Toggle UI
+4. **f372e54** - Audio system corruption prevention
+   - Added `deinit` to `StreamingAudioPlayer` that stops/resets `AVAudioEngine`
+   - Added `emergencyReset()` method for recovering from corrupted state
 
-5. **2fa4217** - `feat: add isPreparing state and readyQueue to TTSService`
-   - Added `isPreparing`, `wordHighlightingEnabled`, `readyQueue` properties
-   - Initialized `readyQueue` in `initializePiperProvider()`
+5. **cb2fa1a** - Pause not killing playback task
+   - Removed `CancellationError` throwing from `pause()` - was killing the speakParagraph task
+   - Now continuation stays active during pause and completes normally when audio resumes
 
-6. **227abfe** - `feat: integrate ReadyQueue into playback flow with buffer preservation`
-   - Rewrote `speakParagraph(at:)` to use ReadyQueue
-   - Updated `handleParagraphComplete()` (removed duplicate startFrom call)
-   - Added `playReadySentence()` and `speakParagraphLegacy()` methods
-
-7. **b896775** - `feat: clear readyQueue on stop/rate/voice/skip changes`
-   - Added `readyQueue?.stopPipeline()` calls to `stop()`, `setPlaybackRate()`, `setVoice()`, `stopAudioOnly()`
-   - Added `isPreparing = false` reset in `stop()`
-
-8. **611bb9c** - `feat: add loading indicator for audio preparation`
-   - Modified `ReaderView.swift` - added "Preparing audio..." overlay
-
-9. **cabc374** - `fix: resolve race condition and empty alignment in ReadyQueue pipeline`
-   - Merged two separate Tasks in `speakParagraph` into one sequential Task
-   - Check `isReady()` before showing loading indicator
-   - Added `createUniformWordTimings()` fallback in `CTCForcedAligner.swift`
-
-10. **c288f2c** - `fix: use raw Float32 chunks for CTC alignment instead of WAV data`
-    - Changed `ReadyQueue.processSentence()` to use chunks (raw Float32) instead of `combinedAudio` (WAV format)
-    - This fixed the timing being half of actual duration
+6. **1626af3** - Clear alignment before paragraph transition
+   - Stop highlight timer and clear `currentAlignment` in `handleParagraphComplete()` BEFORE advancing
+   - Prevents old paragraph's wordRange from appearing on new paragraph
 
 ### Key Files Modified
 
-- `Listen2/Listen2/Listen2/Services/TTS/AlignmentResult.swift` - Sendable conformance
-- `Listen2/Listen2/Listen2/Services/TTS/ReadySentence.swift` - NEW FILE
-- `Listen2/Listen2/Listen2/Services/TTS/ReadyQueue.swift` - NEW FILE
-- `Listen2/Listen2/Listen2/Services/TTS/CTCForcedAligner.swift` - Added uniform fallback
-- `Listen2/Listen2/Listen2/Services/TTSService.swift` - Major integration changes
-- `Listen2/Listen2/Listen2/ViewModels/SettingsViewModel.swift` - Word highlighting setting
-- `Listen2/Listen2/Listen2/Views/SettingsView.swift` - Word highlighting toggle
-- `Listen2/Listen2/Listen2/Views/ReaderView.swift` - Loading indicator
+- `Listen2/Listen2/Listen2/Services/TTSService.swift` - Main TTS coordination
+- `Listen2/Listen2/Listen2/Services/TTS/ReadyQueue.swift` - Pipeline orchestration
+- `Listen2/Listen2/Listen2/Services/TTS/AlignmentResult.swift` - Word timing lookups
+- `Listen2/Listen2/Listen2/Services/TTS/StreamingAudioPlayer.swift` - AVAudioEngine management
+
+### Issues Fixed
+
+1. **Memory crash (EXC_RESOURCE)** - Evicting sentences from `ready` dictionary when window slides
+2. **First word not highlighting** - Return first word when time < startTime
+3. **False sentence skipping** - Don't mark session-invalidated sentences as "skipped"
+4. **Highlight applying wrong paragraph's range** - Stop timer and clear alignment before transition
+5. **Playback freeze after pause** - Don't throw CancellationError during pause
+6. **Audio system corruption** - Proper cleanup in `deinit`
 
 ## Work Remaining
 
-### Fixes Applied (2025-11-22)
+### HIGH PRIORITY: Short Word Skipping
 
-1. **MEMORY LEAK FIXED**: Added eviction of `ready` and `skipped` sentences in `slideWindowTo()`
-   - Root cause: `slideWindowTo()` only evicted `paragraphWindow` and `paragraphSentences`, not the `ready` dictionary
-   - Fix: Now evicts ready/skipped sentences for paragraphs being removed from window
-   - Added logging to show freed memory when window slides
+**Problem**: Short words like "is" are being skipped in the highlight. Example from logs:
+- `word[6]='food'` highlighted at time=2.005s
+- `word[8]='healthy'` highlighted at time=2.411s
+- `word[7]='is'` was SKIPPED
 
-2. **FIRST WORD HIGHLIGHT FIXED**: Changed `wordTiming(at:)` to return first word when time < startTime
-   - Root cause: Binary search returned `nil` when `currentTime=0.000s` and first word started at 0.021s
-   - Fix: Now returns `wordTimings[0]` when time is before first word's start (audio is already playing)
+**Root Cause**: The 60fps timer (~16.7ms intervals) can miss short words if their entire duration falls between two timer ticks.
 
-3. **SESSION INVALIDATION LOGGING ADDED**: Added diagnostic logging throughout ReadyQueue
-   - Added logs at all session check points in `runPipeline()` and `processSentence()`
-   - Will help diagnose if sentence skipping is caused by session invalidation
+**Proposed Fix**: Track `lastHighlightedWordIndex` and ensure we don't skip indices. If `wordTiming(at:)` returns word[N] but `lastHighlightedWordIndex` is N-2, show word[N-1] first.
 
-4. **FALSE SENTENCE SKIPPING FIXED** (fb2d7b1 -> 56904e7):
-   - Root cause: `processSentence()` returns nil for BOTH empty sentences AND session-invalidated sentences
-   - When session invalidated during long alignment (4-5s), sentence was incorrectly marked "skipped"
-   - Fix: Now checks session validity BEFORE marking as skipped - only truly empty sentences get skipped flag
-   - Also reset `lastHighlightedWordIndex` when starting new sentence
+**Location**: `TTSService.swift:updateHighlightFromTime()` around line 1330
 
-5. **DEBUG LOGGING FOR HIGHLIGHT RANGE**: Added logging to show exact range being applied
-   - Will show `[TTSService] 🎯 HIGHLIGHT: applying range X..<Y = 'text' to P#`
-   - Helps diagnose highlight offset issues
+**Note**: I implemented this fix earlier (sequential word progression) but reverted it because the user said it was causing the highlight to lag behind audio. The correct approach is to show skipped words briefly (maybe 50-100ms minimum) rather than forcing sequential progression that delays the highlight.
 
-6. **HIGHLIGHT PARAGRAPH MISMATCH FIXED** (237e7a1):
-   - Root cause: Previous paragraph's timer was still firing when switching paragraphs
-   - The old alignment's word range was being applied to the new paragraph's text
-   - Fix: Stop highlight timer BEFORE setting new alignment; guard in updateHighlightFromTime()
-     to verify alignment.paragraphIndex == currentProgress.paragraphIndex
+### MEDIUM PRIORITY: Verify Pause/Resume Works
 
-7. **WORD SKIPPING IN HIGHLIGHTS FIXED** (f372e54):
-   - Root cause: Timer runs at ~60fps; short words spoken between ticks were skipped
-   - Fix: Ensure sequential word progression - if audio jumped from word[2] to word[4],
-     now shows word[3] first before moving on
+The pause fix (cb2fa1a) needs testing to confirm:
+- Pause during playback pauses audio
+- Resume continues from where it stopped
+- No task cancellation or pipeline restart
 
-8. **AUDIO SYSTEM CORRUPTION FIXED** (f372e54):
-   - Root cause: AVAudioEngine not cleaned up in deinit could corrupt system audio
-   - Fix: Added deinit to StreamingAudioPlayer that stops/resets audioEngine
-   - Added emergencyReset() method for recovering from corrupted state
+### LOW PRIORITY: Code Cleanup
 
-### Remaining Plan Tasks
-
-- **Task 8** (Optional): Clean up old code - bugs mostly fixed
-- **Task 9**: Integration testing - needs re-test after fixes
-- **Crash at ReaderView.swift:41**: Needs investigation - may be related to audio corruption
+- Remove debug logging added for investigation (🎯 HIGHLIGHT logs)
+- Clean up unused code paths
+- Consider reducing CTC alignment timeout for faster pipeline
 
 ## Attempted Approaches
 
 ### What Worked
 
-1. **Subagent-driven development with code review gates** - Effective for systematic implementation
-2. **Merging fire-and-forget Task into sequential flow** - Fixed race condition where buffer was cleared
-3. **Using raw Float32 chunks for alignment** - Fixed timing being half of actual duration
+1. **Stopping highlight timer BEFORE changing alignment** - Prevents stale range application
+2. **Guard checking alignment.paragraphIndex == currentProgress.paragraphIndex** - Extra safety
+3. **Not throwing CancellationError during pause()** - Allows continuation to stay active
+4. **Adding deinit to StreamingAudioPlayer** - Prevents system audio corruption
 
 ### What Didn't Work / Issues Found
 
-1. **Fire-and-forget Task for pipeline setup** - Caused race condition with playback Task
-2. **Using `combinedAudio` from `synthesisQueue.streamSentence()`** - It's WAV format (Int16 PCM), not raw Float32
-3. **Duplicate `startFrom` calls** - `handleParagraphComplete` was calling `startFrom` before `speakParagraph`, both cleared buffer
+1. **Sequential word progression fix** - User reported it made highlight lag behind audio. The fix forced showing word[N] before word[N+1], but if audio is at word[4], forcing display of word[3] first makes highlight appear behind.
+
+2. **Forcing last word highlight at sentence end** - User rejected this approach. "The highlight should always be on the currently audible word. We should fix the sync issue, not pause playback."
 
 ### Dead Ends to Avoid
 
-- Don't interpret WAV data as Float32 samples - `synthesisQueue.streamSentence()` returns WAV!
-- Don't have separate Tasks for pipeline setup and consumption - causes race
-- Don't call `startFrom` from `handleParagraphComplete` - `speakParagraph` handles it
+- Don't artificially delay or pause to let highlight catch up
+- Don't force sequential word display that causes highlight to lag
+- Don't throw CancellationError in pause() - it kills the playback task
 
 ## Critical Context
 
-### Architecture Understanding
+### Architecture
 
-1. **Audio Data Flow**:
-   - `SynthesisQueue.streamSentence()` returns **WAV format** Data (Int16 PCM with 44-byte header)
-   - `PipelineChunkDelegate` collects **raw Float32** chunks from streaming callbacks
-   - `ReadySentence.chunks` are raw Float32 - use these for alignment!
+- `ReadyQueue` orchestrates synthesis + alignment pipeline
+- `TTSService` coordinates playback and highlight updates
+- `StreamingAudioPlayer` uses AVAudioEngine for chunk streaming
+- `CTCForcedAligner` performs CTC forced alignment for word timings
+- Highlight timer runs at 60fps via CADisplayLink
 
-2. **Sample Rate Constants**:
-   - Piper TTS: 22050 Hz (stored in `ReadyQueueConstants.sampleRate`)
-   - CTC Model (MMS-FA): 16000 Hz (resamples internally in CTCForcedAligner)
-   - Frame rate: ~49 fps (varies slightly)
+### Key Variables
 
-3. **Session ID Pattern** (Important for debugging sentence skipping):
-   - `ReadyQueue.sessionID` increments on `startFrom()` and `stopPipeline()`
-   - All pipeline operations check `session == sessionID` before/after async work
-   - If session changes mid-operation, operation returns nil/skips
+- `currentAlignment: AlignmentResult?` - Word timings for current sentence
+- `currentProgress: ReadingProgress` - Published for UI (paragraphIndex, wordRange)
+- `lastHighlightedWordIndex: Int?` - Tracks last shown word to detect changes
+- `activeResumer: ContinuationResumer` - Manages async continuation for playback
 
-4. **Buffer Management**:
-   - Max 5 sentences lookahead (`maxSentenceLookahead`)
-   - Max 5 paragraphs in window (`maxParagraphWindow`)
-   - Max 10MB buffer (`maxBufferBytes`)
-   - **NOTE**: Check if these limits are being enforced!
+### Gotchas (Recorded in Workshop)
 
-### Important Files to Debug
+1. **AVAudioEngine must be explicitly stopped and reset in deinit** - Otherwise causes system-wide audio corruption requiring hard restart
 
-- **ReadyQueue.swift** (lines ~430-515): `processSentence()` - memory accumulation here?
-- **ReadyQueue.swift** (lines ~248-288): `slideWindowTo()` - eviction working?
-- **TTSService.swift** (lines ~1310-1380): `updateHighlightFromTime()` - first word handling
-- **TTSService.swift** (lines ~690-760): `speakParagraph()` - sentence loop and session handling
+2. **CTC word highlighting has 3 root causes**:
+   - Sentence-relative char offsets used as paragraph offsets
+   - Wall-clock time instead of AVAudioPlayerNode.playerTime
+   - Space token mapping assumes 1 space = 1 span
 
-### Latest Log Analysis (from `/Users/zachswift/listen-2-logs-2025-11-14`)
+3. **Session invalidation during long alignment** - 4-5 second alignments can be invalidated mid-processing, causing false "skipped" marking
 
-**Good news - CTC alignment IS working**:
-```
-[CTCForcedAligner] 🔗 Created 2 word timings:
-[CTCForcedAligner]   [0] 'The' @ 0.021-0.124s, range=0...3
-[CTCForcedAligner]   [1] 'Knowledge' @ 0.124-0.766s, range=4...13
-```
+### Workshop Decisions Recorded
 
-**But first word doesn't start at 0**:
-```
-[TTSService] 🎬 Starting CTC word highlighting timer at audioPlayer.currentTime = 0.000s
-[TTSService] 🎬 DEBUG: First word starts at 0.021s
-```
-This 21ms gap causes the "starts on 2nd word" issue.
-
-### Known Gotchas
-
-- CTC backtrack can return empty `tokenSpans` for short sentences - uniform fallback handles this
-- `Publishing changes from within view updates` warnings are pre-existing, unrelated
-- `[StreamingAudioPlayer] setRate not yet implemented` - playback rate for streaming is TODO
+- Fixed pause() killing playback task by not throwing CancellationError
+- Fixed highlight offset by verifying alignment belongs to current paragraph
+- Fixed false sentence skipping caused by session invalidation
+- Fixed CTC alignment sample extraction - streaming chunks are Float32, not WAV Int16
 
 ## Current State
 
-### Status
+### Commits
 
-- **Tasks 0-7**: Complete, code reviewed, committed
-- **Task 8 (cleanup)**: Not started (waiting for bugs to be fixed)
-- **Task 9 (testing)**: In progress, bugs found
+All fixes committed to local `main` branch:
+- 6 commits ahead of origin/main
+- All builds successfully
+- No uncommitted changes
 
-### Git State
+### Testing Status
 
-- All changes committed to `main` branch
-- 10 new commits since baseline `d64b77e`
-- HEAD is `c288f2c`
+- Memory crash: FIXED (needs long-term verification)
+- Audio corruption: FIXED (added deinit cleanup)
+- Pause/resume freeze: FIXED (needs testing)
+- First word of paragraph highlight: FIXED (1626af3)
+- Short word skipping ("is"): NOT FIXED - still occurs
+
+### Latest Logs
+
+Location: `/Users/zachswift/listen-2-logs-2025-11-14`
+
+Key observations from logs:
+- Word highlighting is generally working (most words highlighted correctly)
+- Paragraph transitions now clear alignment properly
+- Short words (1-2 characters) occasionally skipped
+- Timer running at ~60fps as expected
 
 ### Next Steps for New Session
 
-1. **TEST FIXES** - Run app and verify:
-   - Memory stays bounded (monitor in Xcode Instruments or Debug Navigator)
-   - First word highlights immediately at playback start
-   - Check console logs for session invalidation warnings (⚠️ messages)
+1. **Fix short word skipping** - Implement minimum word display time or ensure sequential coverage without lagging behind audio. Key insight: the timer might need to track "last displayed word index" and ensure all intermediate words get at least one frame of display.
 
-2. **If sentence skipping persists**, check logs for:
-   - `[ReadyQueue] ⚠️ Session invalidated...` messages
-   - Whether it's session mismatch, timeout, or Task cancellation
+2. **Test pause/resume thoroughly** - Verify the CancellationError removal works correctly
 
-3. **Consider Task 8 cleanup** only after all bugs confirmed fixed
+3. **Consider higher timer frequency** - 120fps might catch more short words (but increases CPU)
 
 ### Command to Resume
 
 ```
-Test the ReadyQueue pipeline fixes:
-1. Memory leak fix in slideWindowTo()
-2. First word highlight fix in wordTiming(at:)
-3. Session invalidation logging for debugging skips
+Continue debugging word highlight sync in Listen2. The main remaining issue is short words like "is" being skipped during highlighting. The 60fps timer misses words whose entire duration falls between timer ticks. See whats-next.md for full context. Logs at /Users/zachswift/listen-2-logs-2025-11-14
 ```
