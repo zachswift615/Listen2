@@ -316,7 +316,7 @@ func testHandleFramePositionContinuesAfterPauseResume() async {
     XCTAssertEqual(receivedWords, ["The", "Knowledge"])
 }
 
-func testHandleFramePositionIgnoredWhenInactive() async {
+func testHandleFramePositionIgnoredAfterDeactivation() async {
     // Given - scheduler that was stopped (simulates race condition)
     let alignment = makeAlignment(words: [
         ("The", 0.0, 0.1),
@@ -329,13 +329,17 @@ func testHandleFramePositionIgnoredWhenInactive() async {
         receivedWords.append(timing.text)
     }
 
-    // When - callbacks arrive but scheduler is not active
-    // (simulates callbacks queued before stop() but delivered after)
-    await scheduler.testHandleFramePosition(0)
-    await scheduler.testHandleFramePosition(2205)
+    // When - first callback works
+    await scheduler.testHandleFramePosition(0)  // "The" - works, sets isActive = true
 
-    // Then - no callbacks because isActive is false (never started)
-    XCTAssertEqual(receivedWords, [])
+    // Then stop() is called (simulated)
+    scheduler.testDeactivate()
+
+    // More callbacks arrive (queued before stop() but delivered after)
+    await scheduler.testHandleFramePosition(2205)  // Ignored because isActive = false
+
+    // Then - only "The" received, "Knowledge" ignored
+    XCTAssertEqual(receivedWords, ["The"])
 }
 ```
 
@@ -376,8 +380,16 @@ private func handleFramePosition(_ framePosition: Int64) {
 
 #if DEBUG
 /// Test-only access to handleFramePosition
+/// Automatically sets isActive = true to allow callbacks in test context
 func testHandleFramePosition(_ framePosition: Int64) async {
+    isActive = true  // Allow callbacks without installing real tap
     handleFramePosition(framePosition)
+}
+
+/// Test-only: manually deactivate scheduler (simulates stop() being called)
+func testDeactivate() {
+    isActive = false
+    currentWordIndex = -1
 }
 #endif
 ```
