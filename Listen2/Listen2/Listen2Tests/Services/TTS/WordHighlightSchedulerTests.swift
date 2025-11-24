@@ -4,14 +4,13 @@
 //
 
 import XCTest
-import AVFoundation
 @testable import Listen2
 
-@MainActor
 final class WordHighlightSchedulerTests: XCTestCase {
 
     // MARK: - Test Helpers
 
+    @MainActor
     private func makeAlignment(words: [(text: String, start: Double, duration: Double)]) -> AlignmentResult {
         var currentLocation = 0
         let timings = words.enumerated().map { index, word in
@@ -23,7 +22,7 @@ final class WordHighlightSchedulerTests: XCTestCase {
                 rangeLocation: currentLocation,
                 rangeLength: word.text.count
             )
-            currentLocation += word.text.count + 1  // +1 for space between words
+            currentLocation += word.text.count + 1
             return timing
         }
         let totalDuration = words.last.map { $0.start + $0.duration } ?? 0
@@ -34,8 +33,9 @@ final class WordHighlightSchedulerTests: XCTestCase {
         )
     }
 
-    // MARK: - Tests
+    // MARK: - Initialization Tests
 
+    @MainActor
     func testSchedulerInitializesWithAlignment() {
         // Given
         let alignment = makeAlignment(words: [
@@ -51,88 +51,175 @@ final class WordHighlightSchedulerTests: XCTestCase {
         XCTAssertFalse(scheduler.isActive)
     }
 
-    func testFindWordIndexAtTime() {
+    @MainActor
+    func testSchedulerBecomesActiveOnStart() {
         // Given
-        let alignment = makeAlignment(words: [
-            ("The", 0.0, 0.1),        // 0.0 - 0.1
-            ("Knowledge", 0.1, 0.5),  // 0.1 - 0.6
-            ("is", 0.6, 0.05)         // 0.6 - 0.65 (short word)
-        ])
+        let alignment = makeAlignment(words: [("Test", 0.0, 0.1)])
         let scheduler = WordHighlightScheduler(alignment: alignment)
 
-        // Then - exact start times
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 0.0), 0)   // Start of "The"
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 0.1), 1)   // Start of "Knowledge"
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 0.6), 2)   // Start of "is"
+        // When
+        scheduler.start()
 
-        // Mid-word times
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 0.05), 0)  // Mid "The"
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 0.3), 1)   // Mid "Knowledge"
+        // Then
+        XCTAssertTrue(scheduler.isActive)
 
-        // Edge cases
-        XCTAssertEqual(scheduler.testFindWordIndex(at: -0.1), 0)  // Before first word -> first word
-        XCTAssertEqual(scheduler.testFindWordIndex(at: 1.0), 2)   // After last word -> last word
+        // Cleanup
+        scheduler.stop()
     }
 
-    func testHandleFramePositionEmitsWordChange() async {
+    @MainActor
+    func testSchedulerBecomesInactiveOnStop() {
         // Given
-        let alignment = makeAlignment(words: [
-            ("The", 0.0, 0.1),
-            ("Knowledge", 0.1, 0.5)
-        ])
+        let alignment = makeAlignment(words: [("Test", 0.0, 0.1)])
         let scheduler = WordHighlightScheduler(alignment: alignment)
+        scheduler.start()
 
-        var receivedWords: [String] = []
-        scheduler.onWordChange = { timing in
-            receivedWords.append(timing.text)
-        }
+        // When
+        scheduler.stop()
 
-        // When - simulate frame positions (22050 Hz sample rate)
-        // Frame 0 = time 0.0s -> "The"
-        await scheduler.testHandleFramePosition(0)
-
-        // Frame 2205 = time 0.1s -> "Knowledge"
-        await scheduler.testHandleFramePosition(2205)
-
-        // Frame 4410 = time 0.2s -> still "Knowledge" (no change)
-        await scheduler.testHandleFramePosition(4410)
-
-        // Then - should only emit when word changes
-        XCTAssertEqual(receivedWords, ["The", "Knowledge"])
+        // Then
+        XCTAssertFalse(scheduler.isActive)
     }
 
-    func testHandleFramePositionContinuesAfterPauseResume() async {
-        // Given - simulates pause/resume where tap stops and restarts mid-word
+    // MARK: - Scheduled Events Tests
+
+    @MainActor
+    func testFirstWordEmittedImmediately() {
+        // Given - word starts at 0.0s
         let alignment = makeAlignment(words: [
-            ("The", 0.0, 0.1),
-            ("Knowledge", 0.1, 0.5)
+            ("Hello", 0.0, 0.2),
+            ("World", 0.2, 0.3)
         ])
         let scheduler = WordHighlightScheduler(alignment: alignment)
 
-        var receivedWords: [String] = []
+        let expectation = XCTestExpectation(description: "First word emitted")
+        var receivedWord: String?
+
         scheduler.onWordChange = { timing in
-            receivedWords.append(timing.text)
+            if receivedWord == nil {
+                receivedWord = timing.text
+                expectation.fulfill()
+            }
         }
 
-        // When - play starts
-        await scheduler.testHandleFramePosition(0)      // "The" at 0.0s
+        // When
+        scheduler.start()
 
-        // Pause happens (no callbacks during pause)
+        // Then - first word should emit almost immediately
+        let result = XCTWaiter.wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(receivedWord, "Hello")
 
-        // Resume - tap fires again from where audio left off
-        await scheduler.testHandleFramePosition(1103)   // Still "The" at 0.05s (mid-word)
-        await scheduler.testHandleFramePosition(2205)   // "Knowledge" at 0.1s
-
-        // Then - should emit "The" once (not again on resume), then "Knowledge"
-        XCTAssertEqual(receivedWords, ["The", "Knowledge"])
+        // Cleanup
+        scheduler.stop()
     }
 
-    func testHandleFramePositionIgnoredAfterDeactivation() async {
-        // Given - scheduler that was stopped (simulates race condition)
+    @MainActor
+    func testAllWordsEmittedInOrder() {
+        // Given - 3 words with short durations
         let alignment = makeAlignment(words: [
-            ("The", 0.0, 0.1),
-            ("Knowledge", 0.1, 0.5)
+            ("One", 0.0, 0.05),
+            ("Two", 0.05, 0.05),
+            ("Three", 0.1, 0.05)
         ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        let expectation = XCTestExpectation(description: "All words emitted")
+        expectation.expectedFulfillmentCount = 3
+        var receivedWords: [String] = []
+
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+            expectation.fulfill()
+        }
+
+        // When
+        scheduler.start()
+
+        // Then - all 3 words should emit within 500ms
+        let result = XCTWaiter.wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(receivedWords, ["One", "Two", "Three"])
+
+        // Cleanup
+        scheduler.stop()
+    }
+
+    @MainActor
+    func testShortWordsNotSkipped() {
+        // Given - simulate "I met a" with short "a" (30ms)
+        let alignment = makeAlignment(words: [
+            ("I", 0.0, 0.03),
+            ("met", 0.03, 0.03),
+            ("a", 0.06, 0.03)      // Very short word!
+        ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        let expectation = XCTestExpectation(description: "All words including short 'a'")
+        expectation.expectedFulfillmentCount = 3
+        var receivedWords: [String] = []
+
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+            expectation.fulfill()
+        }
+
+        // When
+        scheduler.start()
+
+        // Then - all 3 words including short "a" should emit
+        let result = XCTWaiter.wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(receivedWords, ["I", "met", "a"])
+
+        // Cleanup
+        scheduler.stop()
+    }
+
+    @MainActor
+    func testStopCancelsScheduledEvents() {
+        // Given - word that would emit after 500ms
+        let alignment = makeAlignment(words: [
+            ("First", 0.0, 0.05),
+            ("Later", 0.5, 0.1)  // Should NOT emit if stopped before 0.5s
+        ])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        var receivedWords: [String] = []
+
+        // Expectation for first word
+        let firstWordExpectation = XCTestExpectation(description: "First word emitted")
+
+        scheduler.onWordChange = { timing in
+            receivedWords.append(timing.text)
+            if timing.text == "First" {
+                firstWordExpectation.fulfill()
+            }
+        }
+
+        // When - start scheduler
+        scheduler.start()
+
+        // Wait for first word
+        let firstResult = XCTWaiter.wait(for: [firstWordExpectation], timeout: 1.0)
+        XCTAssertEqual(firstResult, .completed)
+
+        // Stop before second word would fire
+        scheduler.stop()
+
+        // Wait past when "Later" would have fired using XCTWaiter
+        let waitExpectation = XCTestExpectation(description: "Wait for potential second word")
+        waitExpectation.isInverted = true  // We expect this NOT to be fulfilled
+        let _ = XCTWaiter.wait(for: [waitExpectation], timeout: 0.7)
+
+        // Then - only "First" should have been received
+        XCTAssertEqual(receivedWords, ["First"])
+    }
+
+    @MainActor
+    func testEmptyAlignmentDoesNotCrash() {
+        // Given
+        let alignment = makeAlignment(words: [])
         let scheduler = WordHighlightScheduler(alignment: alignment)
 
         var receivedWords: [String] = []
@@ -140,16 +227,52 @@ final class WordHighlightSchedulerTests: XCTestCase {
             receivedWords.append(timing.text)
         }
 
-        // When - first callback works
-        await scheduler.testHandleFramePosition(0)  // "The" - works, sets isActive = true
+        // When
+        scheduler.start()
 
-        // Then stop() is called (simulated)
-        scheduler.testDeactivate()
+        // Wait a bit using XCTWaiter with inverted expectation
+        let waitExpectation = XCTestExpectation(description: "Wait")
+        waitExpectation.isInverted = true
+        let _ = XCTWaiter.wait(for: [waitExpectation], timeout: 0.1)
 
-        // More callbacks arrive (queued before stop() but delivered after)
-        await scheduler.testHandleFramePosition(2205)  // Ignored because isActive = false
+        // Then - no crashes, no emissions
+        XCTAssertEqual(receivedWords, [])
+        XCTAssertTrue(scheduler.isActive)
 
-        // Then - only "The" received, "Knowledge" ignored
-        XCTAssertEqual(receivedWords, ["The"])
+        scheduler.stop()
+    }
+
+    @MainActor
+    func testDoubleStartIsIdempotent() {
+        // Given
+        let alignment = makeAlignment(words: [("Test", 0.0, 0.1)])
+        let scheduler = WordHighlightScheduler(alignment: alignment)
+
+        let expectation = XCTestExpectation(description: "Word emitted")
+        var emitCount = 0
+
+        scheduler.onWordChange = { _ in
+            emitCount += 1
+            expectation.fulfill()
+        }
+
+        // When - start twice
+        scheduler.start()
+        scheduler.start()
+
+        // Wait for emission
+        let result = XCTWaiter.wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(result, .completed)
+
+        // Wait a bit more to make sure no extra emissions
+        let waitExpectation = XCTestExpectation(description: "Wait for potential extra")
+        waitExpectation.isInverted = true
+        let _ = XCTWaiter.wait(for: [waitExpectation], timeout: 0.2)
+
+        // Then - should only emit once
+        XCTAssertEqual(emitCount, 1)
+
+        // Cleanup
+        scheduler.stop()
     }
 }
