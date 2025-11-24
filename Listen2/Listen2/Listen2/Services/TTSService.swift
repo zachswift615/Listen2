@@ -97,7 +97,6 @@ final class TTSService: NSObject, ObservableObject {
     private var currentDocumentID: UUID? // Current document ID for alignment caching
 
     // Alignment services
-    private let alignmentService = PhonemeAlignmentService()
     private let alignmentCache = AlignmentCache()
     private let ctcAligner = CTCForcedAligner()
 
@@ -198,10 +197,6 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     private func initializeAlignmentService() async {
-        // PhonemeAlignmentService doesn't require initialization
-        // It works directly with phoneme data from TTS synthesis
-        print("[TTSService] ✅ Phoneme alignment service ready (no initialization needed)")
-
         // Initialize CTC Forced Aligner (async)
         if useCTCAlignment {
             do {
