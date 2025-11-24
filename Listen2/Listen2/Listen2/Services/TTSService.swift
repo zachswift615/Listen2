@@ -107,6 +107,8 @@ final class TTSService: NSObject, ObservableObject {
     // Word highlighting for Piper playback
     /// Event-driven word highlighting scheduler
     private var wordScheduler: WordHighlightScheduler?
+    /// Current alignment for pause/resume (scheduler needs this to restart)
+    private var currentSchedulerAlignment: AlignmentResult?
     private let wordHighlighter = WordHighlighter()
 
     // Subscription for word highlighting
@@ -523,9 +525,9 @@ final class TTSService: NSObject, ObservableObject {
         // The continuation should stay active so the task can resume properly.
         // When audio resumes, it will eventually complete and resume the continuation normally.
 
-        // NOTE: Don't stop word scheduler here!
-        // The tap naturally stops firing when playerNode.pause() is called.
-        // This allows resume() to continue highlighting without recreating the scheduler.
+        // Stop word scheduler - scheduled events continue firing even when playerNode pauses
+        // which causes incorrect highlighting
+        stopWordScheduler()
 
         Task { @MainActor in
             audioPlayer.pause()
@@ -537,9 +539,11 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func resume() {
-        // NOTE: Don't restart word scheduler here!
-        // The tap automatically resumes firing when playerNode.resume() is called.
-        // The scheduler remains active and continues highlighting from where it left off.
+        // Restart word scheduler if we have alignment data
+        // (scheduler was stopped on pause because scheduled events continue while audio is paused)
+        if let alignment = currentSchedulerAlignment, wordHighlightingEnabled {
+            setupWordScheduler(alignment: alignment)
+        }
 
         Task { @MainActor in
             audioPlayer.resume()
@@ -639,6 +643,7 @@ final class TTSService: NSObject, ObservableObject {
         }
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopWordScheduler()
+        currentSchedulerAlignment = nil  // Clear alignment since we're stopping completely
         isPlaying = false
 
         // Reset state to prevent stale content when switching documents
@@ -1121,11 +1126,11 @@ final class TTSService: NSObject, ObservableObject {
         // Tear down any existing scheduler
         wordScheduler?.stop()
 
-        // Create new scheduler
-        let scheduler = WordHighlightScheduler(
-            playerNode: audioPlayer.playerNode,
-            alignment: alignment
-        )
+        // Store alignment for pause/resume
+        currentSchedulerAlignment = alignment
+
+        // Create new scheduler (no longer needs playerNode)
+        let scheduler = WordHighlightScheduler(alignment: alignment)
 
         scheduler.onWordChange = { [weak self] timing in
             self?.handleScheduledWordChange(timing)
