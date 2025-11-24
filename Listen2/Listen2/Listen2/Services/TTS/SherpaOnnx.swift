@@ -153,7 +153,6 @@ struct GeneratedAudio {
         // DIAGNOSTIC: Log what we received from C API
         print("[SherpaOnnx] C API returned: num_phonemes=\(phonemeCount), " +
               "symbols=\(audio.pointee.phoneme_symbols != nil ? "✓" : "✗"), " +
-              "durations=\(audio.pointee.phoneme_durations != nil ? "✓" : "✗"), " +
               "char_start=\(audio.pointee.phoneme_char_start != nil ? "✓" : "✗"), " +
               "char_length=\(audio.pointee.phoneme_char_length != nil ? "✓" : "✗")")
 
@@ -175,9 +174,6 @@ struct GeneratedAudio {
                 }
             }
 
-            // Check if durations are available (may be null for position-only tracking)
-            let durationsPtr = audio.pointee.phoneme_durations
-
             for i in 0..<phonemeCount {
                 // Extract symbol string
                 guard let symbolCStr = symbolsPtr[i] else {
@@ -186,22 +182,8 @@ struct GeneratedAudio {
                 }
                 let symbol = String(cString: symbolCStr)
 
-                // Calculate duration from sample count if available, otherwise use 0
-                let duration: TimeInterval
-                if let durations = durationsPtr {
-                    // Read sample count from C API (int32_t)
-                    let sampleCount = Int32(durations[i])
-                    // Convert samples to seconds: duration = samples / sample_rate
-                    duration = TimeInterval(sampleCount) / TimeInterval(audio.pointee.sample_rate)
-
-                    // Log first phoneme's duration for verification
-                    if i == 0 {
-                        print("[SherpaOnnx] First phoneme duration: \(sampleCount) samples = \(String(format: "%.4f", duration))s @ \(audio.pointee.sample_rate)Hz")
-                    }
-                } else {
-                    // No duration data available (position-only tracking)
-                    duration = 0
-                }
+                // Duration is always 0 - CTC forced alignment computes timing separately
+                let duration: TimeInterval = 0
 
                 // Extract character position
                 let charStart = Int(startsPtr[i])
@@ -225,9 +207,7 @@ struct GeneratedAudio {
             }
 
             // Log summary of extraction
-            let hasDurations = durationsPtr != nil
-            let totalDuration = phonemes.reduce(0.0) { $0 + $1.duration }
-            print("[SherpaOnnx] Extracted \(phonemes.count) phonemes (durations: \(hasDurations ? "✓" : "✗"), total: \(String(format: "%.3f", totalDuration))s)")
+            print("[SherpaOnnx] Extracted \(phonemes.count) phonemes")
             print("[SherpaOnnx] Phoneme symbols: \(phonemes.map { $0.symbol }.joined(separator: " "))")
 
             // DEBUG: Log position analysis
@@ -281,11 +261,10 @@ struct GeneratedAudio {
         // DIAGNOSTIC: Final extraction summary
         print("[Swift-Extract] ===== EXTRACTION COMPLETE =====")
         print("[Swift-Extract] Phonemes: \(phonemes.count)")
-        print("[Swift-Extract] Durations available: \(audio.pointee.phoneme_durations != nil ? "YES" : "NO")")
         if !phonemes.isEmpty {
-            print("[Swift-Extract] First phoneme: '\(phonemes[0].symbol)' range=\(phonemes[0].textRange) duration=\(String(format: "%.4f", phonemes[0].duration))s")
+            print("[Swift-Extract] First phoneme: '\(phonemes[0].symbol)' range=\(phonemes[0].textRange)")
             if phonemes.count > 1 {
-                print("[Swift-Extract] Last phoneme: '\(phonemes[phonemes.count-1].symbol)' range=\(phonemes[phonemes.count-1].textRange) duration=\(String(format: "%.4f", phonemes[phonemes.count-1].duration))s")
+                print("[Swift-Extract] Last phoneme: '\(phonemes[phonemes.count-1].symbol)' range=\(phonemes[phonemes.count-1].textRange)")
             }
         }
         print("[Swift-Extract] Normalized text: '\(self.normalizedText)'")
