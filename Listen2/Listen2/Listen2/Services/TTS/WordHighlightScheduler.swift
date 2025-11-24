@@ -33,6 +33,12 @@ final class WordHighlightScheduler {
     /// Currently highlighted word index (-1 = none)
     private var currentWordIndex: Int = -1
 
+    /// Starting sample time when tap was installed (for relative position calculation)
+    private var startSampleTime: Int64 = 0
+
+    /// Scheduled work items for each word - cancelled on stop
+    private var scheduledWorkItems: [DispatchWorkItem] = []
+
     /// Whether the scheduler is actively monitoring
     private(set) var isActive: Bool = false
 
@@ -80,10 +86,14 @@ final class WordHighlightScheduler {
         // Get format from player node
         let format = playerNode.outputFormat(forBus: 0)
 
+        // Reset start time - will be captured on first callback
+        startSampleTime = 0
+
         // Install tap - callback runs on audio thread
+        // Use smaller buffer for more frequent callbacks (better short-word detection)
         playerNode.installTap(
             onBus: 0,
-            bufferSize: 1024,  // ~46ms at 22050Hz
+            bufferSize: 512,  // ~23ms at 22050Hz - should catch 50ms+ words
             format: format
         ) { [weak self] buffer, time in
             // AUDIO THREAD - minimal work only!
@@ -104,6 +114,18 @@ final class WordHighlightScheduler {
     private func removeTap() {
         playerNode?.removeTap(onBus: 0)
         print("[WordHighlightScheduler] Tap removed")
+    }
+
+    /// Cancel all scheduled word change events
+    private func cancelScheduledWorkItems() {
+        let count = scheduledWorkItems.count
+        for workItem in scheduledWorkItems {
+            workItem.cancel()
+        }
+        scheduledWorkItems.removeAll()
+        if count > 0 {
+            print("[WordHighlightScheduler] Cancelled \(count) scheduled work items")
+        }
     }
 
     // MARK: - Word Lookup
@@ -138,14 +160,24 @@ final class WordHighlightScheduler {
 
     /// Handle a frame position update from the audio tap
     /// Called on main thread after dispatch from audio callback
-    /// - Parameter framePosition: Current frame position in samples
+    /// - Parameter framePosition: Current frame position in samples (absolute since engine start)
     private func handleFramePosition(_ framePosition: Int64) {
         // Ignore callbacks that arrive after stop() was called
         // (they may have been queued before stop() but dispatched after)
         guard isActive else { return }
 
-        // Convert frame position to seconds
-        let currentTime = Double(framePosition) / sampleRate
+        // Capture start time on first callback
+        if startSampleTime == 0 {
+            startSampleTime = framePosition
+            print("[WordHighlightScheduler] Captured startSampleTime=\(startSampleTime)")
+        }
+
+        // Convert RELATIVE frame position to seconds
+        let relativeSamples = framePosition - startSampleTime
+        let currentTime = Double(relativeSamples) / sampleRate
+
+        // DEBUG: Log frame position and calculated time
+        print("[WordHighlightScheduler] relativeTime=\(String(format: "%.3f", currentTime))s, totalDuration=\(String(format: "%.3f", alignment.totalDuration))s")
 
         // Find which word should be highlighted
         guard let wordIndex = findWordIndex(at: currentTime) else { return }
@@ -154,6 +186,7 @@ final class WordHighlightScheduler {
         if wordIndex != currentWordIndex {
             currentWordIndex = wordIndex
             let timing = alignment.wordTimings[wordIndex]
+            print("[WordHighlightScheduler] Word changed to index \(wordIndex): '\(timing.text)'")
             onWordChange?(timing)
         }
     }
