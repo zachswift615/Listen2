@@ -128,6 +128,46 @@ final class WordHighlightScheduler {
         }
     }
 
+    /// Schedule word change callbacks at exact times
+    /// Each word gets a DispatchWorkItem that fires at its startTime
+    private func scheduleWordChanges() {
+        // Cancel any existing scheduled items
+        cancelScheduledWorkItems()
+
+        guard !alignment.wordTimings.isEmpty else {
+            print("[WordHighlightScheduler] No words to schedule")
+            return
+        }
+
+        let startTime = DispatchTime.now()
+
+        for (index, timing) in alignment.wordTimings.enumerated() {
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isActive else { return }
+                self.emitWordChange(at: index)
+            }
+
+            scheduledWorkItems.append(workItem)
+
+            // Schedule at exact word start time
+            let deadline = startTime + timing.startTime
+            DispatchQueue.main.asyncAfter(deadline: deadline, execute: workItem)
+        }
+
+        print("[WordHighlightScheduler] Scheduled \(scheduledWorkItems.count) word changes")
+    }
+
+    /// Emit word change callback for word at index
+    private func emitWordChange(at index: Int) {
+        guard index >= 0 && index < alignment.wordTimings.count else { return }
+        guard index != currentWordIndex else { return }  // Don't re-emit same word
+
+        currentWordIndex = index
+        let timing = alignment.wordTimings[index]
+        print("[WordHighlightScheduler] Word \(index): '\(timing.text)' @ \(String(format: "%.3f", timing.startTime))s")
+        onWordChange?(timing)
+    }
+
     // MARK: - Word Lookup
 
     /// Find the word index at a given time
