@@ -63,15 +63,16 @@ final class WordHighlightScheduler {
     /// Start monitoring audio playback for word highlighting
     func start() {
         guard !isActive else { return }
-        installTap()
         isActive = true
+        currentWordIndex = -1
+        scheduleWordChanges()
     }
 
     /// Stop monitoring and clean up
     func stop() {
         guard isActive else { return }
-        removeTap()
         isActive = false
+        cancelScheduledWorkItems()
         currentWordIndex = -1
     }
 
