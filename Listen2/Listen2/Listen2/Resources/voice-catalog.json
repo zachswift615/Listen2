@@ -22,7 +22,7 @@
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-high.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": true
+      "is_bundled": false
     },
     {
       "id": "en_US-hfc_female-medium",
@@ -34,7 +34,7 @@
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_female-medium.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": true
+      "is_bundled": false
     },
     {
       "id": "en_US-hfc_male-medium",
@@ -46,7 +46,7 @@
       "sample_url": null,
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_male-medium.tar.bz2",
       "checksum": "sha256:placeholder",
-      "is_bundled": true
+      "is_bundled": false
     },
     {
       "id": "en_US-ryan-high",
@@ -61,6 +61,6 @@
       "is_bundled": false
     }
   ],
-  "version": "1.0",
-  "last_updated": "2025-11-08"
+  "version": "1.1",
+  "last_updated": "2025-11-23"
 }
