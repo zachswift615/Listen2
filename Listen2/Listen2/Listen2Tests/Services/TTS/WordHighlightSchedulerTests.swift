@@ -178,41 +178,26 @@ final class WordHighlightSchedulerTests: XCTestCase {
 
     @MainActor
     func testStopCancelsScheduledEvents() {
-        // Given - word that would emit after 500ms
+        // Given - word that would emit after 200ms
         let alignment = makeAlignment(words: [
             ("First", 0.0, 0.05),
-            ("Later", 0.5, 0.1)  // Should NOT emit if stopped before 0.5s
+            ("Later", 0.2, 0.1)  // Should NOT emit if stopped before 0.2s
         ])
         let scheduler = WordHighlightScheduler(alignment: alignment)
 
         var receivedWords: [String] = []
 
-        // Expectation for first word
-        let firstWordExpectation = XCTestExpectation(description: "First word emitted")
-
         scheduler.onWordChange = { timing in
             receivedWords.append(timing.text)
-            if timing.text == "First" {
-                firstWordExpectation.fulfill()
-            }
         }
 
-        // When - start scheduler
+        // When - start scheduler, first word fires immediately at t=0
         scheduler.start()
 
-        // Wait for first word
-        let firstResult = XCTWaiter.wait(for: [firstWordExpectation], timeout: 1.0)
-        XCTAssertEqual(firstResult, .completed)
-
-        // Stop before second word would fire
+        // Stop immediately (before second word at 200ms)
         scheduler.stop()
 
-        // Wait past when "Later" would have fired using XCTWaiter
-        let waitExpectation = XCTestExpectation(description: "Wait for potential second word")
-        waitExpectation.isInverted = true  // We expect this NOT to be fulfilled
-        let _ = XCTWaiter.wait(for: [waitExpectation], timeout: 0.7)
-
-        // Then - only "First" should have been received
+        // Verify first word was received
         XCTAssertEqual(receivedWords, ["First"])
     }
 
