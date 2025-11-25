@@ -282,20 +282,23 @@ final class VoxPDFService {
                 let titleText = String(cString: title)
 
                 // Use the page number from VoxPDF TOC metadata
-                // This is the actual page number from the PDF's TOC structure
-                let pageNum = Int(tocEntry.page_number)
+                // This is the actual page number from the PDF's TOC structure (1-indexed)
+                let pdfPageNum = Int(tocEntry.page_number)
+
+                // Convert to 0-indexed for our mapping (PDFs use 1-indexed pages)
+                let pageIndex = max(0, pdfPageNum - 1)
 
                 // Map page number to paragraph index using our mapping
                 let paragraphIndex: Int
-                if let pageInfo = pageMapping[pageNum] {
+                if let pageInfo = pageMapping[pageIndex] {
                     // Use the first paragraph on this page
                     paragraphIndex = pageInfo.firstParagraphIndex
-                    print("📍 TOC: '\(titleText)' -> page \(pageNum) -> paragraph \(paragraphIndex) (first on page)")
+                    print("📍 TOC: '\(titleText)' -> page \(pdfPageNum) (0-indexed: \(pageIndex)) -> paragraph \(paragraphIndex) (first on page)")
                 } else {
                     // Fallback: use text search if page mapping unavailable
                     // (shouldn't happen, but safety first)
                     paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
-                    print("⚠️ TOC: '\(titleText)' -> page \(pageNum) NOT IN MAPPING, using text search -> paragraph \(paragraphIndex)")
+                    print("⚠️ TOC: '\(titleText)' -> page \(pdfPageNum) NOT IN MAPPING, using text search -> paragraph \(paragraphIndex)")
                 }
 
                 tocEntries.append(TOCEntry(
