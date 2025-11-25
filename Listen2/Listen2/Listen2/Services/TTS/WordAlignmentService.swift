@@ -107,6 +107,9 @@ actor WordAlignmentService {
             ),
             wenet_ctc: SherpaOnnxOfflineWenetCtcModelConfig(
                 model: nil
+            ),
+            omnilingual: SherpaOnnxOfflineOmnilingualAsrCtcModelConfig(
+                model: nil
             )
         )
 

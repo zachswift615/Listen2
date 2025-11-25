@@ -146,117 +146,18 @@ struct GeneratedAudio {
             self.samples = []
         }
 
-        // Extract phoneme data
-        let phonemeCount = Int(audio.pointee.num_phonemes)
-        var phonemes: [PhonemeInfo] = []
+        // Note: Official sherpa-onnx doesn't expose phoneme extraction fields.
+        // These were custom additions in the fork for the old PhonemeAlignmentService.
+        // We now use CTC forced alignment which doesn't need phoneme data.
+        print("[SherpaOnnx] Using official API - phoneme extraction not available (CTC handles alignment)")
+        self.phonemes = []
 
-        // DIAGNOSTIC: Log what we received from C API
-        print("[SherpaOnnx] C API returned: num_phonemes=\(phonemeCount), " +
-              "symbols=\(audio.pointee.phoneme_symbols != nil ? "✓" : "✗"), " +
-              "char_start=\(audio.pointee.phoneme_char_start != nil ? "✓" : "✗"), " +
-              "char_length=\(audio.pointee.phoneme_char_length != nil ? "✓" : "✗")")
-
-        if phonemeCount > 0,
-           let symbolsPtr = audio.pointee.phoneme_symbols,
-           let startsPtr = audio.pointee.phoneme_char_start,
-           let lengthsPtr = audio.pointee.phoneme_char_length {
-
-            print("[SherpaOnnx] Extracting \(phonemeCount) phonemes from C API")
-
-            // DIAGNOSTIC: Log first 5 phonemes' position data to verify correctness
-            if phonemeCount > 0 {
-                let sampleCount = min(5, phonemeCount)
-                print("[SherpaOnnx] First \(sampleCount) phonemes' raw position data:")
-                for i in 0..<sampleCount {
-                    let start = startsPtr[i]
-                    let length = lengthsPtr[i]
-                    print("  [\(i)]: char_start=\(start), char_length=\(length) -> range[\(start)..<\(start+length)]")
-                }
-            }
-
-            for i in 0..<phonemeCount {
-                // Extract symbol string
-                guard let symbolCStr = symbolsPtr[i] else {
-                    print("⚠️  [SherpaOnnx] Null phoneme symbol at index \(i)")
-                    continue
-                }
-                let symbol = String(cString: symbolCStr)
-
-                // Duration is always 0 - CTC forced alignment computes timing separately
-                let duration: TimeInterval = 0
-
-                // Extract character position
-                let charStart = Int(startsPtr[i])
-                let charLength = Int(lengthsPtr[i])
-
-                // DEBUG: Log first few phoneme positions to trace offset issue
-                if i < 10 {
-                    print("[SherpaOnnx-Swift] Phoneme \(i): '\(symbol)' raw_position=\(charStart) length=\(charLength)")
-                }
-
-                // SAFETY: Ensure we don't create invalid ranges
-                // (espeak can give us duplicate or overlapping positions)
-                let rangeEnd = max(charStart, charStart + charLength)
-                let textRange = charStart..<rangeEnd
-
-                phonemes.append(PhonemeInfo(
-                    symbol: symbol,
-                    duration: duration,
-                    textRange: textRange
-                ))
-            }
-
-            // Log summary of extraction
-            print("[SherpaOnnx] Extracted \(phonemes.count) phonemes")
-            print("[SherpaOnnx] Phoneme symbols: \(phonemes.map { $0.symbol }.joined(separator: " "))")
-
-            // DEBUG: Log position analysis
-            if !phonemes.isEmpty {
-                let firstNonPunctuation = phonemes.first { $0.textRange.lowerBound >= 0 }
-                if let first = firstNonPunctuation {
-                    print("[SherpaOnnx-Swift] First word phoneme starts at position \(first.textRange.lowerBound), should be 0 for first word")
-                }
-            }
-        } else {
-            print("⚠️  [SherpaOnnx] No phoneme data available from C API (count=\(phonemeCount))")
-        }
-
-        self.phonemes = phonemes
-
-        // NEW: Extract normalized text
-        if let normalized = audio.pointee.normalized_text {
-            self.normalizedText = String(cString: normalized)
-            print("[SherpaOnnx] Extracted normalized text: '\(self.normalizedText)'")
-        } else {
-            self.normalizedText = ""
-            print("[SherpaOnnx] No normalized text available from C API")
-        }
-
-        // NEW: Extract character mapping
-        var charMapping: [(Int, Int)] = []
-        if let mapping = audio.pointee.char_mapping {
-            let mapCount = Int(audio.pointee.char_mapping_count)
-            print("[SherpaOnnx] Extracting \(mapCount) character mapping entries")
-
-            for i in 0..<mapCount {
-                let origPos = Int(mapping[i * 2])
-                let normPos = Int(mapping[i * 2 + 1])
-                charMapping.append((origPos, normPos))
-            }
-
-            // Log first few mappings for verification
-            if mapCount > 0 {
-                let sampleCount = min(3, mapCount)
-                print("[SherpaOnnx] First \(sampleCount) char mappings:")
-                for i in 0..<sampleCount {
-                    print("  [\(i)]: orig_pos=\(charMapping[i].0), norm_pos=\(charMapping[i].1)")
-                }
-            }
-        } else {
-            print("[SherpaOnnx] No character mapping available from C API")
-        }
-
-        self.charMapping = charMapping
+        // Note: Official sherpa-onnx doesn't expose normalized_text or char_mapping
+        // These were custom additions in the fork. Since we use CTC forced alignment now,
+        // we don't need this data.
+        self.normalizedText = ""
+        self.charMapping = []
+        print("[SherpaOnnx] Using official API (normalized_text/char_mapping not available)")
 
         // DIAGNOSTIC: Final extraction summary
         print("[Swift-Extract] ===== EXTRACTION COMPLETE =====")
