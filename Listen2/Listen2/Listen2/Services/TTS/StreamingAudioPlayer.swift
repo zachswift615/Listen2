@@ -35,20 +35,32 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     private var totalDuration: TimeInterval = 0
     private var startTime: TimeInterval = 0
 
+    // Notification observers for background audio handling
+    private var configurationChangeObserver: NSObjectProtocol?
+    private var interruptionObserver: NSObjectProtocol?
+
     // MARK: - Initialization
 
     override init() {
         super.init()
         setupAudioEngine()
+        setupNotificationObservers()
     }
 
     deinit {
+        // Remove notification observers
+        if let observer = configurationChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = interruptionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
         // CRITICAL: Clean up audio engine to prevent system audio corruption
         playerNode.stop()
         audioEngine.stop()
         audioEngine.reset()
         displayLink?.invalidate()
-        print("[StreamingAudioPlayer] 🧹 Deinitialized and cleaned up audio engine")
     }
 
     // MARK: - Setup
@@ -64,7 +76,6 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
             channels: 1,
             interleaved: false
         ) else {
-            print("[StreamingAudioPlayer] ❌ Failed to create audio format")
             return
         }
 
@@ -81,9 +92,88 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         audioEngine.prepare()
         do {
             try audioEngine.start()
-            print("[StreamingAudioPlayer] ✅ Audio engine started")
         } catch {
-            print("[StreamingAudioPlayer] ❌ Failed to start audio engine: \(error)")
+            // Failed to start audio engine
+        }
+    }
+
+    private func setupNotificationObservers() {
+        // Handle audio engine configuration changes (background/foreground transitions)
+        configurationChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audioEngine,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleConfigurationChange()
+            }
+        }
+
+        // Handle audio session interruptions (phone calls, alarms, etc.)
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                self?.handleInterruption(notification)
+            }
+        }
+    }
+
+    private func handleConfigurationChange() {
+        // Audio engine configuration changed (e.g., route change, background/foreground)
+        // Restart the engine if we were playing
+        let wasPlaying = isPlaying
+
+        if !audioEngine.isRunning {
+            // Engine stopped - restart it
+            audioEngine.prepare()
+            do {
+                try audioEngine.start()
+
+                // Resume playback if we were playing
+                if wasPlaying {
+                    playerNode.play()
+                }
+            } catch {
+                // Failed to restart audio engine
+            }
+        }
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let userInfo = notification.userInfo,
+              let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            // Interruption began - pause playback
+            if isPlaying {
+                pause()
+            }
+
+        case .ended:
+            // Interruption ended - check if we should resume
+            guard let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt else {
+                return
+            }
+
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+            if options.contains(.shouldResume) {
+                // System suggests resuming - restart engine if needed
+                if !audioEngine.isRunning {
+                    audioEngine.prepare()
+                    try? audioEngine.start()
+                }
+                // Note: We don't auto-resume playback here - let the user control that
+            }
+
+        @unknown default:
+            break
         }
     }
 
@@ -104,14 +194,11 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         playerNode.play()
         isPlaying = true
         startDisplayLink()
-
-        print("[StreamingAudioPlayer] 🎬 Started streaming session")
     }
 
     /// Schedule an audio chunk for playback
     func scheduleChunk(_ audioData: Data) {
         guard let format = currentFormat else {
-            print("[StreamingAudioPlayer] ❌ No audio format available")
             return
         }
 
@@ -121,7 +208,6 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
             pcmFormat: format,
             frameCapacity: AVAudioFrameCount(sampleCount)
         ) else {
-            print("[StreamingAudioPlayer] ❌ Failed to create buffer")
             return
         }
 
@@ -151,14 +237,11 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
                 self?.onBufferComplete(bufferID: bufferID)
             }
         }
-
-        print("[StreamingAudioPlayer] 📦 Scheduled chunk #\(bufferID): \(sampleCount) samples (\(String(format: "%.3f", chunkDuration))s)")
     }
 
     /// Mark that all chunks have been scheduled
     func finishScheduling() {
         allBuffersScheduled = true
-        print("[StreamingAudioPlayer] ✅ All buffers scheduled (total: \(scheduledBufferCount), duration: \(String(format: "%.3f", totalDuration))s)")
 
         // Check if already complete (for very short audio)
         checkCompletion()
@@ -166,14 +249,12 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
 
     private func onBufferComplete(bufferID: Int) {
         playedBufferCount += 1
-        print("[StreamingAudioPlayer] ✓ Buffer #\(bufferID) complete (played: \(playedBufferCount)/\(scheduledBufferCount))")
 
         checkCompletion()
     }
 
     private func checkCompletion() {
         if allBuffersScheduled && playedBufferCount >= scheduledBufferCount {
-            print("[StreamingAudioPlayer] 🏁 All buffers played, calling onFinished")
             isPlaying = false
             stopDisplayLink()
             onFinished?()
@@ -195,34 +276,29 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     /// Emergency reset to clear any corrupted audio state
     /// Call this if audio becomes distorted or corrupted
     func emergencyReset() {
-        print("[StreamingAudioPlayer] 🚨 Emergency reset initiated")
         stop()
         audioEngine.stop()
         audioEngine.reset()
 
         // Re-setup the audio engine from scratch
         setupAudioEngine()
-        print("[StreamingAudioPlayer] ✅ Emergency reset complete")
     }
 
     func setRate(_ rate: Float) {
         // TODO: Implement playback rate control for streaming audio
         // This requires AVAudioEngine rate adjustment which is more complex than AVAudioPlayer
-        print("[StreamingAudioPlayer] ⚠️ setRate not yet implemented for chunk streaming (rate: \(rate))")
     }
 
     func pause() {
         playerNode.pause()
         isPlaying = false
         stopDisplayLink()
-        print("[StreamingAudioPlayer] ⏸️ Paused")
     }
 
     func resume() {
         playerNode.play()
         isPlaying = true
         startDisplayLink()
-        print("[StreamingAudioPlayer] ▶️ Resumed")
     }
 
     // MARK: - Progress Tracking
