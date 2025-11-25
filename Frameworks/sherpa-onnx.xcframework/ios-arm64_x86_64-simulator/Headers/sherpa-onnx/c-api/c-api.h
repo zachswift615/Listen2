@@ -480,6 +480,10 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineWenetCtcModelConfig {
   const char *model;
 } SherpaOnnxOfflineWenetCtcModelConfig;
 
+SHERPA_ONNX_API typedef struct SherpaOnnxOfflineOmnilingualAsrCtcModelConfig {
+  const char *model;
+} SherpaOnnxOfflineOmnilingualAsrCtcModelConfig;
+
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineModelConfig {
   SherpaOnnxOfflineTransducerModelConfig transducer;
   SherpaOnnxOfflineParaformerModelConfig paraformer;
@@ -506,6 +510,7 @@ SHERPA_ONNX_API typedef struct SherpaOnnxOfflineModelConfig {
   SherpaOnnxOfflineZipformerCtcModelConfig zipformer_ctc;
   SherpaOnnxOfflineCanaryModelConfig canary;
   SherpaOnnxOfflineWenetCtcModelConfig wenet_ctc;
+  SherpaOnnxOfflineOmnilingualAsrCtcModelConfig omnilingual;
 } SherpaOnnxOfflineModelConfig;
 
 SHERPA_ONNX_API typedef struct SherpaOnnxOfflineRecognizerConfig {
@@ -1092,18 +1097,6 @@ SHERPA_ONNX_API typedef struct SherpaOnnxGeneratedAudio {
   const float *samples;  // in the range [-1, 1]
   int32_t n;             // number of samples
   int32_t sample_rate;
-  const int32_t *phoneme_durations;  // sample count per phoneme (w_ceil tensor)
-  int32_t num_phonemes;              // number of phonemes
-
-  // Phoneme sequence data (aligned with phoneme_durations)
-  const char **phoneme_symbols;       // Array of IPA symbol strings
-  const int32_t *phoneme_char_start;  // Character offset for each phoneme
-  const int32_t *phoneme_char_length; // Character count for each phoneme
-
-  // NEW: Normalized text and character mapping from espeak-ng
-  const char *normalized_text;        // Text after espeak normalization (e.g., "Dr." -> "Doctor")
-  const int32_t *char_mapping;        // Pairs of [original_pos, normalized_pos]
-  int32_t char_mapping_count;         // Number of mapping pairs
 } SherpaOnnxGeneratedAudio;
 
 // If the callback returns 0, then it stops generating
