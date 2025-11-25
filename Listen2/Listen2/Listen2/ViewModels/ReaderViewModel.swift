@@ -128,9 +128,24 @@ final class ReaderViewModel: ObservableObject {
             let decoder = JSONDecoder()
             if let entries = try? decoder.decode([TOCEntry].self, from: tocData) {
                 print("📖 ✅ Decoded \(entries.count) TOC entries from stored data")
-                tocEntries = entries
-                isLoading = false
-                return
+
+                // Validate stored TOC against current document (sanity check)
+                let totalParagraphs = document.extractedText.count
+                let invalidEntries = entries.filter { $0.paragraphIndex >= totalParagraphs }
+
+                if invalidEntries.isEmpty {
+                    // Stored TOC is valid for this document
+                    print("📖 ✅ Stored TOC validated: all \(entries.count) entries within bounds")
+                    tocEntries = entries
+                    isLoading = false
+                    return
+                } else {
+                    // Stored TOC is stale (from different version of document)
+                    print("📖 ⚠️ Stored TOC is STALE - \(invalidEntries.count) out-of-bounds entries")
+                    print("📖 ⚠️ Document has \(totalParagraphs) paragraphs but TOC has entries pointing beyond that")
+                    print("📖 🔄 Discarding stale TOC, will re-extract fresh TOC data")
+                    // Fall through to re-extract TOC
+                }
             } else {
                 print("📖 ⚠️ Failed to decode stored TOC data")
             }

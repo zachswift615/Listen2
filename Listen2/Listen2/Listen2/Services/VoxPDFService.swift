@@ -282,24 +282,19 @@ final class VoxPDFService {
                 let titleText = String(cString: title)
 
                 // Use the page number from VoxPDF TOC metadata
-                // This is the actual page number from the PDF's TOC structure (1-indexed)
-                let pdfPageNum = Int(tocEntry.page_number)
+                // VoxPDF uses 0-indexed page numbers (same as its other APIs)
+                let pageNum = Int(tocEntry.page_number)
 
-                // Convert to 0-indexed for our mapping (PDFs use 1-indexed pages)
-                let pageIndex = max(0, pdfPageNum - 1)
-
-                // Map page number to paragraph index using our mapping
-                let paragraphIndex: Int
-                if let pageInfo = pageMapping[pageIndex] {
-                    // Use the first paragraph on this page
-                    paragraphIndex = pageInfo.firstParagraphIndex
-                    print("📍 TOC: '\(titleText)' -> page \(pdfPageNum) (0-indexed: \(pageIndex)) -> paragraph \(paragraphIndex) (first on page)")
-                } else {
-                    // Fallback: use text search if page mapping unavailable
-                    // (shouldn't happen, but safety first)
-                    paragraphIndex = self.findParagraphIndex(for: titleText, in: paragraphs)
-                    print("⚠️ TOC: '\(titleText)' -> page \(pdfPageNum) NOT IN MAPPING, using text search -> paragraph \(paragraphIndex)")
+                // Validate page exists in this document
+                guard let pageInfo = pageMapping[pageNum] else {
+                    // Page doesn't exist - common in truncated PDFs that still have full TOC metadata
+                    print("⚠️ TOC: '\(titleText)' -> page \(pageNum) DOES NOT EXIST in document (has \(pageMapping.count) pages) - SKIPPING")
+                    continue // Skip this TOC entry entirely
                 }
+
+                // Use the first paragraph on this page
+                let paragraphIndex = pageInfo.firstParagraphIndex
+                print("📍 TOC: '\(titleText)' -> page \(pageNum) -> paragraph \(paragraphIndex) (first on page)")
 
                 tocEntries.append(TOCEntry(
                     title: titleText,
