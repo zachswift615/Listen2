@@ -683,15 +683,6 @@ actor CTCForcedAligner {
             // so token spans directly map to word characters without any gaps
         }
 
-        // DEBUG: Log first few word timings
-        print("[CTCForcedAligner] 🔗 Created \(wordTimings.count) word timings:")
-        for (i, timing) in wordTimings.prefix(5).enumerated() {
-            print("[CTCForcedAligner]   [\(i)] '\(timing.text)' @ \(String(format: "%.3f", timing.startTime))-\(String(format: "%.3f", timing.startTime + timing.duration))s, range=\(timing.rangeLocation)...\(timing.rangeLocation + timing.rangeLength)")
-        }
-        if wordTimings.count > 5 {
-            print("[CTCForcedAligner]   ... and \(wordTimings.count - 5) more")
-        }
-
         return wordTimings
     }
 

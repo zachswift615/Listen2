@@ -36,7 +36,6 @@ struct TextNormalizationMapper {
         for (dispIndex, dispWord) in display.enumerated() {
             guard synthIndex < synthesized.count else {
                 // Ran out of synthesized words - shouldn't happen with good input
-                print("[NormMapper] Warning: Ran out of synthesized words at display word '\(dispWord)'")
                 break
             }
 
@@ -55,7 +54,6 @@ struct TextNormalizationMapper {
                 synthIndex = indices.last! + 1
             } else {
                 // No match found - word might have been dropped
-                print("[NormMapper] Warning: No match for '\(dispWord)' starting at synth index \(synthIndex)")
                 // Try to continue with next synth word
                 synthIndex += 1
             }

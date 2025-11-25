@@ -59,10 +59,6 @@ final class PiperTTSProvider: TTSProvider {
         let tokensPath = voiceManager.tokensPath(for: voiceID)
         let espeakDataPath = voiceManager.speakNGDataPath(for: voiceID)
 
-        print("[PiperTTS] DEBUG: modelPath = \(modelPath?.path ?? "nil")")
-        print("[PiperTTS] DEBUG: tokensPath = \(tokensPath?.path ?? "nil")")
-        print("[PiperTTS] DEBUG: espeakDataPath = \(espeakDataPath?.path ?? "nil")")
-
         guard let modelPath = modelPath,
               let tokensPath = tokensPath,
               let espeakDataPath = espeakDataPath else {
@@ -89,7 +85,6 @@ final class PiperTTSProvider: TTSProvider {
         }
 
         isInitialized = true
-        print("[PiperTTS] Initialized with voice: \(voiceID)")
     }
 
     func synthesize(_ text: String, speed: Float) async throws -> SynthesisResult {
@@ -118,15 +113,6 @@ final class PiperTTSProvider: TTSProvider {
 
         // Convert to WAV data
         let wavData = createWAVData(samples: audio.samples, sampleRate: Int(audio.sampleRate))
-
-        print("[PiperTTS] Synthesized \(audio.samples.count) samples at \(audio.sampleRate) Hz")
-        print("[PiperTTS] Received \(audio.phonemes.count) phonemes from sherpa-onnx")
-
-        // Log first few phonemes for debugging
-        if !audio.phonemes.isEmpty {
-            let preview = audio.phonemes.prefix(5).map { "\($0.symbol)[\($0.textRange)]" }.joined(separator: " ")
-            print("[PiperTTS] First phonemes: \(preview)...")
-        }
 
         return SynthesisResult(
             audioData: wavData,
@@ -175,9 +161,6 @@ final class PiperTTSProvider: TTSProvider {
         // Convert to WAV data
         let wavData = createWAVData(samples: audio.samples, sampleRate: Int(audio.sampleRate))
 
-        print("[PiperTTS] Streamed synthesis: \(audio.samples.count) samples at \(audio.sampleRate) Hz")
-        print("[PiperTTS] Received \(audio.phonemes.count) phonemes from sherpa-onnx")
-
         return SynthesisResult(
             audioData: wavData,
             phonemes: audio.phonemes,
@@ -191,7 +174,6 @@ final class PiperTTSProvider: TTSProvider {
     func cleanup() {
         tts = nil
         isInitialized = false
-        print("[PiperTTS] Cleaned up voice: \(voiceID)")
     }
 
     // MARK: - Private Helpers

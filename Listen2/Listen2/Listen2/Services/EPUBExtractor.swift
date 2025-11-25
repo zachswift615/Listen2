@@ -110,7 +110,6 @@ final class EPUBExtractor {
         let tocNCXURL = baseURL.appendingPathComponent(tocNCXPath)
 
         guard FileManager.default.fileExists(atPath: tocNCXURL.path) else {
-            print("⚠️ No toc.ncx found at: \(tocNCXURL.path)")
             return []
         }
 

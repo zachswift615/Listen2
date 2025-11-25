@@ -27,11 +27,6 @@ private final class ContinuationResumer<T, E: Error>: @unchecked Sendable {
         let cont = continuation
         continuation = nil
         lock.unlock()  // Unlock BEFORE calling resume to prevent deadlocks
-        #if DEBUG
-        if cont == nil {
-            print("[ContinuationResumer] ⚠️ Ignored duplicate resume(returning:)")
-        }
-        #endif
         cont?.resume(returning: value)
     }
 
@@ -41,11 +36,6 @@ private final class ContinuationResumer<T, E: Error>: @unchecked Sendable {
         let cont = continuation
         continuation = nil
         lock.unlock()  // Unlock BEFORE calling resume to prevent deadlocks
-        #if DEBUG
-        if cont == nil {
-            print("[ContinuationResumer] ⚠️ Ignored duplicate resume(throwing:)")
-        }
-        #endif
         cont?.resume(throwing: error)
     }
 
@@ -138,9 +128,8 @@ final class TTSService: NSObject, ObservableObject {
         Task {
             do {
                 try await alignmentCache.clearAll()
-                print("[TTSService] 🗑️ Cleared corrupt alignment cache")
             } catch {
-                print("[TTSService] ⚠️ Failed to clear cache: \(error)")
+                // Failed to clear cache - continue anyway
             }
         }
 
@@ -183,10 +172,7 @@ final class TTSService: NSObject, ObservableObject {
 
             // Initialize ready queue with dependencies
             self.readyQueue = ReadyQueue(synthesisQueue: self.synthesisQueue!, ctcAligner: self.ctcAligner)
-
-            print("[TTSService] ✅ Piper TTS initialized with voice: \(bundledVoice.id)")
         } catch {
-            print("[TTSService] ⚠️ Piper initialization failed, using AVSpeech fallback: \(error)")
             self.provider = nil
             self.synthesisQueue = nil
         }
@@ -201,11 +187,7 @@ final class TTSService: NSObject, ObservableObject {
         if useCTCAlignment {
             do {
                 try await ctcAligner.initialize()
-                let hasOnnx = await ctcAligner.hasOnnxSession
-                print("[TTSService] ✅ CTC Forced Aligner initialized (ONNX: \(hasOnnx ? "available" : "mock mode"))")
             } catch {
-                print("[TTSService] ⚠️ CTC Forced Aligner init failed: \(error)")
-                print("[TTSService] 🔄 Falling back to phoneme alignment")
                 await MainActor.run {
                     useCTCAlignment = false
                 }
@@ -219,8 +201,7 @@ final class TTSService: NSObject, ObservableObject {
         do {
             try audioSessionManager.activateSession()
         } catch {
-            // Log error but don't fail - audio will still work with default settings
-            print("Warning: Could not activate audio session: \(error.localizedDescription)")
+            // Error activating audio session - audio will still work with default settings
         }
     }
 
@@ -325,14 +306,11 @@ final class TTSService: NSObject, ObservableObject {
         // Update the rate
         playbackRate = newRate
 
-        print("[TTSService] 🎚️ Playback rate changed to: \(newRate)")
-
         // Update now playing info with new rate
         nowPlayingManager.updatePlaybackRate(newRate)
 
         // Apply rate to audio player immediately (affects currently playing audio)
         audioPlayer.setRate(newRate)
-        print("[TTSService] 🔊 Applied playback rate to audio player: \(newRate)")
 
         // If we were playing, restart current paragraph with new rate
         // NOTE: We don't call stop() because it resets progress to .initial (paragraph 0)
@@ -340,7 +318,6 @@ final class TTSService: NSObject, ObservableObject {
         if wasPlaying {
             // Cancel active task FIRST - this sets Task.isCancelled which will break the sentence loop
             if let task = activeSpeakTask {
-                print("[TTSService] 🛑 Cancelling active speak task for speed change")
                 task.cancel()
                 activeSpeakTask = nil
             }
@@ -354,11 +331,9 @@ final class TTSService: NSObject, ObservableObject {
                 // CRITICAL: Must await setSpeed BEFORE restarting playback
                 // Otherwise playback starts with old speed (race condition)
                 await synthesisQueue?.setSpeed(newRate)
-                print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate)")
 
                 // Resume continuation before stopping to prevent leak (safe - resumer prevents double-resume)
                 if let resumer = activeResumer {
-                    print("[TTSService] ⚠️ Resuming active continuation during speed change")
                     resumer.resume(throwing: CancellationError())
                     activeResumer = nil
                 }
@@ -369,14 +344,12 @@ final class TTSService: NSObject, ObservableObject {
                 stopWordScheduler()
 
                 // Now speed is set, restart playback
-                print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new speed")
                 speakParagraph(at: currentIndex)
             }
         } else {
             // Not playing, just update speed for next playback
             Task {
                 await synthesisQueue?.setSpeed(newRate)
-                print("[TTSService] ✅ Speed updated in synthesis queue to: \(newRate) (not playing)")
             }
         }
     }
@@ -385,7 +358,6 @@ final class TTSService: NSObject, ObservableObject {
         if voice.isPiperVoice {
             // Validate voice ID format
             guard voice.id.hasPrefix("piper:") else {
-                print("[TTSService] ⚠️ Invalid Piper voice ID format: \(voice.id)")
                 return
             }
 
@@ -404,8 +376,6 @@ final class TTSService: NSObject, ObservableObject {
 
             // Extract voice ID from "piper:en_US-lessac-medium" format
             let voiceID = String(voice.id.dropFirst("piper:".count))
-
-            print("[TTSService] 🎤 Switching to voice: \(voiceID)")
 
             // Reinitialize Piper provider with new voice
             Task {
@@ -429,8 +399,6 @@ final class TTSService: NSObject, ObservableObject {
                         provider: piperProvider
                     )
 
-                    print("[TTSService] ✅ Switched to Piper voice: \(voiceID)")
-
                     // If was playing, restart from saved position with new voice
                     if wasPlaying {
                         // Restore document state
@@ -448,11 +416,10 @@ final class TTSService: NSObject, ObservableObject {
                         )
 
                         // Restart playback from saved position
-                        print("[TTSService] 🔄 Restarting playback at paragraph \(currentIndex) with new voice")
                         speakParagraph(at: currentIndex)
                     }
                 } catch {
-                    print("[TTSService] ⚠️ Failed to switch Piper voice: \(error)")
+                    // Failed to switch voice - continue with current voice
                 }
             }
         } else {
@@ -466,7 +433,6 @@ final class TTSService: NSObject, ObservableObject {
     func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil, documentID: UUID? = nil) {
         // Check if highlighting setting changed - invalidate cache if so
         if wordHighlightingEnabled != previousHighlightingSetting {
-            print("[TTSService] Highlighting setting changed, invalidating pipeline")
             Task {
                 await readyQueue?.stopPipeline()
             }
@@ -579,7 +545,6 @@ final class TTSService: NSObject, ObservableObject {
         // CRITICAL: Resume any active continuation to prevent double-resume crash
         // This was missing and caused crashes when skip buttons were pressed during playback
         if let resumer = activeResumer {
-            print("[TTSService] ⚠️ Resuming active continuation during stopAudioOnly()")
             resumer.resume(throwing: CancellationError())
             activeResumer = nil
         }
@@ -611,7 +576,6 @@ final class TTSService: NSObject, ObservableObject {
     func stop() {
         // Cancel active speak task first (this sets Task.isCancelled)
         if let task = activeSpeakTask {
-            print("[TTSService] 🛑 Cancelling active speak task during stop()")
             task.cancel()
             activeSpeakTask = nil
         }
@@ -621,7 +585,6 @@ final class TTSService: NSObject, ObservableObject {
 
         // CRITICAL: Resume any active continuation to prevent leaks and double-resume crashes
         if let resumer = activeResumer {
-            print("[TTSService] ⚠️ Resuming active continuation during stop() to prevent leak")
             resumer.resume(throwing: CancellationError())
             activeResumer = nil
         }
@@ -671,23 +634,17 @@ final class TTSService: NSObject, ObservableObject {
 
         // Cancel any existing speak task before starting a new one
         if let existingTask = activeSpeakTask {
-            print("[TTSService] 🔄 Cancelling existing speak task before starting new one")
             existingTask.cancel()
         }
 
         // Use ReadyQueue for unified pipeline
         guard let readyQueue = readyQueue else {
-            print("[TTSService] ⚠️ ReadyQueue unavailable, falling back to legacy")
             speakParagraphLegacy(at: index)
             return
         }
 
-        let taskID = UUID().uuidString.prefix(8)
-        print("[TTSService] 🎬 Starting ReadyQueue task \(taskID) for paragraph \(index)")
-
         activeSpeakTask = Task {
             defer {
-                print("[TTSService] 🏁 Ending ReadyQueue task \(taskID)")
                 self.activeSpeakTask = nil
             }
 
@@ -700,7 +657,6 @@ final class TTSService: NSObject, ObservableObject {
 
                 if firstReady {
                     // Content already buffered - no need to restart pipeline or show loading
-                    print("[TTSService] ✅ First sentence already buffered for P\(index)")
                 } else {
                     // Show loading indicator and start pipeline
                     await MainActor.run { isPreparing = true }
@@ -708,7 +664,6 @@ final class TTSService: NSObject, ObservableObject {
                 }
 
                 let sentenceCount = await readyQueue.getSentenceCount(forParagraph: index)
-                print("[TTSService] 📝 Paragraph \(index) has \(sentenceCount) sentences")
 
                 // Play sentences sequentially
                 for sentenceIndex in 0..<sentenceCount {
@@ -738,7 +693,6 @@ final class TTSService: NSObject, ObservableObject {
                                 isPreparing = false
                             }
                         }
-                        print("[TTSService] ⏭️ Skipping empty sentence \(sentenceIndex)")
                         continue
                     } else {
                         // Cancelled, stopped, or timed out - reset isPreparing before throwing
@@ -750,17 +704,14 @@ final class TTSService: NSObject, ObservableObject {
                 }
 
                 // All sentences played
-                print("[TTSService] ✅ Paragraph \(index) complete, advancing")
                 handleParagraphComplete()
 
             } catch is CancellationError {
-                print("[TTSService] ⏸️ Playback cancelled")
                 await MainActor.run {
                     isPreparing = false
                     isPlaying = false
                 }
             } catch {
-                print("[TTSService] ❌ Playback error: \(error)")
                 await MainActor.run {
                     isPreparing = false
                     isPlaying = false
@@ -783,7 +734,6 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Start streaming session
                 audioPlayer.startStreaming { [weak self] in
-                    print("[TTSService] 🏁 Sentence playback complete")
                     self?.activeResumer = nil
                     resumer.resume(returning: ())
                 }
@@ -810,9 +760,7 @@ final class TTSService: NSObject, ObservableObject {
 
     /// Legacy playback method (fallback when ReadyQueue unavailable)
     private func speakParagraphLegacy(at index: Int) {
-        // This is the old implementation - copy the existing speakParagraph body here
-        // before replacing it, or simply log an error
-        print("[TTSService] ⚠️ Legacy playback not implemented - ReadyQueue required")
+        // Legacy playback not implemented - ReadyQueue required
         isPlaying = false
     }
 
@@ -828,7 +776,6 @@ final class TTSService: NSObject, ObservableObject {
         do {
             _ = try await synthesisQueue?.streamSentence(sentence, delegate: accumulatingDelegate)
         } catch {
-            print("[TTSService] ❌ Synthesis error: \(error)")
             throw error
         }
 
@@ -836,16 +783,12 @@ final class TTSService: NSObject, ObservableObject {
         let combinedAudio = await accumulatingDelegate.getCombinedAudio()
 
         guard !chunks.isEmpty else {
-            print("[TTSService] ⏭️ Skipping empty synthesized sentence")
             return
         }
-
-        print("[TTSService] 📦 Synthesized \(chunks.count) chunks for sentence")
 
         // STEP 2: Perform CTC alignment BEFORE starting playback
         // NOTE: combinedAudio is raw Float32 samples from streaming chunks
         if useCTCAlignment {
-            print("[TTSService] 🎯 Performing CTC alignment BEFORE playback starts (offset=\(sentenceStartOffset))")
             await performCTCAlignmentSync(
                 sentence: sentence,
                 audioData: combinedAudio,
@@ -865,7 +808,6 @@ final class TTSService: NSObject, ObservableObject {
                 // Start streaming session
                 audioPlayer.startStreaming { [weak self] in
                     // Sentence finished playing
-                    print("[TTSService] 🏁 Sentence playback complete")
                     self?.activeResumer = nil
                     resumer.resume(returning: ())  // Safe - won't double-resume
                 }
@@ -895,7 +837,6 @@ final class TTSService: NSObject, ObservableObject {
     ///   - isFloat32: If true, audioData is raw Float32 samples; if false, it's WAV format with Int16 samples
     private func performCTCAlignmentSync(sentence: String, audioData: Data, paragraphIndex: Int, sentenceStartOffset: Int = 0, isFloat32: Bool = false) async {
         guard !audioData.isEmpty else {
-            print("[TTSService] ⚠️ CTC alignment skipped - no audio data")
             return
         }
 
@@ -909,27 +850,20 @@ final class TTSService: NSObject, ObservableObject {
             samples = extractSamples(from: audioData)
         }
         guard !samples.isEmpty else {
-            print("[TTSService] ⚠️ CTC alignment skipped - no samples extracted")
             return
         }
 
-        print("[TTSService] 🎯 CTC alignment (sync) for '\(sentence.prefix(30))...' (\(samples.count) samples, format=\(isFloat32 ? "Float32" : "WAV"), offset=\(sentenceStartOffset))")
-
-        let alignmentStartTime = CFAbsoluteTimeGetCurrent()
         do {
-            let alignment = try await ctcAligner.align(
+            _ = try await ctcAligner.align(
                 audioSamples: samples,
                 sampleRate: 22050,  // Piper TTS output rate
                 transcript: sentence,
                 paragraphIndex: paragraphIndex,
                 sentenceStartOffset: sentenceStartOffset  // Pass offset to adjust rangeLocation
             )
-
-            let alignmentElapsed = CFAbsoluteTimeGetCurrent() - alignmentStartTime
-            print("[TTSService] ✅ CTC alignment (sync) complete: \(alignment.wordTimings.count) words, \(String(format: "%.2f", alignment.totalDuration))s audio, took \(String(format: "%.3f", alignmentElapsed))s")
             // NOTE: Alignment result is not used - legacy path; new path uses WordHighlightScheduler
         } catch {
-            print("[TTSService] ⚠️ CTC alignment failed: \(error)")
+            // CTC alignment failed - continue without highlighting
         }
     }
 
@@ -939,15 +873,12 @@ final class TTSService: NSObject, ObservableObject {
         return Task {
             // Check cancellation before expensive work
             guard !Task.isCancelled else {
-                print("[TTSService] 🛑 Pre-synthesis cancelled before starting for sentence \(index)")
                 return
             }
 
             guard let queue = await self.synthesisQueue else {
                 return
             }
-
-            print("[TTSService] 🔮 Pre-synthesizing sentence \(index): '\(sentence.prefix(50))...'")
 
             do {
                 let delegate = await BufferingChunkDelegate(
@@ -957,7 +888,6 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Check again after delegate creation
                 guard !Task.isCancelled else {
-                    print("[TTSService] 🛑 Pre-synthesis cancelled during setup for sentence \(index)")
                     return
                 }
 
@@ -966,7 +896,6 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Check before waiting for completion
                 guard !Task.isCancelled else {
-                    print("[TTSService] 🛑 Pre-synthesis cancelled after synthesis for sentence \(index)")
                     return
                 }
 
@@ -975,12 +904,10 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Now it's safe to mark complete
                 await chunkBuffer.markComplete(forSentence: index)
-
-                print("[TTSService] ✅ Pre-synthesis complete for sentence \(index)")
             } catch is CancellationError {
-                print("[TTSService] 🛑 Pre-synthesis cancelled for sentence \(index)")
+                // Pre-synthesis cancelled
             } catch {
-                print("[TTSService] ⚠️ Pre-synthesis failed for sentence \(index): \(error)")
+                // Pre-synthesis failed
             }
         }
     }
@@ -993,7 +920,6 @@ final class TTSService: NSObject, ObservableObject {
     private func playBufferedChunks(_ chunks: [Data], sentence: String, sentenceStartOffset: Int = 0) async throws {
         // Handle empty sentences (e.g., only punctuation)
         guard !chunks.isEmpty else {
-            print("[TTSService] ⏭️ Skipping empty buffered sentence")
             return
         }
 
@@ -1007,7 +933,6 @@ final class TTSService: NSObject, ObservableObject {
         // This ensures highlight timer starts at time 0 when playback starts
         // NOTE: Buffered chunks are raw Float32 samples from streaming synthesis
         if useCTCAlignment {
-            print("[TTSService] 🎯 Performing CTC alignment BEFORE playback starts (offset=\(sentenceStartOffset))")
             await performCTCAlignmentSync(
                 sentence: sentence,
                 audioData: combinedAudio,
@@ -1025,7 +950,6 @@ final class TTSService: NSObject, ObservableObject {
 
                 // Start streaming session
                 audioPlayer.startStreaming { [weak self] in
-                    print("[TTSService] 🏁 Buffered playback complete")
                     self?.activeResumer = nil
                     resumer.resume(returning: ())  // Safe - won't double-resume
                 }
@@ -1133,8 +1057,6 @@ final class TTSService: NSObject, ObservableObject {
 
         scheduler.start()
         wordScheduler = scheduler
-
-        print("[TTSService] Word scheduler started for \(alignment.wordTimings.count) words")
     }
 
     /// Handle word change from scheduler

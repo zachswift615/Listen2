@@ -61,26 +61,15 @@ final class DocumentProcessor {
     func extractWordPositions(from url: URL, sourceType: SourceType, paragraphs: [String]) async -> DocumentWordMap? {
         switch sourceType {
         case .pdf:
-            print("🔤 Starting VoxPDF word position extraction (this may take a while for large PDFs)...")
-            let startTime = Date()
-
             do {
                 let wordMap = try await voxPDFService.extractWordPositions(from: url)
-                let duration = Date().timeIntervalSince(startTime)
-                print("✅ Extracted \(wordMap.words.count) words for highlighting in \(String(format: "%.1f", duration))s")
                 return wordMap
             } catch {
-                print("⚠️ VoxPDF word position extraction failed: \(error), word highlighting unavailable")
                 return nil
             }
 
         case .epub, .clipboard:
-            print("🔤 Generating word positions from plain text...")
-            let startTime = Date()
-
             let wordMap = PlainTextWordMapper.createWordMap(from: paragraphs)
-            let duration = Date().timeIntervalSince(startTime)
-            print("✅ Generated \(wordMap.words.count) word positions in \(String(format: "%.3f", duration))s")
             return wordMap
         }
     }
@@ -93,20 +82,13 @@ final class DocumentProcessor {
         switch sourceType {
         case .pdf:
             // Try VoxPDF first
-            print("🚀 Starting VoxPDF TOC extraction...")
             do {
                 entries = try await voxPDFService.extractTOC(from: url, paragraphs: paragraphs)
 
-                if !entries.isEmpty {
-                    print("✅ ✅ ✅ VoxPDF extracted \(entries.count) TOC entries - USING PAGE NUMBERS")
-                } else {
-                    print("⚠️ ⚠️ ⚠️ VoxPDF returned empty TOC, falling back to PDFKit TEXT SEARCH")
+                if entries.isEmpty {
                     throw DocumentProcessorError.extractionFailed
                 }
             } catch {
-                print("❌ ❌ ❌ VoxPDF TOC extraction FAILED: \(error)")
-                print("⚠️ ⚠️ ⚠️ FALLING BACK TO PDFKIT TEXT SEARCH")
-
                 // Fallback to PDFKit metadata extraction
                 guard let pdfDocument = PDFDocument(url: url) else {
                     return nil
@@ -114,7 +96,6 @@ final class DocumentProcessor {
 
                 let tocService = TOCService()
                 entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: paragraphs)
-                print("📝 PDFKit extracted \(entries.count) TOC entries using TEXT SEARCH (unreliable)")
             }
 
         case .epub:
@@ -148,11 +129,8 @@ final class DocumentProcessor {
                 throw DocumentProcessorError.extractionFailed
             }
 
-            print("✅ VoxPDF extraction succeeded with \(paragraphs.count) paragraphs")
             return paragraphs
         } catch {
-            print("⚠️ VoxPDF extraction failed: \(error), falling back to PDFKit")
-
             // Fallback to PDFKit if VoxPDF fails
             return try await extractPDFTextFallback(from: url)
         }
@@ -182,7 +160,6 @@ final class DocumentProcessor {
             throw DocumentProcessorError.extractionFailed
         }
 
-        print("✅ PDFKit fallback extraction succeeded with \(paragraphs.count) paragraphs")
         return paragraphs
     }
 
@@ -203,16 +180,8 @@ final class DocumentProcessor {
             // Check if this is a heading (preserve headings even if short)
             let isHeading = isLikelyHeading(trimmedLine)
 
-            // Debug logging for lines that look like chapter markers
-            if trimmedLine.uppercased().hasPrefix("CHAPTER") || trimmedLine.uppercased().hasPrefix("TOOL USE") {
-                print("📄 Line: '\(trimmedLine)' | isHeading: \(isHeading) | count: \(trimmedLine.count)")
-            }
-
             // Skip very short lines UNLESS they're headings or end with sentence punctuation
             if !isHeading && trimmedLine.count < 15 && !trimmedLine.hasSuffix(".") && !trimmedLine.hasSuffix("!") && !trimmedLine.hasSuffix("?") {
-                if trimmedLine.uppercased().hasPrefix("CHAPTER") {
-                    print("⚠️ SKIPPING chapter line: '\(trimmedLine)'")
-                }
                 continue
             }
 

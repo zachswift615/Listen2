@@ -288,13 +288,11 @@ final class VoxPDFService {
                 // Validate page exists in this document
                 guard let pageInfo = pageMapping[pageNum] else {
                     // Page doesn't exist - common in truncated PDFs that still have full TOC metadata
-                    print("⚠️ TOC: '\(titleText)' -> page \(pageNum) DOES NOT EXIST in document (has \(pageMapping.count) pages) - SKIPPING")
                     continue // Skip this TOC entry entirely
                 }
 
                 // Use the first paragraph on this page
                 let paragraphIndex = pageInfo.firstParagraphIndex
-                print("📍 TOC: '\(titleText)' -> page \(pageNum) -> paragraph \(paragraphIndex) (first on page)")
 
                 tocEntries.append(TOCEntry(
                     title: titleText,
@@ -317,8 +315,6 @@ final class VoxPDFService {
         let pageCount = voxpdf_get_page_count(doc)
         var currentParagraphIndex = 0
 
-        print("🗺️ Building page mapping for \(pageCount) pages...")
-
         for pageNum in 0..<pageCount {
             let paragraphCount = voxpdf_get_paragraph_count(doc, UInt32(pageNum), &error)
             guard error == CVoxPDFErrorOk else {
@@ -330,13 +326,7 @@ final class VoxPDFService {
 
             mapping[Int(pageNum)] = (firstIndex, lastIndex, Int(paragraphCount))
             currentParagraphIndex += Int(paragraphCount)
-
-            if pageNum < 5 || pageNum >= pageCount - 2 {
-                print("  Page \(pageNum): paragraphs \(firstIndex)-\(lastIndex) (count: \(paragraphCount))")
-            }
         }
-
-        print("🗺️ Page mapping complete: \(mapping.count) pages, \(currentParagraphIndex) total paragraphs")
         return mapping
     }
 

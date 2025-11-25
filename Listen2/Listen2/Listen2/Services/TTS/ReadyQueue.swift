@@ -90,14 +90,11 @@ actor ReadyQueue {
         // Clear any stale window data
         paragraphWindow.removeAll()
         paragraphSentences.removeAll()
-
-        print("[ReadyQueue] 📚 Document source set (total: \(totalCount()) paragraphs)")
     }
 
     /// Update whether word highlighting is enabled
     func setWordHighlightingEnabled(_ enabled: Bool) {
         wordHighlightingEnabled = enabled
-        print("[ReadyQueue] Word highlighting: \(enabled ? "enabled" : "disabled")")
     }
 
     // MARK: - Public Methods
@@ -126,8 +123,6 @@ actor ReadyQueue {
 
             // Recalculate buffer bytes
             currentBufferBytes = ready.values.reduce(0) { $0 + $1.chunks.reduce(0) { $0 + $1.count } }
-
-            print("[ReadyQueue] 📝 Preserved \(ready.count) buffered sentences for P\(paragraphIndex)+")
         } else {
             ready.removeAll()
             skipped.removeAll()
@@ -144,9 +139,6 @@ actor ReadyQueue {
 
         // Slide window to new position
         slideWindowTo(paragraphIndex: paragraphIndex)
-
-        let sentenceCount = getSentences(forParagraph: paragraphIndex).count
-        print("[ReadyQueue] 📝 Starting from P\(paragraphIndex)S\(sentenceIndex) (paragraph has \(sentenceCount) sentences, highlighting: \(wordHighlightingEnabled ? "on" : "off"), session: \(currentSession))")
 
         // Start the pipeline
         pipelineTask = Task { [weak self, currentSession] in
@@ -165,7 +157,6 @@ actor ReadyQueue {
 
             // Check if skipped (empty sentence)
             if skipped.contains(key) {
-                print("[ReadyQueue] ⏭️ \(key) was skipped (empty)")
                 updateCurrentPosition(paragraphIndex: paragraphIndex, sentenceIndex: sentenceIndex)
                 kickPipeline()
                 return nil
@@ -174,7 +165,6 @@ actor ReadyQueue {
             // Atomically check and remove
             if let sentence = ready.removeValue(forKey: key) {
                 currentBufferBytes -= sentence.chunks.reduce(0) { $0 + $1.count }
-                print("[ReadyQueue] 🎯 Took \(key) (buffer: \(ready.count)/\(ReadyQueueConstants.maxSentenceLookahead))")
 
                 updateCurrentPosition(paragraphIndex: paragraphIndex, sentenceIndex: sentenceIndex)
                 kickPipeline()
@@ -184,10 +174,6 @@ actor ReadyQueue {
 
             // Brief sleep to avoid busy-waiting
             try? await Task.sleep(nanoseconds: ReadyQueueConstants.waitIntervalNanos)
-        }
-
-        if iterations >= ReadyQueueConstants.maxWaitIterations {
-            print("[ReadyQueue] ⏰ Timeout waiting for \(key) after \(iterations * 50)ms")
         }
 
         return nil
@@ -220,7 +206,6 @@ actor ReadyQueue {
         skipped.removeAll()
         processing.removeAll()
         currentBufferBytes = 0
-        print("[ReadyQueue] 🛑 Pipeline stopped")
     }
 
     /// Get current buffer status
@@ -273,9 +258,6 @@ actor ReadyQueue {
                 // Evict skipped sentences
                 skipped = skipped.filter { $0.paragraphIndex != pIdx }
             }
-
-            let freedMB = Double(freedBytes) / (1024 * 1024)
-            print("[ReadyQueue] 🪟 Window slid: evicted \(paragraphsToRemove.count) paragraph(s), \(evictedSentences) sentence(s), freed \(String(format: "%.2f", freedMB))MB, keeping P\(paragraphIndex)+")
         }
     }
 
@@ -299,7 +281,6 @@ actor ReadyQueue {
             if let oldest = paragraphWindow.keys.min() {
                 paragraphWindow.removeValue(forKey: oldest)
                 paragraphSentences.removeValue(forKey: oldest)
-                print("[ReadyQueue] 🪟 Evicted P\(oldest) to make room in window")
             }
         }
 
@@ -381,7 +362,6 @@ actor ReadyQueue {
 
     /// Main pipeline loop - processes sentences ahead of playback across paragraphs
     private func runPipeline(session: Int) async {
-        print("[ReadyQueue] 🚀 Pipeline started (session: \(session))")
 
         while !shouldStop && !Task.isCancelled && session == sessionID {
             // Check if we have room in the buffer (count and memory)
@@ -394,7 +374,6 @@ actor ReadyQueue {
             // Get next position to process (spans paragraphs)
             guard let (pIdx, sIdx) = getNextPosition() else {
                 // End of document - pipeline exits, will restart if needed via kickPipeline
-                print("[ReadyQueue] 📖 Reached end of document in pipeline")
                 break
             }
 
@@ -417,11 +396,9 @@ actor ReadyQueue {
             }
 
             let (text, offset) = sentences[sIdx]
-            print("[ReadyQueue] 🔄 Processing \(key): '\(text.prefix(30))...'")
 
             // Check cancellation/session before slow operation
             guard !Task.isCancelled && !shouldStop && session == sessionID else {
-                print("[ReadyQueue] ⚠️ Session invalidated before processing \(key) (was: \(session), now: \(sessionID))")
                 break
             }
 
@@ -435,7 +412,6 @@ actor ReadyQueue {
             ) {
                 // Check cancellation/session after slow operation
                 guard !Task.isCancelled && !shouldStop && session == sessionID else {
-                    print("[ReadyQueue] ⚠️ Session invalidated after processing \(key) (was: \(session), now: \(sessionID))")
                     break
                 }
 
@@ -443,14 +419,11 @@ actor ReadyQueue {
                 ready[key] = readySentence
                 currentBufferBytes += readySentence.chunks.reduce(0) { $0 + $1.count }
                 processing.remove(key)
-
-                print("[ReadyQueue] ✅ \(key) ready (buffer: \(ready.count)/\(ReadyQueueConstants.maxSentenceLookahead))")
             } else {
                 // processSentence returned nil - check if it was due to session invalidation
                 // IMPORTANT: Don't mark as "skipped" if session was invalidated during processing
                 // because the sentence content is NOT actually empty - it just wasn't processed
                 guard session == sessionID && !Task.isCancelled && !shouldStop else {
-                    print("[ReadyQueue] ⚠️ Session invalidated during processing of \(key) - NOT marking as skipped")
                     processing.remove(key)
                     break
                 }
@@ -458,11 +431,8 @@ actor ReadyQueue {
                 // Session is still valid, so this was truly an empty/failed sentence
                 skipped.insert(key)
                 processing.remove(key)
-                print("[ReadyQueue] ⏭️ \(key) skipped (empty sentence)")
             }
         }
-
-        print("[ReadyQueue] 🏁 Pipeline ended (session: \(session))")
     }
 
     // MARK: - Private: Sentence Processing
@@ -487,20 +457,17 @@ actor ReadyQueue {
             // streamSentence returns WAV data, but we use raw chunks from delegate for alignment
             _ = try await synthesisQueue.streamSentence(text, delegate: chunkDelegate)
         } catch {
-            print("[ReadyQueue] ❌ Synthesis failed: \(error)")
             return nil
         }
 
         let chunks = chunkDelegate.getChunks()
 
         guard !chunks.isEmpty else {
-            print("[ReadyQueue] ⏭️ Empty synthesis result")
             return nil
         }
 
         // Check cancellation/session between synthesis and alignment
         guard !Task.isCancelled && !shouldStop && session == sessionID else {
-            print("[ReadyQueue] ⚠️ Session invalidated after synthesis (was: \(session), now: \(sessionID), stopped: \(shouldStop), cancelled: \(Task.isCancelled))")
             return nil
         }
 
@@ -508,8 +475,6 @@ actor ReadyQueue {
         var alignment: AlignmentResult? = nil
 
         if wordHighlightingEnabled {
-            let alignmentStartTime = CFAbsoluteTimeGetCurrent()
-
             // FIX: Use raw Float32 chunks instead of WAV-encoded combinedAudio
             // The chunks from PipelineChunkDelegate are raw Float32 samples
             // The combinedAudio from synthesisQueue is WAV format (Int16 PCM with header)
@@ -529,21 +494,14 @@ actor ReadyQueue {
                     sentenceStartOffset: offset
                 )
 
-                let alignmentElapsed = CFAbsoluteTimeGetCurrent() - alignmentStartTime
-                print("[ReadyQueue] ⏱️ Alignment took \(String(format: "%.3f", alignmentElapsed))s for P\(paragraphIndex)S\(sentenceIndex)")
-
             } catch {
-                print("[ReadyQueue] ⚠️ Alignment failed (continuing without): \(error)")
                 // Continue without alignment - highlighting won't work but audio will play
             }
 
             // Check cancellation/session after alignment
             guard !Task.isCancelled && !shouldStop && session == sessionID else {
-                print("[ReadyQueue] ⚠️ Session invalidated after alignment (was: \(session), now: \(sessionID), stopped: \(shouldStop), cancelled: \(Task.isCancelled))")
                 return nil
             }
-        } else {
-            print("[ReadyQueue] ⏭️ Skipping alignment (highlighting disabled)")
         }
 
         // Create ready sentence

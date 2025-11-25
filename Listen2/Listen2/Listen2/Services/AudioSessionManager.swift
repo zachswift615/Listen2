@@ -98,7 +98,7 @@ final class AudioSessionManager: ObservableObject {
             isSessionActive = true
             isInterrupted = false
         } catch {
-            print("Failed to reactivate audio session after interruption: \(error.localizedDescription)")
+            // Error reactivating audio session - will be handled by caller
         }
     }
 

@@ -55,21 +55,16 @@ struct DynamicAlignmentEngine {
     ) -> [AlignedWord] {
 
         guard !phonemeGroups.isEmpty else {
-            print("[DynAlign] No phoneme groups to align")
             return []
         }
 
         guard !displayWords.isEmpty else {
-            print("[DynAlign] No display words to align")
             return []
         }
 
         guard !wordMapping.isEmpty else {
-            print("[DynAlign] No word mapping provided")
             return []
         }
-
-        print("[DynAlign] Aligning \(phonemeGroups.count) phoneme groups to \(displayWords.count) display words using \(wordMapping.count) mappings")
 
         var alignedWords: [AlignedWord] = []
         var currentTime: TimeInterval = 0
@@ -81,7 +76,6 @@ struct DynamicAlignmentEngine {
             let displayText = mapping.displayIndices
                 .compactMap { index in
                     guard index >= 0 && index < displayWords.count else {
-                        print("[DynAlign] Warning: Display index \(index) out of bounds (max: \(displayWords.count - 1))")
                         return nil
                     }
                     return displayWords[index]
@@ -89,7 +83,6 @@ struct DynamicAlignmentEngine {
                 .joined(separator: " ")
 
             if displayText.isEmpty {
-                print("[DynAlign] Warning: Empty display text for mapping \(mappingIndex)")
                 continue
             }
 
@@ -101,7 +94,6 @@ struct DynamicAlignmentEngine {
             for synthIndex in mapping.synthesizedIndices {
                 // Validate synth index
                 guard synthIndex >= 0 && synthIndex < phonemeGroups.count else {
-                    print("[DynAlign] Warning: Synth index \(synthIndex) out of bounds (max: \(phonemeGroups.count - 1))")
                     continue
                 }
 
@@ -130,24 +122,8 @@ struct DynamicAlignmentEngine {
 
                 alignedWords.append(alignedWord)
                 currentTime += wordDuration
-
-                // Log detail for first few words
-                if alignedWords.count <= 3 {
-                    print("[DynAlign] Word \(alignedWords.count): '\(displayText)' @ \(String(format: "%.3f", alignedWord.startTime))s, duration: \(String(format: "%.3f", alignedWord.duration))s, phonemes: \(wordPhonemes.count)")
-                }
-            } else {
-                print("[DynAlign] Warning: No phonemes collected for display word '\(displayText)'")
             }
         }
-
-        // Check for unprocessed phoneme groups
-        if processedGroups < phonemeGroups.count {
-            let unprocessed = phonemeGroups.count - processedGroups
-            print("[DynAlign] Warning: \(unprocessed) phoneme groups not aligned (total: \(phonemeGroups.count), processed: \(processedGroups))")
-        }
-
-        let totalDuration = alignedWords.last.map { $0.startTime + $0.duration } ?? 0
-        print("[DynAlign] ✅ Aligned \(alignedWords.count) words, total duration: \(String(format: "%.3f", totalDuration))s")
 
         return alignedWords
     }
@@ -281,7 +257,6 @@ struct DynamicAlignmentEngine {
             ))
         }
 
-        print("[DynAlign] DTW alignment: \(alignedWords.count) words")
         return alignedWords
     }
 

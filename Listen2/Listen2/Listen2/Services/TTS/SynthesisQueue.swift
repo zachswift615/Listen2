@@ -38,13 +38,11 @@ actor SynthesisQueue {
         self.paragraphs = paragraphs
         self.speed = speed
         self.documentID = documentID
-        print("[SynthesisQueue] Set content: \(paragraphs.count) paragraphs at speed \(speed)")
     }
 
     /// Update playback speed
     func setSpeed(_ speed: Float) {
         self.speed = speed
-        print("[SynthesisQueue] Speed changed to \(speed)")
     }
 
     /// Stream sentence audio chunks with just-in-time synthesis
@@ -52,20 +50,16 @@ actor SynthesisQueue {
     /// - Parameter delegate: Callback for receiving audio chunks
     /// - Returns: AsyncStream of audio chunks
     func streamSentence(_ sentence: String, delegate: SynthesisStreamDelegate?) async throws -> Data {
-        print("[SynthesisQueue] 🎵 Synthesizing sentence: '\(sentence.prefix(50))...'")
-
         let result = try await provider.synthesizeWithStreaming(
             sentence,
             speed: speed,
             delegate: delegate
         )
 
-        print("[SynthesisQueue] ✅ Synthesis complete: \(result.audioData.count) bytes")
         return result.audioData
     }
 
     /// Clear all state (for voice changes, etc.)
     func clearAll() {
-        print("[SynthesisQueue] Cleared")
     }
 }

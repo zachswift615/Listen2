@@ -32,39 +32,27 @@ actor ChunkBuffer {
     func addChunk(_ chunk: Data, forSentence index: Int) {
         // Validate chunk
         guard !chunk.isEmpty else {
-            print("[ChunkBuffer] ⚠️ Ignoring empty chunk for sentence \(index)")
             return
         }
 
         guard chunk.count % MemoryLayout<Float>.size == 0 else {
-            print("[ChunkBuffer] ⚠️ Invalid chunk size \(chunk.count) for sentence \(index)")
             return
         }
 
         // Check buffer size limit
         guard currentSize + chunk.count <= maxBufferSize else {
-            print("[ChunkBuffer] ⚠️ Buffer full (\(currentSize) bytes), dropping chunk for sentence \(index)")
             return
         }
 
         // Add chunk to buffer
         buffers[index, default: []].append(chunk)
         currentSize += chunk.count
-
-        #if DEBUG
-        let chunkCount = buffers[index]?.count ?? 0
-        if chunkCount % 10 == 0 || chunkCount == 1 {
-            print("[ChunkBuffer] 📦 Added chunk #\(chunkCount) for sentence \(index) (buffer: \(currentSize) bytes)")
-        }
-        #endif
     }
 
     /// Mark a sentence as complete (all chunks received and buffered)
     /// CRITICAL: Only call this AFTER all delegate Tasks have completed!
     func markComplete(forSentence index: Int) {
         completedSentences.insert(index)
-        let chunkCount = buffers[index]?.count ?? 0
-        print("[ChunkBuffer] ✅ Sentence \(index) complete (\(chunkCount) chunks buffered)")
     }
 
     /// Atomically take all chunks for a sentence (removes from buffer)
@@ -72,7 +60,6 @@ actor ChunkBuffer {
     func takeChunks(forSentence index: Int) -> [Data]? {
         // Check if synthesis is complete
         guard completedSentences.contains(index) else {
-            print("[ChunkBuffer] ⏳ Sentence \(index) not ready (synthesis incomplete)")
             missCount += 1
             return nil
         }
@@ -86,12 +73,6 @@ actor ChunkBuffer {
         completedSentences.remove(index)
         hitCount += 1
 
-        if chunks.isEmpty {
-            print("[ChunkBuffer] ℹ️ Sentence \(index) is empty (0 chunks)")
-        } else {
-            print("[ChunkBuffer] 🎯 Took \(chunks.count) chunks for sentence \(index) (freed \(chunkSize) bytes, remaining: \(currentSize) bytes)")
-        }
-
         return chunks
     }
 
@@ -102,16 +83,9 @@ actor ChunkBuffer {
 
     /// Clear all buffered data
     func clearAll() {
-        let clearedSize = currentSize
-        let clearedSentences = buffers.count
-
         buffers.removeAll()
         completedSentences.removeAll()
         currentSize = 0
-
-        if clearedSentences > 0 {
-            print("[ChunkBuffer] 🗑️ Cleared all buffers (\(clearedSentences) sentences, \(clearedSize) bytes)")
-        }
     }
 
     /// Get buffer hit rate metric

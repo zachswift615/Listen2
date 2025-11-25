@@ -37,7 +37,6 @@ class SampleContentManager {
         // Extract file name and extension
         let components = filename.split(separator: ".")
         guard components.count >= 2 else {
-            print("Invalid filename format: \(filename)")
             return nil
         }
 
@@ -45,7 +44,6 @@ class SampleContentManager {
         let ext = String(components.last ?? "")
 
         guard let url = Bundle.main.url(forResource: name, withExtension: ext) else {
-            print("Could not find sample document: \(filename)")
             return nil
         }
         return url
@@ -61,7 +59,6 @@ class SampleContentManager {
                 Self.sampleDocuments.contains { $0.displayName == doc.title }
             }
         } catch {
-            print("Error checking for sample documents: \(error)")
             return false
         }
     }
@@ -70,7 +67,6 @@ class SampleContentManager {
     func importSampleDocuments(modelContext: ModelContext, documentProcessor: DocumentProcessor) async throws {
         for sample in Self.sampleDocuments {
             guard let url = getSampleDocumentURL(filename: sample.filename) else {
-                print("Skipping \(sample.filename) - not found in bundle")
                 continue
             }
 
@@ -91,10 +87,8 @@ class SampleContentManager {
                 )
 
                 modelContext.insert(document)
-                print("Imported sample document: \(sample.displayName)")
 
             } catch {
-                print("Failed to import sample document \(sample.displayName): \(error)")
                 throw error
             }
         }

@@ -46,8 +46,6 @@ final class WordHighlighter: ObservableObject {
 
     /// Start highlighting for a new sentence
     func startSentence(_ bundle: SentenceBundle, paragraphText: String, actualAudioDuration: TimeInterval? = nil) {
-        print("[WordHighlighter] startSentence called for \(bundle.sentenceKey)")
-
         // Cancel any transition timer
         transitionTimer?.invalidate()
         transitionTimer = nil
@@ -58,13 +56,9 @@ final class WordHighlighter: ObservableObject {
 
         // Only start timing if we have a timeline
         guard let originalTimeline = bundle.timeline else {
-            print("[WordHighlighter] ❌ No timeline for sentence \(bundle.sentenceKey)")
             // Keep last highlighted word during sentences without timing
             return
         }
-
-        print("[WordHighlighter] ✓ Timeline has \(originalTimeline.wordBoundaries.count) words, \(originalTimeline.phonemes.count) phonemes")
-        print("[WordHighlighter]   Timeline duration: \(String(format: "%.3f", originalTimeline.duration))s (from sample count)")
 
         // Scale timeline to match actual audio duration if provided
         if let actualDuration = actualAudioDuration, actualDuration > 0.01 {
@@ -72,9 +66,6 @@ final class WordHighlighter: ObservableObject {
 
             if abs(actualDuration - timelineDuration) > 0.01 {
                 let scaleFactor = actualDuration / timelineDuration
-
-                print("[WordHighlighter] 🎯 DURATION MISMATCH: Timeline=\(String(format: "%.3f", timelineDuration))s vs Actual=\(String(format: "%.3f", actualDuration))s")
-                print("[WordHighlighter]   Applying scale factor: \(String(format: "%.3f", scaleFactor))x to word boundaries")
 
                 // Scale all word boundaries
                 let scaledBoundaries = originalTimeline.wordBoundaries.map { boundary in
@@ -96,19 +87,10 @@ final class WordHighlighter: ObservableObject {
                     wordBoundaries: scaledBoundaries,
                     duration: actualDuration
                 )
-
-                print("[WordHighlighter]   ✓ Scaled last word end time: \(String(format: "%.3f", scaledBoundaries.last!.endTime))s")
             }
         }
 
         currentTimeline = timeline
-
-        // Log first few words for debugging
-        if let finalTimeline = timeline {
-            for (i, word) in finalTimeline.wordBoundaries.prefix(3).enumerated() {
-                print("[WordHighlighter]   Word \(i): '\(word.word)' @ \(String(format: "%.3f", word.startTime))-\(String(format: "%.3f", word.endTime))s")
-            }
-        }
 
         // Reset timing
         sentenceStartTime = Date()
@@ -117,8 +99,6 @@ final class WordHighlighter: ObservableObject {
 
         // Start display link for updates
         startDisplayLink()
-
-        print("[WordHighlighter] ✓ Started highlighting for sentence \(bundle.sentenceKey)")
     }
 
     /// Pause highlighting
@@ -128,8 +108,6 @@ final class WordHighlighter: ObservableObject {
         pausedTime = Date().timeIntervalSince(startTime)
         isPaused = true
         stopDisplayLink()
-
-        print("[WordHighlighter] Paused at \(pausedTime)s")
     }
 
     /// Resume highlighting
@@ -144,8 +122,6 @@ final class WordHighlighter: ObservableObject {
         if currentTimeline != nil {
             startDisplayLink()
         }
-
-        print("[WordHighlighter] Resumed from \(pausedTime)s")
     }
 
     /// Stop highlighting completely
@@ -167,8 +143,6 @@ final class WordHighlighter: ObservableObject {
                 self?.lastHighlightedWord = nil
             }
         }
-
-        print("[WordHighlighter] Stopped")
     }
 
     /// Handle sentence transition
@@ -179,8 +153,6 @@ final class WordHighlighter: ObservableObject {
         // Clear current timeline but keep highlighting
         currentTimeline = nil
         stopDisplayLink()
-
-        print("[WordHighlighter] Transitioning, keeping word highlighted")
     }
 
     // MARK: - Private Methods
@@ -190,8 +162,6 @@ final class WordHighlighter: ObservableObject {
 
         displayLink = CADisplayLink(target: self, selector: #selector(updateHighlight))
         displayLink?.add(to: .main, forMode: .common)
-
-        print("[WordHighlighter] Display link started")
     }
 
     private func stopDisplayLink() {
@@ -222,11 +192,6 @@ final class WordHighlighter: ObservableObject {
                     }
 
                     self.lastHighlightedWord = self.highlightedWord
-                }
-
-                // Debug output (throttled)
-                if Int(elapsed * 10) % 10 == 0 {  // Log every second
-                    print("[WordHighlighter] Highlighting: \(wordBoundary.word) at \(elapsed)s (offset \(wordBoundary.originalStartOffset)-\(wordBoundary.originalEndOffset))")
                 }
             }
         } else if elapsed > timeline.duration {

@@ -123,12 +123,8 @@ final class LibraryViewModel: ObservableObject {
                 wordMapData: wordMapData
             )
 
-            print("💾 Saving document to SwiftData...")
-            let saveStartTime = Date()
             modelContext.insert(document)
             try modelContext.save()
-            let saveDuration = Date().timeIntervalSince(saveStartTime)
-            print("✅ Document saved in \(String(format: "%.1f", saveDuration))s")
 
             loadDocuments()
 

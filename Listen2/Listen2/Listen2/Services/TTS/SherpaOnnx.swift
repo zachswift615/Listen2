@@ -149,7 +149,6 @@ struct GeneratedAudio {
         // Note: Official sherpa-onnx doesn't expose phoneme extraction fields.
         // These were custom additions in the fork for the old PhonemeAlignmentService.
         // We now use CTC forced alignment which doesn't need phoneme data.
-        print("[SherpaOnnx] Using official API - phoneme extraction not available (CTC handles alignment)")
         self.phonemes = []
 
         // Note: Official sherpa-onnx doesn't expose normalized_text or char_mapping
@@ -157,20 +156,6 @@ struct GeneratedAudio {
         // we don't need this data.
         self.normalizedText = ""
         self.charMapping = []
-        print("[SherpaOnnx] Using official API (normalized_text/char_mapping not available)")
-
-        // DIAGNOSTIC: Final extraction summary
-        print("[Swift-Extract] ===== EXTRACTION COMPLETE =====")
-        print("[Swift-Extract] Phonemes: \(phonemes.count)")
-        if !phonemes.isEmpty {
-            print("[Swift-Extract] First phoneme: '\(phonemes[0].symbol)' range=\(phonemes[0].textRange)")
-            if phonemes.count > 1 {
-                print("[Swift-Extract] Last phoneme: '\(phonemes[phonemes.count-1].symbol)' range=\(phonemes[phonemes.count-1].textRange)")
-            }
-        }
-        print("[Swift-Extract] Normalized text: '\(self.normalizedText)'")
-        print("[Swift-Extract] Char mappings: \(charMapping.count)")
-        print("[Swift-Extract] ==============================")
     }
 }
 

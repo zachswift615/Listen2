@@ -28,7 +28,6 @@ actor WordAlignmentService {
     /// - Throws: AlignmentError if initialization fails
     func initialize(modelPath: String) async throws {
         guard !isInitialized else {
-            print("WordAlignmentService already initialized")
             return
         }
 
@@ -146,7 +145,6 @@ actor WordAlignmentService {
         }
 
         isInitialized = true
-        print("WordAlignmentService initialized successfully")
     }
 
     /// Deinitialize and clean up resources
@@ -188,16 +186,11 @@ actor WordAlignmentService {
 
         // Check cache first
         if let cached = alignmentCache[audioURL] {
-            print("Using cached alignment for \(audioURL.lastPathComponent)")
             return cached
         }
 
-        print("Aligning audio: \(audioURL.lastPathComponent)")
-
         // Load and convert audio
         let (samples, sampleRate) = try await loadAudioSamples(from: audioURL)
-
-        print("Loaded \(samples.count) samples at \(sampleRate) Hz")
 
         // Create offline stream
         guard let stream = SherpaOnnxCreateOfflineStream(recognizer) else {
@@ -222,11 +215,6 @@ actor WordAlignmentService {
 
         let result = resultPtr.pointee
 
-        // Extract transcribed text
-        let transcribedText = String(cString: result.text)
-        print("Transcribed text: '\(transcribedText)'")
-        print("Token count: \(result.count)")
-
         let tokenCount = Int(result.count)
         guard tokenCount > 0 else {
             throw AlignmentError.recognitionFailed("No tokens recognized")
@@ -236,8 +224,6 @@ actor WordAlignmentService {
         guard let timestamps = result.timestamps else {
             throw AlignmentError.noTimestamps
         }
-
-        print("✅ Got \(tokenCount) tokens with timestamps from NeMo CTC model")
 
         // Get VoxPDF words for this paragraph
         let voxPDFWords = wordMap.words(for: paragraphIndex)
@@ -262,8 +248,6 @@ actor WordAlignmentService {
             totalDuration: totalDuration,
             wordTimings: wordTimings
         )
-
-        print("Created alignment with \(wordTimings.count) word timings, total duration: \(totalDuration)s")
 
         // Cache the result
         alignmentCache[audioURL] = alignmentResult
@@ -347,7 +331,6 @@ actor WordAlignmentService {
         // Resample to 16kHz if needed
         let originalSampleRate = Int(format.sampleRate)
         if originalSampleRate != 16000 {
-            print("Resampling from \(originalSampleRate) Hz to 16000 Hz")
             monoSamples = try resample(monoSamples, from: originalSampleRate, to: 16000)
             return (monoSamples, 16000)
         }
@@ -606,11 +589,6 @@ actor WordAlignmentService {
             }
         }
 
-        // Handle remaining tokens/words
-        if i > 0 || j > 0 {
-            print("⚠️ [Alignment] Incomplete alignment: \(i) tokens, \(j) words remaining")
-        }
-
         // Add last word
         if let current = currentWord {
             alignment.insert(current, at: 0)
@@ -642,7 +620,7 @@ actor WordAlignmentService {
 
         // 1. Convert ASR tokens to strings
         var asrTokenStrings: [String] = []
-        var originalIndices: [Int] = []  // NEW: Track original indices
+        var originalIndices: [Int] = []  // Track original indices
         for i in 0..<tokenCount {
             if let tokenPtr = asrTokens[i] {
                 let tokenText = String(cString: tokenPtr)
@@ -654,34 +632,11 @@ actor WordAlignmentService {
             }
         }
 
-        print("🔤 ASR tokens (\(asrTokenStrings.count)): \(asrTokenStrings)")
-
-        // Log tokens with apostrophes specifically
-        let tokensWithApostrophes = asrTokenStrings.enumerated().filter { $0.element.contains("'") || $0.element.contains("'") }
-        if !tokensWithApostrophes.isEmpty {
-            print("⚠️  ASR tokens with apostrophes: \(tokensWithApostrophes.map { "[\($0.offset)]: '\($0.element)'" })")
-        }
-
         // 2. Extract VoxPDF word texts and normalize both
         let voxWordStrings = voxPDFWords.map { $0.text }
-        print("📚 VoxPDF words (\(voxWordStrings.count)): \(voxWordStrings)")
-
-        // Log VoxPDF words with apostrophes and their offsets
-        let voxWordsWithApostrophes = voxPDFWords.enumerated().filter {
-            $0.element.text.contains("'") || $0.element.text.contains("'")
-        }
-        if !voxWordsWithApostrophes.isEmpty {
-            print("⚠️  VoxPDF words with apostrophes:")
-            for (idx, word) in voxWordsWithApostrophes {
-                print("   [\(idx)]: '\(word.text)' offset=\(word.characterOffset) length=\(word.length)")
-            }
-        }
 
         let normalizedASR = asrTokenStrings.map { normalize($0) }
         let normalizedWords = voxWordStrings.map { normalize($0) }
-
-        print("🔧 Normalized ASR: \(normalizedASR)")
-        print("🔧 Normalized VoxPDF: \(normalizedWords)")
 
         // Filter out empty normalized strings (punctuation-only words)
         // Keep track of original indices for mapping back
@@ -691,8 +646,6 @@ actor WordAlignmentService {
             if !normalized.isEmpty {
                 filteredASR.append(normalized)
                 filteredASRIndices.append(idx)
-            } else {
-                print("⚠️  Skipping empty ASR token at index \(idx): '\(asrTokenStrings[idx])'")
             }
         }
 
@@ -702,8 +655,6 @@ actor WordAlignmentService {
             if !normalized.isEmpty {
                 filteredWords.append(normalized)
                 filteredWordIndices.append(idx)
-            } else {
-                print("⚠️  Skipping empty VoxPDF word at index \(idx): '\(voxWordStrings[idx])'")
             }
         }
 
@@ -716,16 +667,6 @@ actor WordAlignmentService {
             let originalWordIdx = filteredWordIndices[filteredWordIdx]
             let originalTokenIdxs = filteredTokenIdxs.map { filteredASRIndices[$0] }
             alignment.append((wordIndex: originalWordIdx, tokenIndices: originalTokenIdxs))
-        }
-
-        print("🔗 DTW Alignment (\(alignment.count) words mapped):")
-        for (wordIdx, tokenIdxs) in alignment.prefix(10) {
-            let word = wordIdx < voxWordStrings.count ? voxWordStrings[wordIdx] : "???"
-            let tokens = tokenIdxs.compactMap { $0 < asrTokenStrings.count ? asrTokenStrings[$0] : nil }
-            print("   Word[\(wordIdx)] '\(word)' ← Tokens\(tokenIdxs): \(tokens)")
-        }
-        if alignment.count > 10 {
-            print("   ... (\(alignment.count - 10) more)")
         }
 
         // 4. Build WordTiming array
@@ -770,7 +711,6 @@ actor WordAlignmentService {
                 offsetBy: voxWord.characterOffset,
                 limitedBy: paragraphText.endIndex
             ) else {
-                print("⚠️  Invalid character offset \(voxWord.characterOffset) for word '\(voxWord.text)'")
                 continue
             }
 
@@ -779,7 +719,6 @@ actor WordAlignmentService {
                 offsetBy: voxWord.length,
                 limitedBy: paragraphText.endIndex
             ) else {
-                print("⚠️  Invalid length \(voxWord.length) for word '\(voxWord.text)'")
                 continue
             }
 
@@ -791,20 +730,12 @@ actor WordAlignmentService {
             let normalizedExpected = normalize(voxWord.text)
 
             if normalizedExtracted != normalizedExpected {
-                // VoxPDF word position is WRONG! This is the bug!
-                print("❌ VoxPDF POSITION ERROR:")
-                print("   Expected word: '\(voxWord.text)' (normalized: '\(normalizedExpected)')")
-                print("   But extracted: '\(extractedText)' (normalized: '\(normalizedExtracted)')")
-                print("   At offset=\(voxWord.characterOffset), length=\(voxWord.length)")
-                print("   This will cause all subsequent words to have wrong positions!")
-
-                // Try to find the correct position by searching nearby
+                // VoxPDF word position is WRONG - try to find the correct position by searching nearby
                 if let correctedRange = findWordInParagraph(
                     word: voxWord.text,
                     nearOffset: voxWord.characterOffset,
                     in: paragraphText
                 ) {
-                    print("   ✅ CORRECTED: Found word at corrected position")
                     // Use corrected range instead
                     let rangeLocation = paragraphText.distance(from: paragraphText.startIndex, to: correctedRange.lowerBound)
                     let rangeLength = paragraphText.distance(from: correctedRange.lowerBound, to: correctedRange.upperBound)
@@ -819,18 +750,8 @@ actor WordAlignmentService {
                     ))
                     continue
                 } else {
-                    print("   ❌ Could not find correct position, skipping word")
                     continue
                 }
-            }
-
-            // Debug log for words with apostrophes
-            if voxWord.text.contains("'") || voxWord.text.contains("'") {
-                let extractedText = String(paragraphText[stringRange])
-                print("   ⚠️  APOSTROPHE WORD: '\(voxWord.text)' @ offset=\(voxWord.characterOffset), length=\(voxWord.length)")
-                print("       Range: \(stringRange), Extracted: '\(extractedText)'")
-                print("       Time: \(startTime)s - \(endTime)s (duration: \(duration)s)")
-                print("       Tokens: \(tokenIndices)")
             }
 
             let rangeLocation = paragraphText.distance(from: paragraphText.startIndex, to: stringRange.lowerBound)
@@ -846,7 +767,6 @@ actor WordAlignmentService {
             ))
         }
 
-        print("✅ Created \(wordTimings.count) word timings")
         return wordTimings
     }
 }

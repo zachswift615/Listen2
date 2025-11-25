@@ -113,97 +113,55 @@ final class ReaderViewModel: ObservableObject {
         do {
             try modelContext.save()
         } catch {
-            print("Failed to save position: \(error)")
+            // Error saving position
         }
     }
 
     func loadTOC() {
-        print("📖 Loading TOC for: \(document.title)")
-        print("📖 Source type: \(document.sourceType)")
-        print("📖 File URL: \(document.fileURL?.path ?? "nil")")
-
         // First, try to load from stored TOC data
         if let tocData = document.tocEntriesData {
-            print("📖 Found stored TOC data (\(tocData.count) bytes)")
             let decoder = JSONDecoder()
             if let entries = try? decoder.decode([TOCEntry].self, from: tocData) {
-                print("📖 ✅ Decoded \(entries.count) TOC entries from stored data")
-
                 // Validate stored TOC against current document (sanity check)
                 let totalParagraphs = document.extractedText.count
                 let invalidEntries = entries.filter { $0.paragraphIndex >= totalParagraphs }
 
                 if invalidEntries.isEmpty {
                     // Stored TOC is valid for this document
-                    print("📖 ✅ Stored TOC validated: all \(entries.count) entries within bounds")
                     tocEntries = entries
                     isLoading = false
                     return
                 } else {
                     // Stored TOC is stale (from different version of document)
-                    print("📖 ⚠️ Stored TOC is STALE - \(invalidEntries.count) out-of-bounds entries")
-                    print("📖 ⚠️ Document has \(totalParagraphs) paragraphs but TOC has entries pointing beyond that")
-                    print("📖 🔄 Discarding stale TOC, will re-extract fresh TOC data")
                     // Fall through to re-extract TOC
                 }
-            } else {
-                print("📖 ⚠️ Failed to decode stored TOC data")
             }
         }
 
         // Try to load TOC from PDF if available
         if document.sourceType == .pdf {
-            print("📖 Document is PDF type")
             if let pdfURL = document.fileURL {
-                print("📖 PDF URL exists: \(pdfURL)")
-
                 // Try loading PDF data first (works better with File Provider Storage)
                 do {
-                    print("📖 Attempting to load PDF data from URL...")
                     let pdfData = try Data(contentsOf: pdfURL)
-                    print("📖 ✅ Loaded \(pdfData.count) bytes of PDF data")
 
                     if let pdfDocument = PDFDocument(data: pdfData) {
-                        print("📖 ✅ PDF document created from data!")
-                        print("📖 PDF has \(pdfDocument.pageCount) pages")
-                        print("📖 PDF outline root: \(pdfDocument.outlineRoot != nil ? "EXISTS ✅" : "nil")")
-
-                        if let outline = pdfDocument.outlineRoot {
-                            print("📖 Outline has \(outline.numberOfChildren) top-level entries")
-                        }
-
                         let entries = tocService.extractTOCFromMetadata(pdfDocument, paragraphs: document.extractedText)
-                        print("📖 Extracted \(entries.count) entries from PDF metadata")
 
                         if !entries.isEmpty {
                             tocEntries = entries
-                            print("📖 🎉 Using PDF metadata TOC with \(entries.count) entries")
                             isLoading = false
                             return
-                        } else {
-                            print("📖 ⚠️ PDF outline exists but extracted 0 entries")
                         }
-                    } else {
-                        print("📖 ❌ Failed to create PDFDocument from data")
                     }
                 } catch {
-                    print("📖 ❌ Failed to load PDF data: \(error)")
+                    // Failed to load PDF data
                 }
-            } else {
-                print("📖 ❌ File URL is nil")
             }
         }
 
         // Fallback to heading detection
-        print("📖 Falling back to heading detection...")
-        print("📖 Document has \(document.extractedText.count) paragraphs")
         let detectedEntries = tocService.detectHeadingsFromParagraphs(document.extractedText)
-        print("📖 Detected \(detectedEntries.count) headings")
-        if !detectedEntries.isEmpty {
-            for entry in detectedEntries.prefix(5) {
-                print("📖   - \(entry.title) (para \(entry.paragraphIndex), level \(entry.level))")
-            }
-        }
         tocEntries = detectedEntries
         isLoading = false
     }

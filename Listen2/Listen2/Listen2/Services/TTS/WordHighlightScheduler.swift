@@ -63,9 +63,6 @@ final class WordHighlightScheduler {
 
     /// Cancel all scheduled word change events
     private func cancelScheduledWorkItems() {
-        if !scheduledWorkItems.isEmpty {
-            print("[WordHighlightScheduler] Stopped")
-        }
         for workItem in scheduledWorkItems {
             workItem.cancel()
         }
@@ -79,7 +76,6 @@ final class WordHighlightScheduler {
         cancelScheduledWorkItems()
 
         guard !alignment.wordTimings.isEmpty else {
-            print("[WordHighlightScheduler] No words to schedule")
             return
         }
 
@@ -97,8 +93,6 @@ final class WordHighlightScheduler {
             let deadline = startTime + timing.startTime
             DispatchQueue.main.asyncAfter(deadline: deadline, execute: workItem)
         }
-
-        print("[WordHighlightScheduler] Started (\(alignment.wordTimings.count) words)")
     }
 
     /// Emit word change callback for word at index

@@ -65,13 +65,9 @@ final class VoiceManager {
                 return true  // Bundled voices always "downloaded"
             }
             let hasModel = modelPath(for: voice.id) != nil
-            if !hasModel {
-                print("[VoiceManager] 🔍 Voice '\(voice.id)' NOT downloaded - modelPath returned nil")
-            }
             return hasModel
         }
 
-        print("[VoiceManager] 📊 Downloaded voices: \(downloaded.count) of \(allVoices.count)")
         return downloaded
     }
 
@@ -90,7 +86,6 @@ final class VoiceManager {
     func modelPath(for voiceID: String) -> URL? {
         // Check if bundled (Xcode 16 flattens Resources to bundle root)
         if let bundledPath = bundle.url(forResource: voiceID, withExtension: "onnx") {
-            print("[VoiceManager] 🔍 modelPath(\(voiceID)): Found bundled at \(bundledPath.path)")
             return bundledPath
         }
 
@@ -99,10 +94,7 @@ final class VoiceManager {
             .appendingPathComponent(voiceID)
             .appendingPathComponent("model.onnx")
 
-        let exists = fileManager.fileExists(atPath: downloadedPath.path)
-        print("[VoiceManager] 🔍 modelPath(\(voiceID)): Checking \(downloadedPath.path) - exists: \(exists)")
-
-        if exists {
+        if fileManager.fileExists(atPath: downloadedPath.path) {
             return downloadedPath
         }
 
@@ -118,13 +110,11 @@ final class VoiceManager {
             .appendingPathComponent("tokens.txt")
 
         if fileManager.fileExists(atPath: downloadedPath.path) {
-            print("[VoiceManager] 🔍 tokensPath(\(voiceID)): Found downloaded at \(downloadedPath.path)")
             return downloadedPath
         }
 
         // Fallback to bundled (only for bundled voice)
         if let bundledPath = bundle.url(forResource: "tokens", withExtension: "txt") {
-            print("[VoiceManager] 🔍 tokensPath(\(voiceID)): Using bundled at \(bundledPath.path)")
             return bundledPath
         }
 
@@ -140,13 +130,11 @@ final class VoiceManager {
             .appendingPathComponent("espeak-ng-data")
 
         if fileManager.fileExists(atPath: downloadedPath.path) {
-            print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Found downloaded at \(downloadedPath.path)")
             return downloadedPath
         }
 
         // Fallback to bundled (only for bundled voice)
         if let bundledPath = bundle.url(forResource: "espeak-ng-data", withExtension: nil) {
-            print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundled at \(bundledPath.path)")
             return bundledPath
         }
 
@@ -154,7 +142,6 @@ final class VoiceManager {
         if let bundledPath = bundle.resourceURL {
             let espeakDir = bundledPath.appendingPathComponent("espeak-ng-data")
             if fileManager.fileExists(atPath: espeakDir.path) {
-                print("[VoiceManager] 🔍 espeakDataPath(\(voiceID)): Using bundle root at \(espeakDir.path)")
                 return espeakDir
             }
         }
@@ -232,34 +219,24 @@ final class VoiceManager {
 
         progress(0.5)  // Download complete, extraction next
 
-        print("[VoiceManager] Starting extraction for \(voiceID)")
-
         // Extract tar.bz2 using SWCompression (works on both iOS and macOS)
         let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
         try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
-
-        print("[VoiceManager] Created voice directory: \(voiceDir.path)")
 
         // Perform CPU-intensive decompression and extraction on background thread
         let extractionResult = try await Task.detached(priority: .userInitiated) { [voiceDir, tempFile, fileManager, progress] in
             do {
                 // Read the compressed tar.bz2 file
-                print("[VoiceManager] Reading compressed file...")
                 let compressedData = try Data(contentsOf: tempFile)
-                print("[VoiceManager] Compressed file size: \(compressedData.count / 1024 / 1024) MB")
 
                 // Decompress bzip2 (CPU-intensive - can take 2-3 minutes for 64MB files)
-                print("[VoiceManager] Decompressing bzip2 (this may take a few minutes)...")
                 progress(0.55)  // Show some progress
                 let decompressedData = try BZip2.decompress(data: compressedData)
-                print("[VoiceManager] Decompressed size: \(decompressedData.count / 1024 / 1024) MB")
                 progress(0.75)  // Decompression complete
 
                 // Extract tar archive
-                print("[VoiceManager] Opening tar container...")
                 progress(0.80)
                 let tarContents = try TarContainer.open(container: decompressedData)
-                print("[VoiceManager] Tar contains \(tarContents.count) entries")
 
                 // Extract all files, stripping the top-level directory
                 var extractedCount = 0
@@ -281,7 +258,6 @@ final class VoiceManager {
 
                     // Rename voice-specific .onnx file to generic model.onnx
                     if relativePath.hasSuffix(".onnx") && !relativePath.hasSuffix("model.onnx") {
-                        print("[VoiceManager] 🔄 Renaming \(relativePath) → model.onnx")
                         relativePath = "model.onnx"
                     }
 
@@ -300,21 +276,7 @@ final class VoiceManager {
                         if extractedCount % 100 == 0 {
                             let extractProgress = 0.80 + (0.19 * Double(index) / Double(totalEntries))
                             progress(extractProgress)
-                            print("[VoiceManager] Extracted \(extractedCount)/\(totalEntries) files (\(Int(extractProgress * 100))%)...")
                         }
-                    }
-                }
-
-                print("[VoiceManager] ✅ Extraction complete! Extracted \(extractedCount) files")
-
-                // List extracted files for debugging
-                if let contents = try? fileManager.contentsOfDirectory(at: voiceDir, includingPropertiesForKeys: nil) {
-                    print("[VoiceManager] 📁 Extracted files in \(voiceDir.lastPathComponent):")
-                    for file in contents.prefix(10) {
-                        print("[VoiceManager]   - \(file.lastPathComponent)")
-                    }
-                    if contents.count > 10 {
-                        print("[VoiceManager]   ... and \(contents.count - 10) more files")
                     }
                 }
 
@@ -332,19 +294,6 @@ final class VoiceManager {
         }
 
         progress(1.0)
-
-        // Verify critical files exist
-        let modelPath = voiceDir.appendingPathComponent("model.onnx")
-        let tokensPath = voiceDir.appendingPathComponent("tokens.txt")
-
-        print("[VoiceManager] 🔍 Verifying extracted files:")
-        print("[VoiceManager]   Voice directory: \(voiceDir.path)")
-        print("[VoiceManager]   model.onnx exists: \(fileManager.fileExists(atPath: modelPath.path))")
-        print("[VoiceManager]   tokens.txt exists: \(fileManager.fileExists(atPath: tokensPath.path))")
-
-        if !fileManager.fileExists(atPath: modelPath.path) {
-            print("[VoiceManager] ⚠️ WARNING: model.onnx not found after extraction!")
-        }
 
         // Cleanup temp file
         try? fileManager.removeItem(at: tempFile)

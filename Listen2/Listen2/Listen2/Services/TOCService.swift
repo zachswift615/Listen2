@@ -79,15 +79,10 @@ final class TOCService {
         // Extract core heading text (strip "Chapter X.", "Part X", etc.)
         let coreHeading = extractCoreHeading(from: normalizedHeading)
 
-        print("🔍 Searching for heading: '\(heading)'")
-        print("🔍 Normalized: '\(normalizedHeading)'")
-        print("🔍 Core: '\(coreHeading)'")
-
         // First pass: exact match
         for (index, paragraph) in paragraphs.enumerated() {
             let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if normalizedParagraph == normalizedHeading {
-                print("✅ Found exact match at paragraph \(index)")
                 return index
             }
         }
@@ -99,7 +94,6 @@ final class TOCService {
                 let coreParagraph = extractCoreHeading(from: normalizedParagraph)
 
                 if coreParagraph == coreHeading {
-                    print("✅ Found core match at paragraph \(index)")
                     return index
                 }
             }
@@ -109,7 +103,6 @@ final class TOCService {
         for (index, paragraph) in paragraphs.enumerated() {
             let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if normalizedParagraph.hasPrefix(normalizedHeading) || normalizedParagraph.hasPrefix(coreHeading) {
-                print("✅ Found prefix match at paragraph \(index)")
                 return index
             }
         }
@@ -118,13 +111,11 @@ final class TOCService {
         for (index, paragraph) in paragraphs.enumerated() {
             let normalizedParagraph = paragraph.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if normalizedParagraph.contains(normalizedHeading) || (coreHeading.count > 10 && normalizedParagraph.contains(coreHeading)) {
-                print("✅ Found contains match at paragraph \(index)")
                 return index
             }
         }
 
         // Fallback: return 0 if not found
-        print("❌ No match found, returning 0")
         return 0
     }
 

@@ -31,7 +31,6 @@ actor AlignmentCache {
             try fileManager.createDirectory(at: cacheBaseURL, withIntermediateDirectories: true)
         } catch {
             // Log error but don't crash - operations will fail gracefully with proper errors
-            print("⚠️ [AlignmentCache] Failed to create cache directory: \(error)")
         }
     }
 
