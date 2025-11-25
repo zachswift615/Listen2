@@ -9,6 +9,7 @@ import Foundation
 import AVFoundation
 import Combine
 import QuartzCore
+import UIKit
 
 @MainActor
 final class StreamingAudioPlayer: NSObject, ObservableObject {
@@ -35,6 +36,9 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     private var totalDuration: TimeInterval = 0
     private var startTime: TimeInterval = 0
 
+    // Background task to keep app running during playback
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+
     // MARK: - Initialization
 
     override init() {
@@ -43,6 +47,11 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     }
 
     deinit {
+        // End background task if still running
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        }
+
         // CRITICAL: Clean up audio engine to prevent system audio corruption
         playerNode.stop()
         audioEngine.stop()
@@ -99,6 +108,12 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         allBuffersScheduled = false
         totalDuration = 0
         startTime = CACurrentMediaTime()
+
+        // Request background task to keep app running during playback
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask { [weak self] in
+            // Background time expired - stop playback
+            self?.stop()
+        }
 
         // Start player node
         playerNode.play()
@@ -190,6 +205,12 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         scheduledBufferCount = 0
         playedBufferCount = 0
         allBuffersScheduled = false
+
+        // End background task
+        if backgroundTaskID != .invalid {
+            UIApplication.shared.endBackgroundTask(backgroundTaskID)
+            backgroundTaskID = .invalid
+        }
     }
 
     /// Emergency reset to clear any corrupted audio state

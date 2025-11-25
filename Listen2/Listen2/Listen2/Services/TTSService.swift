@@ -145,6 +145,9 @@ final class TTSService: NSObject, ObservableObject {
         // Setup audio session observers
         setupAudioSessionObservers()
 
+        // Configure audio session immediately for background playback support
+        configureAudioSession()
+
         // Track initial highlighting setting
         previousHighlightingSetting = wordHighlightingEnabled
     }
@@ -438,9 +441,6 @@ final class TTSService: NSObject, ObservableObject {
             }
             previousHighlightingSetting = wordHighlightingEnabled
         }
-
-        // Configure audio session on first playback (lazy initialization)
-        configureAudioSession()
 
         currentText = paragraphs
         currentTitle = title
