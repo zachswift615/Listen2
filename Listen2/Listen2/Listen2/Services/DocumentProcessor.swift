@@ -6,6 +6,7 @@
 import Foundation
 import PDFKit
 import UniformTypeIdentifiers
+import UIKit
 
 final class DocumentProcessor {
 
@@ -331,5 +332,148 @@ final class DocumentProcessor {
         } catch {
             throw DocumentProcessorError.extractionFailed
         }
+    }
+
+    // MARK: - Cover Image Extraction
+
+    /// Extract cover image thumbnail from document
+    /// Returns PNG data for the cover image, or nil if extraction fails
+    func extractCoverImage(from url: URL, sourceType: SourceType) async -> Data? {
+        switch sourceType {
+        case .pdf:
+            return await extractPDFCover(from: url)
+        case .epub:
+            return await extractEPUBCover(from: url)
+        case .clipboard:
+            return nil // No cover for clipboard text
+        }
+    }
+
+    /// Extract cover from PDF (first page thumbnail)
+    private func extractPDFCover(from url: URL) async -> Data? {
+        guard let document = PDFDocument(url: url),
+              let firstPage = document.page(at: 0) else {
+            return nil
+        }
+
+        // Get page bounds
+        let pageBounds = firstPage.bounds(for: .mediaBox)
+
+        // Calculate thumbnail size (max 200 points on the longest side)
+        let maxDimension: CGFloat = 200
+        let aspectRatio = pageBounds.width / pageBounds.height
+        let thumbnailSize: CGSize
+
+        if pageBounds.width > pageBounds.height {
+            thumbnailSize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
+        } else {
+            thumbnailSize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
+        }
+
+        // Render the page to an image
+        let renderer = UIGraphicsImageRenderer(size: thumbnailSize)
+        let image = renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: thumbnailSize))
+
+            context.cgContext.saveGState()
+            context.cgContext.translateBy(x: 0, y: thumbnailSize.height)
+            context.cgContext.scaleBy(x: 1.0, y: -1.0)
+
+            let scaleX = thumbnailSize.width / pageBounds.width
+            let scaleY = thumbnailSize.height / pageBounds.height
+            context.cgContext.scaleBy(x: scaleX, y: scaleY)
+
+            firstPage.draw(with: .mediaBox, to: context.cgContext)
+            context.cgContext.restoreGState()
+        }
+
+        // Convert to PNG data
+        return image.pngData()
+    }
+
+    /// Extract cover from EPUB (look for common cover image files)
+    private func extractEPUBCover(from url: URL) async -> Data? {
+        // Unzip EPUB to temp directory
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+
+        do {
+            try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+            defer {
+                try? FileManager.default.removeItem(at: tempDir)
+            }
+
+            try FileManager.default.unzipItem(at: url, to: tempDir)
+
+            // Common cover image filenames to search for
+            let coverNames = [
+                "cover.jpg", "cover.jpeg", "cover.png",
+                "Cover.jpg", "Cover.jpeg", "Cover.png",
+                "cover-image.jpg", "cover-image.png"
+            ]
+
+            // Search in common directories
+            let searchPaths = [
+                tempDir,
+                tempDir.appendingPathComponent("OEBPS"),
+                tempDir.appendingPathComponent("OPS"),
+                tempDir.appendingPathComponent("images"),
+                tempDir.appendingPathComponent("Images"),
+                tempDir.appendingPathComponent("OEBPS/images"),
+                tempDir.appendingPathComponent("OPS/images")
+            ]
+
+            for searchPath in searchPaths {
+                for coverName in coverNames {
+                    let coverURL = searchPath.appendingPathComponent(coverName)
+                    if FileManager.default.fileExists(atPath: coverURL.path),
+                       let imageData = try? Data(contentsOf: coverURL),
+                       let image = UIImage(data: imageData) {
+                        // Resize to thumbnail
+                        return resizeImageToThumbnail(image)
+                    }
+                }
+            }
+
+            // If no cover found by name, try to find first image in OEBPS/OPS
+            for searchPath in [tempDir.appendingPathComponent("OEBPS"), tempDir.appendingPathComponent("OPS")] {
+                if let enumerator = FileManager.default.enumerator(at: searchPath, includingPropertiesForKeys: nil) {
+                    for case let fileURL as URL in enumerator {
+                        let ext = fileURL.pathExtension.lowercased()
+                        if ["jpg", "jpeg", "png"].contains(ext),
+                           let imageData = try? Data(contentsOf: fileURL),
+                           let image = UIImage(data: imageData) {
+                            return resizeImageToThumbnail(image)
+                        }
+                    }
+                }
+            }
+
+        } catch {
+            return nil
+        }
+
+        return nil
+    }
+
+    /// Resize image to thumbnail size (max 200 points)
+    private func resizeImageToThumbnail(_ image: UIImage) -> Data? {
+        let maxDimension: CGFloat = 200
+        let aspectRatio = image.size.width / image.size.height
+        let thumbnailSize: CGSize
+
+        if image.size.width > image.size.height {
+            thumbnailSize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
+        } else {
+            thumbnailSize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
+        }
+
+        let renderer = UIGraphicsImageRenderer(size: thumbnailSize)
+        let resizedImage = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: thumbnailSize))
+        }
+
+        return resizedImage.pngData()
     }
 }

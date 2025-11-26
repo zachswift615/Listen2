@@ -21,13 +21,17 @@ final class Document {
     @Attribute(.externalStorage)
     var wordMapData: Data? // Stored word map for word-level highlighting (PDF only)
 
+    @Attribute(.externalStorage)
+    var coverImageData: Data? // Cover image thumbnail (PNG/JPEG data)
+
     init(
         title: String,
         sourceType: SourceType,
         extractedText: [String],
         fileURL: URL? = nil,
         tocEntriesData: Data? = nil,
-        wordMapData: Data? = nil
+        wordMapData: Data? = nil,
+        coverImageData: Data? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -39,6 +43,7 @@ final class Document {
         self.fileURL = fileURL
         self.tocEntriesData = tocEntriesData
         self.wordMapData = wordMapData
+        self.coverImageData = coverImageData
     }
 
     var progressPercentage: Int {

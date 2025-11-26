@@ -159,6 +159,9 @@ final class LibraryViewModel: ObservableObject {
                 return nil
             }()
 
+            // Extract cover image thumbnail
+            let coverImageData = await documentProcessor.extractCoverImage(from: url, sourceType: sourceType)
+
             let title = url.deletingPathExtension().lastPathComponent
 
             let document = Document(
@@ -167,7 +170,8 @@ final class LibraryViewModel: ObservableObject {
                 extractedText: paragraphs,
                 fileURL: url,
                 tocEntriesData: tocData,
-                wordMapData: wordMapData
+                wordMapData: wordMapData,
+                coverImageData: coverImageData
             )
 
             modelContext.insert(document)

@@ -10,11 +10,24 @@ struct DocumentRowView: View {
 
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.sm) {
-            // Icon
-            Image(systemName: document.sourceType.iconName)
-                .font(.system(size: DesignSystem.IconSize.large))
-                .foregroundStyle(DesignSystem.Colors.primary)
-                .frame(width: 40)
+            // Cover thumbnail or icon
+            Group {
+                if let coverData = document.coverImageData,
+                   let uiImage = UIImage(data: coverData) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 50, height: 70)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(radius: 2)
+                } else {
+                    // Fallback icon
+                    Image(systemName: document.sourceType.iconName)
+                        .font(.system(size: DesignSystem.IconSize.large))
+                        .foregroundStyle(DesignSystem.Colors.primary)
+                        .frame(width: 50, height: 70)
+                }
+            }
 
             // Content
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
