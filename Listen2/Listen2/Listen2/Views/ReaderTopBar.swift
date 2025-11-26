@@ -12,27 +12,9 @@ struct ReaderTopBar: View {
     let onBack: () -> Void
     let onTOC: () -> Void
     let onSettings: () -> Void
+    let topSafeArea: CGFloat
 
     var body: some View {
-        GeometryReader { geometry in
-            VStack(spacing: 0) {
-                // Top safe area spacer
-                Color.clear
-                    .frame(height: geometry.safeAreaInsets.top)
-
-                controlsContent
-            }
-            .background(Color(UIColor.systemBackground))
-            .shadow(
-                color: DesignSystem.Shadow.small.color,
-                radius: DesignSystem.Shadow.small.radius,
-                x: DesignSystem.Shadow.small.x,
-                y: DesignSystem.Shadow.small.y
-            )
-        }
-    }
-
-    private var controlsContent: some View {
         VStack(spacing: 0) {
             HStack(spacing: DesignSystem.Spacing.sm) {
                 // Back button
@@ -81,8 +63,15 @@ struct ReaderTopBar: View {
                 }
             }
             .padding(.horizontal, DesignSystem.Spacing.md)
-            .padding(.top, DesignSystem.Spacing.xs)
+            .padding(.top, topSafeArea + DesignSystem.Spacing.xs)
             .padding(.bottom, DesignSystem.Spacing.sm)
         }
+        .background(Color(UIColor.systemBackground))
+        .shadow(
+            color: DesignSystem.Shadow.small.color,
+            radius: DesignSystem.Shadow.small.radius,
+            x: DesignSystem.Shadow.small.x,
+            y: DesignSystem.Shadow.small.y
+        )
     }
 }

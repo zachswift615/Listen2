@@ -30,7 +30,14 @@ private struct ReaderViewContent: View {
         ))
     }
 
-    var body: some View { 
+    var body: some View {
+        GeometryReader { geometry in
+            bodyContent(safeAreaTop: geometry.safeAreaInsets.top)
+        }
+    }
+
+    @ViewBuilder
+    private func bodyContent(safeAreaTop: CGFloat) -> some View {
         ZStack {
                 // Full-screen text (background layer)
                 ScrollViewReader { proxy in
@@ -72,7 +79,8 @@ private struct ReaderViewContent: View {
                             onSettings: {
                                 coordinator.isShowingQuickSettings = true
                                 coordinator.keepControlsVisible()
-                            }
+                            },
+                            topSafeArea: safeAreaTop
                         )
                         .transition(.move(edge: .top))
                     }
