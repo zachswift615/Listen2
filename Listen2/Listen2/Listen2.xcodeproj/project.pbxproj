@@ -8,11 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		2C91A72303D145A286DD688E /* SentenceSplitter.swift in Frameworks */ = {isa = PBXBuildFile; fileRef = D2322EB5C1384B0EB3C5ADB3 /* SentenceSplitter.swift */; };
-		3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A64206B12EC14F1500305522 /* SWCompression in Frameworks */ = {isa = PBXBuildFile; productRef = A64206B02EC14F1500305522 /* SWCompression */; };
 		A6E030262EBEED0E005E8935 /* ZIPFoundation in Frameworks */ = {isa = PBXBuildFile; productRef = A6E030252EBEED0E005E8935 /* ZIPFoundation */; };
 		A6E0302B2EBEF943005E8935 /* onnxruntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; };
-		A6E0302C2EBEF943005E8935 /* onnxruntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = A6E030282EBEF943005E8935 /* onnxruntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		B48C8219652942B484F787C9 /* SentenceSplitterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 080755C4D74441E3ACF62C0F /* SentenceSplitterTests.swift */; };
 		B5E1952BF8ABC674E37C9244 /* sherpa-onnx.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B2EBB9FC5ED1A582D8C83799 /* sherpa-onnx.xcframework */; };
 		C774AF4C793977F5C7A2073E /* VoxPDFCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */; };
@@ -42,8 +40,6 @@
 			dstPath = "";
 			dstSubfolderSpec = 10;
 			files = (
-				A6E0302C2EBEF943005E8935 /* onnxruntime.xcframework in Embed Frameworks */,
-				3D303EA640B4335F19DD7A72 /* VoxPDFCore.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
