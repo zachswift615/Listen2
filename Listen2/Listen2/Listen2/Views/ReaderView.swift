@@ -30,9 +30,8 @@ private struct ReaderViewContent: View {
         ))
     }
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
+    var body: some View { 
+        ZStack {
                 // Full-screen text (background layer)
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -148,7 +147,7 @@ private struct ReaderViewContent: View {
             .onAppear {
                 viewModel.loadTOC()
             }
-        }
+        
     }
 
     private func paragraphView(text: String, index: Int) -> some View {

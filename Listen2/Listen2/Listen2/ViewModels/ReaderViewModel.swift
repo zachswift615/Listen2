@@ -48,7 +48,10 @@ final class ReaderViewModel: ObservableObject {
             self.selectedVoice = ttsService.availableVoices().first { $0.language.hasPrefix("en") }
         }
 
-        setupBindings()
+        // Delay bindings to avoid publishing during view init
+        Task { @MainActor in
+            setupBindings()
+        }
     }
 
     private func setupBindings() {
