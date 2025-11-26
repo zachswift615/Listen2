@@ -16,6 +16,7 @@ final class AudioSessionManager: ObservableObject {
     @Published private(set) var isSessionActive: Bool = false
     @Published private(set) var isInterrupted: Bool = false
     @Published private(set) var currentRoute: String = "Unknown"
+    @Published private(set) var deviceWasDisconnected: Bool = false
 
     // MARK: - Private Properties
 
@@ -176,9 +177,13 @@ final class AudioSessionManager: ObservableObject {
 
         switch reason {
         case .oldDeviceUnavailable:
-            // Headphones were unplugged - playback should pause
-            // TTSService will handle the actual pause
-            break
+            // Audio device was disconnected (headphones unplugged, bluetooth disconnected, etc.)
+            // Signal to TTSService to pause
+            deviceWasDisconnected = true
+            // Reset immediately so it can trigger again
+            DispatchQueue.main.async { [weak self] in
+                self?.deviceWasDisconnected = false
+            }
 
         case .newDeviceAvailable:
             // New device connected (e.g., headphones plugged in)

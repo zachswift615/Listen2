@@ -2,7 +2,8 @@
 //  StreamingAudioPlayer.swift
 //  Listen2
 //
-//  Streaming audio player using AVAudioEngine for chunk-level playback
+//  Audio player using AVAudioPlayer for background-compatible playback
+//  Collects streamed chunks and plays them when ready
 //
 
 import Foundation
@@ -20,209 +21,170 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
 
     // MARK: - Private Properties
 
-    private let audioEngine = AVAudioEngine()
-    let playerNode = AVAudioPlayerNode()
+    private var player: AVAudioPlayer?
     private var displayLink: CADisplayLink?
     private var onFinished: (() -> Void)?
-    private var currentFormat: AVAudioFormat?
 
-    // Track scheduled buffers to know when playback completes
-    private var scheduledBufferCount: Int = 0
-    private var playedBufferCount: Int = 0
-    private var allBuffersScheduled: Bool = false
+    // Audio format constants (matching sherpa-onnx output)
+    private let sampleRate: Double = 22050
+    private let channels: UInt16 = 1
+    private let bitsPerSample: UInt16 = 32
 
-    // Track total duration for progress
-    private var totalDuration: TimeInterval = 0
-    private var startTime: TimeInterval = 0
+    // Accumulate chunks for playback
+    private var audioDataBuffer = Data()
+    private var chunkCount: Int = 0
+
+    // Temporary file management for background audio support
+    private var currentTempFileURL: URL?
 
     // MARK: - Initialization
 
     override init() {
         super.init()
-        setupAudioEngine()
     }
 
     deinit {
-        // CRITICAL: Clean up audio engine to prevent system audio corruption
-        playerNode.stop()
-        audioEngine.stop()
-        audioEngine.reset()
+        player?.stop()
         displayLink?.invalidate()
-        print("[StreamingAudioPlayer] 🧹 Deinitialized and cleaned up audio engine")
-    }
 
-    // MARK: - Setup
-
-    private func setupAudioEngine() {
-        // Attach player node to engine
-        audioEngine.attach(playerNode)
-
-        // Create format: 22050 Hz, mono, float32
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: 22050,
-            channels: 1,
-            interleaved: false
-        ) else {
-            print("[StreamingAudioPlayer] ❌ Failed to create audio format")
-            return
-        }
-
-        currentFormat = format
-
-        // Connect player node to main mixer
-        audioEngine.connect(
-            playerNode,
-            to: audioEngine.mainMixerNode,
-            format: format
-        )
-
-        // Prepare and start engine
-        audioEngine.prepare()
-        do {
-            try audioEngine.start()
-            print("[StreamingAudioPlayer] ✅ Audio engine started")
-        } catch {
-            print("[StreamingAudioPlayer] ❌ Failed to start audio engine: \(error)")
+        // Clean up temp file (deinit is nonisolated, so call directly)
+        if let tempURL = currentTempFileURL {
+            try? FileManager.default.removeItem(at: tempURL)
         }
     }
 
     // MARK: - Playback Control
 
-    /// Start new streaming session
+    /// Start new streaming session - prepares to receive chunks
     func startStreaming(onFinished: @escaping () -> Void) {
         stop()
 
         self.onFinished = onFinished
-        scheduledBufferCount = 0
-        playedBufferCount = 0
-        allBuffersScheduled = false
-        totalDuration = 0
-        startTime = CACurrentMediaTime()
-
-        // Start player node
-        playerNode.play()
-        isPlaying = true
-        startDisplayLink()
-
-        print("[StreamingAudioPlayer] 🎬 Started streaming session")
+        audioDataBuffer = Data()
+        chunkCount = 0
+        isPlaying = true  // Mark as "playing" even while collecting chunks
     }
 
-    /// Schedule an audio chunk for playback
+    /// Schedule an audio chunk for playback (accumulates until finishScheduling is called)
     func scheduleChunk(_ audioData: Data) {
-        guard let format = currentFormat else {
-            print("[StreamingAudioPlayer] ❌ No audio format available")
-            return
-        }
-
-        // Convert Data (float32 samples) to AVAudioPCMBuffer
-        let sampleCount = audioData.count / MemoryLayout<Float>.size
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(sampleCount)
-        ) else {
-            print("[StreamingAudioPlayer] ❌ Failed to create buffer")
-            return
-        }
-
-        buffer.frameLength = AVAudioFrameCount(sampleCount)
-
-        // Copy samples to buffer
-        audioData.withUnsafeBytes { rawPtr in
-            guard let floatPtr = rawPtr.baseAddress?.assumingMemoryBound(to: Float.self) else {
-                return
-            }
-            guard let channelData = buffer.floatChannelData else {
-                return
-            }
-            channelData[0].update(from: floatPtr, count: sampleCount)
-        }
-
-        // Calculate chunk duration
-        let chunkDuration = Double(sampleCount) / format.sampleRate
-        totalDuration += chunkDuration
-
-        scheduledBufferCount += 1
-        let bufferID = scheduledBufferCount
-
-        // Schedule buffer with completion handler
-        playerNode.scheduleBuffer(buffer) { [weak self] in
-            Task { @MainActor in
-                self?.onBufferComplete(bufferID: bufferID)
-            }
-        }
-
-        print("[StreamingAudioPlayer] 📦 Scheduled chunk #\(bufferID): \(sampleCount) samples (\(String(format: "%.3f", chunkDuration))s)")
+        audioDataBuffer.append(audioData)
+        chunkCount += 1
     }
 
-    /// Mark that all chunks have been scheduled
+    /// Mark that all chunks have been scheduled - starts actual playback
     func finishScheduling() {
-        allBuffersScheduled = true
-        print("[StreamingAudioPlayer] ✅ All buffers scheduled (total: \(scheduledBufferCount), duration: \(String(format: "%.3f", totalDuration))s)")
-
-        // Check if already complete (for very short audio)
-        checkCompletion()
-    }
-
-    private func onBufferComplete(bufferID: Int) {
-        playedBufferCount += 1
-        print("[StreamingAudioPlayer] ✓ Buffer #\(bufferID) complete (played: \(playedBufferCount)/\(scheduledBufferCount))")
-
-        checkCompletion()
-    }
-
-    private func checkCompletion() {
-        if allBuffersScheduled && playedBufferCount >= scheduledBufferCount {
-            print("[StreamingAudioPlayer] 🏁 All buffers played, calling onFinished")
+        guard !audioDataBuffer.isEmpty else {
             isPlaying = false
-            stopDisplayLink()
+            onFinished?()
+            return
+        }
+
+        // Convert raw float32 PCM to WAV format
+        let wavData = createWAVData(from: audioDataBuffer)
+
+        do {
+            // Write to temporary file (required for reliable background audio)
+            let tempURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("wav")
+
+            try wavData.write(to: tempURL)
+
+            // Clean up previous temp file
+            cleanupTempFile()
+            currentTempFileURL = tempURL
+
+            // Initialize AVAudioPlayer from file URL (not Data - critical for background audio)
+            player = try AVAudioPlayer(contentsOf: tempURL)
+            player?.delegate = self
+            player?.prepareToPlay()
+
+            guard player?.play() == true else {
+                throw StreamingAudioPlayerError.playbackFailed
+            }
+
+            isPlaying = true
+            startDisplayLink()
+        } catch {
+            print("[StreamingAudioPlayer] ❌ Failed to start playback: \(error)")
+            isPlaying = false
             onFinished?()
         }
     }
 
+    /// Create WAV file data from raw float32 PCM samples
+    private func createWAVData(from pcmData: Data) -> Data {
+        var wavData = Data()
+
+        let dataSize = UInt32(pcmData.count)
+        let fileSize = UInt32(36 + dataSize)
+
+        // RIFF header
+        wavData.append(contentsOf: "RIFF".utf8)
+        wavData.append(withUnsafeBytes(of: fileSize.littleEndian) { Data($0) })
+        wavData.append(contentsOf: "WAVE".utf8)
+
+        // fmt chunk
+        wavData.append(contentsOf: "fmt ".utf8)
+        wavData.append(withUnsafeBytes(of: UInt32(16).littleEndian) { Data($0) })  // Chunk size
+        wavData.append(withUnsafeBytes(of: UInt16(3).littleEndian) { Data($0) })   // Audio format (3 = IEEE float)
+        wavData.append(withUnsafeBytes(of: channels.littleEndian) { Data($0) })    // Channels
+        wavData.append(withUnsafeBytes(of: UInt32(sampleRate).littleEndian) { Data($0) })  // Sample rate
+        let byteRate = UInt32(sampleRate) * UInt32(channels) * UInt32(bitsPerSample / 8)
+        wavData.append(withUnsafeBytes(of: byteRate.littleEndian) { Data($0) })    // Byte rate
+        let blockAlign = channels * (bitsPerSample / 8)
+        wavData.append(withUnsafeBytes(of: blockAlign.littleEndian) { Data($0) })  // Block align
+        wavData.append(withUnsafeBytes(of: bitsPerSample.littleEndian) { Data($0) }) // Bits per sample
+
+        // data chunk
+        wavData.append(contentsOf: "data".utf8)
+        wavData.append(withUnsafeBytes(of: dataSize.littleEndian) { Data($0) })
+        wavData.append(pcmData)
+
+        return wavData
+    }
+
     func stop() {
-        playerNode.stop()
+        player?.stop()
+        player = nil
         isPlaying = false
         currentTime = 0
-        totalDuration = 0
         stopDisplayLink()
         onFinished = nil
-        scheduledBufferCount = 0
-        playedBufferCount = 0
-        allBuffersScheduled = false
+        audioDataBuffer = Data()
+        chunkCount = 0
+        cleanupTempFile()
+    }
+
+    /// Clean up temporary audio file
+    private func cleanupTempFile() {
+        if let tempURL = currentTempFileURL {
+            try? FileManager.default.removeItem(at: tempURL)
+            currentTempFileURL = nil
+        }
     }
 
     /// Emergency reset to clear any corrupted audio state
-    /// Call this if audio becomes distorted or corrupted
     func emergencyReset() {
-        print("[StreamingAudioPlayer] 🚨 Emergency reset initiated")
         stop()
-        audioEngine.stop()
-        audioEngine.reset()
-
-        // Re-setup the audio engine from scratch
-        setupAudioEngine()
-        print("[StreamingAudioPlayer] ✅ Emergency reset complete")
     }
 
     func setRate(_ rate: Float) {
-        // TODO: Implement playback rate control for streaming audio
-        // This requires AVAudioEngine rate adjustment which is more complex than AVAudioPlayer
-        print("[StreamingAudioPlayer] ⚠️ setRate not yet implemented for chunk streaming (rate: \(rate))")
+        player?.enableRate = true
+        player?.rate = rate
     }
 
     func pause() {
-        playerNode.pause()
+        player?.pause()
         isPlaying = false
         stopDisplayLink()
-        print("[StreamingAudioPlayer] ⏸️ Paused")
     }
 
     func resume() {
-        playerNode.play()
+        guard let player = player, !player.isPlaying else { return }
+        player.play()
         isPlaying = true
         startDisplayLink()
-        print("[StreamingAudioPlayer] ▶️ Resumed")
     }
 
     // MARK: - Progress Tracking
@@ -239,23 +201,23 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     }
 
     @objc private func updateCurrentTime() {
-        if isPlaying {
-            // FIX: Use actual audio position from AVAudioPlayerNode instead of wall-clock time
-            // This ensures accurate timing even after pause/resume and avoids drift
-            if let nodeTime = playerNode.lastRenderTime,
-               nodeTime.isSampleTimeValid,
-               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
-                currentTime = Double(playerTime.sampleTime) / playerTime.sampleRate
-            } else {
-                // Fallback to wall-clock elapsed time if node time unavailable
-                let elapsed = CACurrentMediaTime() - startTime
-                currentTime = elapsed
-            }
-        }
+        currentTime = player?.currentTime ?? 0
     }
 
     var duration: TimeInterval {
-        totalDuration
+        player?.duration ?? 0
+    }
+}
+
+// MARK: - AVAudioPlayerDelegate
+
+extension StreamingAudioPlayer: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in
+            isPlaying = false
+            stopDisplayLink()
+            onFinished?()
+        }
     }
 }
 

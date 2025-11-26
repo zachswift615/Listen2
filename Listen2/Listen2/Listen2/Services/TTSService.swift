@@ -220,13 +220,11 @@ final class TTSService: NSObject, ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Monitor route changes for headphone disconnection
-        audioSessionManager.$currentRoute
-            .dropFirst() // Skip initial value
-            .sink { [weak self] route in
-                // Pause when headphones are unplugged
-                // This is a common UX pattern for audio apps
-                if self?.isPlaying == true && !route.contains("Headphone") {
+        // Monitor for audio device disconnection (headphones unplugged, bluetooth disconnected, etc.)
+        audioSessionManager.$deviceWasDisconnected
+            .filter { $0 } // Only react when true
+            .sink { [weak self] _ in
+                if self?.isPlaying == true {
                     self?.pause()
                 }
             }
