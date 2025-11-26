@@ -104,6 +104,8 @@ enum DesignSystem {
         static let standard = SwiftUI.Animation.easeInOut(duration: 0.3)
         static let slow = SwiftUI.Animation.easeInOut(duration: 0.5)
         static let spring = SwiftUI.Animation.spring(response: 0.3, dampingFraction: 0.7)
+        static let controlSlideIn = SwiftUI.Animation.spring(response: 0.35, dampingFraction: 0.8)
+        static let controlSlideOut = SwiftUI.Animation.spring(response: 0.3, dampingFraction: 0.9)
     }
 
     // MARK: - Icon Sizes
@@ -113,5 +115,16 @@ enum DesignSystem {
         static let medium: CGFloat = 20
         static let large: CGFloat = 24
         static let xlarge: CGFloat = 32
+    }
+
+    // MARK: - Control Bar
+
+    enum ControlBar {
+        static let topBarHeight: CGFloat = 44
+        static let bottomBarHeight: CGFloat = 120
+        static let largeTouchTarget: CGFloat = 44
+        static let largeIconSize: CGFloat = 28
+        static let playButtonSize: CGFloat = 48
+        static let skipButtonSize: CGFloat = 24
     }
 }

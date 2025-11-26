@@ -14,15 +14,18 @@ final class ReaderCoordinator: ObservableObject {
     @Published var isOverlayVisible: Bool = false
     @Published var isShowingTOC: Bool = false
     @Published var isShowingQuickSettings: Bool = false
+    @Published var areControlsVisible: Bool = true  // Unified control visibility (starts visible)
 
     // MARK: - Private Properties
 
     private var hideOverlayTask: Task<Void, Never>?
+    private var autoHideTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
     deinit {
         hideOverlayTask?.cancel()
+        autoHideTask?.cancel()
     }
 
     // MARK: - Overlay Management
@@ -136,5 +139,42 @@ final class ReaderCoordinator: ObservableObject {
 
         // Dismiss TOC
         dismissTOC()
+    }
+
+    // MARK: - Unified Controls Management
+
+    func toggleControls() {
+        areControlsVisible.toggle()
+
+        if areControlsVisible {
+            scheduleControlsAutoHide()
+        } else {
+            cancelControlsAutoHide()
+        }
+    }
+
+    func keepControlsVisible() {
+        // Reset auto-hide timer on user interaction
+        if areControlsVisible {
+            cancelControlsAutoHide()
+            scheduleControlsAutoHide()
+        }
+    }
+
+    func scheduleControlsAutoHide(after delay: TimeInterval = 3.0) {
+        cancelControlsAutoHide()
+
+        autoHideTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+
+            if !Task.isCancelled {
+                areControlsVisible = false
+            }
+        }
+    }
+
+    private func cancelControlsAutoHide() {
+        autoHideTask?.cancel()
+        autoHideTask = nil
     }
 }

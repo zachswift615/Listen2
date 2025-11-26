@@ -9,10 +9,9 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject var ttsService: TTSService
     @StateObject private var viewModel: LibraryViewModel
     @State private var showingFilePicker = false
-    @State private var showingReader = false
-    @State private var selectedDocument: Document?
     @State private var showingSettings = false
     @Binding var urlToImport: URL?
 
@@ -97,8 +96,9 @@ struct LibraryView: View {
                     Text(error)
                 }
             }
-            .sheet(item: $selectedDocument) { document in
+            .navigationDestination(for: Document.self) { document in
                 ReaderView(document: document, modelContext: modelContext)
+                    .environmentObject(ttsService)
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
@@ -109,12 +109,9 @@ struct LibraryView: View {
     private var documentList: some View {
         List {
             ForEach(viewModel.filteredDocuments) { document in
-                Button {
-                    selectedDocument = document
-                } label: {
+                NavigationLink(value: document) {
                     DocumentRowView(document: document)
                 }
-                .buttonStyle(.plain)
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         viewModel.deleteDocument(document)

@@ -33,38 +33,86 @@ private struct ReaderViewContent: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                VStack(spacing: 0) {
-                    // Text content
-                    ScrollViewReader { proxy in
-                        ScrollView {
-                            VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
-                                ForEach(Array(viewModel.document.extractedText.enumerated()), id: \.offset) { index, paragraph in
-                                    paragraphView(text: paragraph, index: index)
-                                        .id(index)
-                                }
-                            }
-                            .padding()
-                        }
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation {
-                                coordinator.toggleOverlay()
+                // Full-screen text (background layer)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                            ForEach(Array(viewModel.document.extractedText.enumerated()), id: \.offset) { index, paragraph in
+                                paragraphView(text: paragraph, index: index)
+                                    .id(index)
                             }
                         }
-                        .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
-                            withAnimation {
-                                proxy.scrollTo(newIndex, anchor: .center)
-                            }
+                        .padding()
+                    }
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(DesignSystem.Animation.controlSlideIn) {
+                            coordinator.toggleControls()
                         }
                     }
-
-                    Divider()
-
-                    // Controls
-                    playbackControls
-                        .padding()
-                        .background(.regularMaterial)
+                    .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
+                        withAnimation {
+                            proxy.scrollTo(newIndex, anchor: .center)
+                        }
+                    }
                 }
+
+                // Floating controls (overlay layer)
+                VStack(spacing: 0) {
+                    if coordinator.areControlsVisible {
+                        ReaderTopBar(
+                            documentTitle: viewModel.document.title,
+                            onBack: {
+                                viewModel.cleanup()
+                                dismiss()
+                            },
+                            onTOC: {
+                                coordinator.isShowingTOC = true
+                                coordinator.keepControlsVisible()
+                            },
+                            onSettings: {
+                                coordinator.isShowingQuickSettings = true
+                                coordinator.keepControlsVisible()
+                            }
+                        )
+                        .transition(.move(edge: .top))
+                    }
+
+                    Spacer()
+
+                    if coordinator.areControlsVisible {
+                        ReaderBottomBar(
+                            playbackSpeed: Binding(
+                                get: { Double(viewModel.playbackRate) },
+                                set: { _ in }  // Set handled in onSpeedChange
+                            ),
+                            currentVoice: viewModel.selectedVoice?.name ?? "Voice",
+                            isPlaying: viewModel.isPlaying,
+                            onSpeedChange: { speed in
+                                viewModel.setPlaybackRate(Float(speed))
+                                coordinator.keepControlsVisible()
+                            },
+                            onVoicePicker: {
+                                showingVoicePicker = true
+                                coordinator.keepControlsVisible()
+                            },
+                            onSkipBack: {
+                                viewModel.skipBackward()
+                                coordinator.keepControlsVisible()
+                            },
+                            onPlayPause: {
+                                viewModel.togglePlayPause()
+                                coordinator.keepControlsVisible()
+                            },
+                            onSkipForward: {
+                                viewModel.skipForward()
+                                coordinator.keepControlsVisible()
+                            }
+                        )
+                        .transition(.move(edge: .bottom))
+                    }
+                }
+                .animation(DesignSystem.Animation.controlSlideIn, value: coordinator.areControlsVisible)
 
                 // Loading overlay
                 if viewModel.isLoading {
@@ -78,36 +126,10 @@ private struct ReaderViewContent: View {
                         .loadingOverlay(isLoading: true, message: "Preparing audio...")
                 }
             }
-            .navigationTitle(viewModel.document.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
-                        viewModel.cleanup()
-                        dismiss()
-                    }
-                }
-            }
+            .ignoresSafeArea()
+            .navigationBarHidden(true)
             .sheet(isPresented: $showingVoicePicker) {
                 voicePickerSheet
-            }
-            .overlay {
-                if coordinator.isOverlayVisible {
-                    ReaderOverlay(
-                        documentTitle: viewModel.document.title,
-                        onBack: {
-                            coordinator.dismissOverlay()
-                            dismiss()
-                        },
-                        onShowTOC: {
-                            coordinator.showTOC()
-                        },
-                        onShowSettings: {
-                            coordinator.showQuickSettings()
-                        }
-                    )
-                    .transition(.opacity)
-                }
             }
             .sheet(isPresented: $coordinator.isShowingTOC) {
                 TOCBottomSheet(
@@ -125,6 +147,7 @@ private struct ReaderViewContent: View {
             }
             .onAppear {
                 viewModel.loadTOC()
+                coordinator.scheduleControlsAutoHide()  // Auto-hide controls after 3s
             }
         }
     }
@@ -175,74 +198,6 @@ private struct ReaderViewContent: View {
         }
 
         return attributedString
-    }
-
-    private var playbackControls: some View {
-        VStack(spacing: DesignSystem.Spacing.md) {
-            // Speed and Voice
-            HStack {
-                // Speed
-                HStack(spacing: DesignSystem.Spacing.xxs) {
-                    Text("Speed:")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-                    Text(String(format: "%.1fx", viewModel.playbackRate))
-                        .font(DesignSystem.Typography.caption)
-                        .monospacedDigit()
-                }
-
-                Slider(value: Binding(
-                    get: { viewModel.playbackRate },
-                    set: { viewModel.setPlaybackRate($0) }
-                ), in: 0.5...2.5, step: 0.1)
-                .frame(maxWidth: 150)
-
-                Spacer()
-
-                // Voice picker button
-                Button {
-                    showingVoicePicker = true
-                } label: {
-                    HStack(spacing: DesignSystem.Spacing.xxs) {
-                        Image(systemName: "waveform")
-                        Text(viewModel.selectedVoice?.name ?? "Voice")
-                            .lineLimit(1)
-                    }
-                    .font(DesignSystem.Typography.caption)
-                }
-                .buttonStyle(.bordered)
-            }
-
-            // Playback buttons
-            HStack(spacing: DesignSystem.Spacing.xl) {
-                // Skip back
-                Button {
-                    viewModel.skipBackward()
-                } label: {
-                    Image(systemName: "backward.fill")
-                        .font(DesignSystem.Typography.title)
-                }
-                .foregroundColor(DesignSystem.Colors.primary)
-
-                // Play/Pause
-                Button {
-                    viewModel.togglePlayPause()
-                } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 64))
-                }
-                .foregroundColor(DesignSystem.Colors.primary)
-
-                // Skip forward
-                Button {
-                    viewModel.skipForward()
-                } label: {
-                    Image(systemName: "forward.fill")
-                        .font(DesignSystem.Typography.title)
-                }
-                .foregroundColor(DesignSystem.Colors.primary)
-            }
-        }
     }
 
     private var voicePickerSheet: some View {
