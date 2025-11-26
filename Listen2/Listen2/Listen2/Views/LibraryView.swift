@@ -14,9 +14,11 @@ struct LibraryView: View {
     @State private var showingReader = false
     @State private var selectedDocument: Document?
     @State private var showingSettings = false
+    @Binding var urlToImport: URL?
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, urlToImport: Binding<URL?> = .constant(nil)) {
         _viewModel = StateObject(wrappedValue: LibraryViewModel(modelContext: modelContext))
+        _urlToImport = urlToImport
     }
 
     var body: some View {
@@ -69,14 +71,20 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $showingFilePicker,
-                allowedContentTypes: [.pdf, .epub],
+                allowedContentTypes: [.pdf, .epub, .plainText, UTType(filenameExtension: "md") ?? .plainText],
                 allowsMultipleSelection: false
             ) { result in
                 Task {
                     if let url = try? result.get().first {
-                        // Determine source type from file extension
-                        let sourceType: SourceType = url.pathExtension.lowercased() == "epub" ? .epub : .pdf
-                        await viewModel.importDocument(from: url, sourceType: sourceType)
+                        await importFile(from: url)
+                    }
+                }
+            }
+            .onChange(of: urlToImport) { _, newURL in
+                if let url = newURL {
+                    Task {
+                        await importFile(from: url)
+                        urlToImport = nil
                     }
                 }
             }
@@ -140,5 +148,33 @@ struct LibraryView: View {
     private var processingOverlay: some View {
         Color.clear
             .loadingOverlay(isLoading: true, message: "Importing document...")
+    }
+
+    private func importFile(from url: URL) async {
+        // Determine source type from file extension
+        let ext = url.pathExtension.lowercased()
+        let sourceType: SourceType
+
+        switch ext {
+        case "epub":
+            sourceType = .epub
+        case "pdf":
+            sourceType = .pdf
+        case "txt", "md", "markdown":
+            // Treat plain text files as clipboard for now
+            // Read the file and import as clipboard text
+            do {
+                let text = try String(contentsOf: url, encoding: .utf8)
+                await viewModel.importFromClipboard(text)
+                return
+            } catch {
+                viewModel.errorMessage = "Failed to read text file: \(error.localizedDescription)"
+                return
+            }
+        default:
+            sourceType = .pdf
+        }
+
+        await viewModel.importDocument(from: url, sourceType: sourceType)
     }
 }

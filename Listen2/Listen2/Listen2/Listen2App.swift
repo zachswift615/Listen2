@@ -11,6 +11,7 @@ import SwiftData
 @main
 struct Listen2App: App {
     @StateObject private var ttsService = TTSService()
+    @State private var urlToImport: URL?
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -30,8 +31,12 @@ struct Listen2App: App {
             if ttsService.isInitializing {
                 LoadingView()
             } else {
-                LibraryView(modelContext: sharedModelContainer.mainContext)
+                LibraryView(modelContext: sharedModelContainer.mainContext, urlToImport: $urlToImport)
                     .environmentObject(ttsService)
+                    .onOpenURL { url in
+                        // Handle incoming document URLs from "Open With"
+                        urlToImport = url
+                    }
             }
         }
         .modelContainer(sharedModelContainer)
