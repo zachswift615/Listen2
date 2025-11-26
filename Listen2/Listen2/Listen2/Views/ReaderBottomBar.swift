@@ -16,6 +16,7 @@ struct ReaderBottomBar: View {
     let onSkipBack: () -> Void
     let onPlayPause: () -> Void
     let onSkipForward: () -> Void
+    let bottomSafeArea: CGFloat
 
     var body: some View {
         VStack(spacing: DesignSystem.Spacing.sm) {
@@ -80,7 +81,7 @@ struct ReaderBottomBar: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.md)
         .padding(.top, DesignSystem.Spacing.sm)
-        .padding(.bottom, DesignSystem.Spacing.md)
+        .padding(.bottom, bottomSafeArea + DesignSystem.Spacing.sm)
         .background(Color(UIColor.systemBackground))
         .shadow(
             color: DesignSystem.Shadow.small.color,
