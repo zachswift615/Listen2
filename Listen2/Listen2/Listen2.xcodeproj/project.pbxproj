@@ -390,9 +390,22 @@
 		DF81CD8BE17157C2865E51A0 /* VoxPDFCore.xcframework */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = wrapper.xcframework; name = VoxPDFCore.xcframework; path = ../../Frameworks/VoxPDFCore.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A628FBB72ED6BD6000B3862B /* Exceptions for "Listen2" folder in "Listen2" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A6E02F022EBD6692005E8935 /* Listen2 */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A6E02F052EBD6692005E8935 /* Listen2 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A628FBB72ED6BD6000B3862B /* Exceptions for "Listen2" folder in "Listen2" target */,
+			);
 			path = Listen2;
 			sourceTree = "<group>";
 		};
@@ -1480,6 +1493,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../../Frameworks/onnxruntime.xcframework/Headers",
 				);
+				INFOPLIST_FILE = Listen2/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;
@@ -1517,6 +1531,7 @@
 					"$(inherited)",
 					"$(SRCROOT)/../../Frameworks/onnxruntime.xcframework/Headers",
 				);
+				INFOPLIST_FILE = Listen2/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = audio;

@@ -60,11 +60,11 @@ final class AudioSessionManager: ObservableObject {
     func activateSession() throws {
         do {
             // Configure for background playback with spoken audio optimization
-            // .mixWithOthers allows audio to play alongside other apps (e.g., music)
+            // No .mixWithOthers - we want to claim exclusive audio focus for Now Playing controls
             try audioSession.setCategory(
                 .playback,
                 mode: .spokenAudio,
-                options: [.mixWithOthers]
+                options: []
             )
 
             // Activate the session

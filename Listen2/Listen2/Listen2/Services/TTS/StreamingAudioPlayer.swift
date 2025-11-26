@@ -9,6 +9,7 @@ import Foundation
 import AVFoundation
 import Combine
 import QuartzCore
+import UIKit
 
 @MainActor
 final class StreamingAudioPlayer: NSObject, ObservableObject {
@@ -38,6 +39,8 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     // Notification observers for background audio handling
     private var configurationChangeObserver: NSObjectProtocol?
     private var interruptionObserver: NSObjectProtocol?
+    private var backgroundObserver: NSObjectProtocol?
+    private var foregroundObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -45,6 +48,7 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         super.init()
         setupAudioEngine()
         setupNotificationObservers()
+        setupAppLifecycleObservers()
     }
 
     deinit {
@@ -53,6 +57,12 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
             NotificationCenter.default.removeObserver(observer)
         }
         if let observer = interruptionObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = backgroundObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = foregroundObserver {
             NotificationCenter.default.removeObserver(observer)
         }
 
@@ -117,6 +127,32 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         ) { [weak self] notification in
             Task { @MainActor in
                 self?.handleInterruption(notification)
+            }
+        }
+    }
+
+    private func setupAppLifecycleObservers() {
+        // Stop display link when going to background (it won't fire anyway, and prevents crashes)
+        backgroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stopDisplayLink()
+            }
+        }
+
+        // Restart display link when coming to foreground
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                if self?.isPlaying == true {
+                    self?.startDisplayLink()
+                }
             }
         }
     }
@@ -315,18 +351,21 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     }
 
     @objc private func updateCurrentTime() {
-        if isPlaying {
-            // FIX: Use actual audio position from AVAudioPlayerNode instead of wall-clock time
-            // This ensures accurate timing even after pause/resume and avoids drift
-            if let nodeTime = playerNode.lastRenderTime,
-               nodeTime.isSampleTimeValid,
-               let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
-                currentTime = Double(playerTime.sampleTime) / playerTime.sampleRate
-            } else {
-                // Fallback to wall-clock elapsed time if node time unavailable
-                let elapsed = CACurrentMediaTime() - startTime
-                currentTime = elapsed
-            }
+        // Safety check: only access audio engine when it's running and we're playing
+        guard isPlaying, audioEngine.isRunning else {
+            return
+        }
+
+        // FIX: Use actual audio position from AVAudioPlayerNode instead of wall-clock time
+        // This ensures accurate timing even after pause/resume and avoids drift
+        if let nodeTime = playerNode.lastRenderTime,
+           nodeTime.isSampleTimeValid,
+           let playerTime = playerNode.playerTime(forNodeTime: nodeTime) {
+            currentTime = Double(playerTime.sampleTime) / playerTime.sampleRate
+        } else {
+            // Fallback to wall-clock elapsed time if node time unavailable
+            let elapsed = CACurrentMediaTime() - startTime
+            currentTime = elapsed
         }
     }
 
