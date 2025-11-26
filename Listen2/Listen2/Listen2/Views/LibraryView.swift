@@ -153,28 +153,18 @@ struct LibraryView: View {
     private func importFile(from url: URL) async {
         // Determine source type from file extension
         let ext = url.pathExtension.lowercased()
-        let sourceType: SourceType
 
         switch ext {
         case "epub":
-            sourceType = .epub
+            await viewModel.importDocument(from: url, sourceType: .epub)
         case "pdf":
-            sourceType = .pdf
+            await viewModel.importDocument(from: url, sourceType: .pdf)
         case "txt", "md", "markdown":
-            // Treat plain text files as clipboard for now
-            // Read the file and import as clipboard text
-            do {
-                let text = try String(contentsOf: url, encoding: .utf8)
-                await viewModel.importFromClipboard(text)
-                return
-            } catch {
-                viewModel.errorMessage = "Failed to read text file: \(error.localizedDescription)"
-                return
-            }
+            // Import text files with proper filename handling
+            await viewModel.importTextFile(from: url)
         default:
-            sourceType = .pdf
+            // Default to PDF for unknown extensions
+            await viewModel.importDocument(from: url, sourceType: .pdf)
         }
-
-        await viewModel.importDocument(from: url, sourceType: sourceType)
     }
 }

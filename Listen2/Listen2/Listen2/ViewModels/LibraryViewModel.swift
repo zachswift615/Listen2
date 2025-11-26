@@ -85,6 +85,53 @@ final class LibraryViewModel: ObservableObject {
         isProcessing = false
     }
 
+    func importTextFile(from url: URL) async {
+        isProcessing = true
+        errorMessage = nil
+
+        // Start accessing security-scoped resource (required for file picker URLs)
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer {
+            if accessing {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            // Read the text file
+            let text = try String(contentsOf: url, encoding: .utf8)
+
+            // Process into paragraphs
+            let paragraphs = documentProcessor.processClipboardText(text)
+
+            guard !paragraphs.isEmpty else {
+                errorMessage = "No text found in file"
+                isProcessing = false
+                return
+            }
+
+            // Use the actual filename as the title
+            let title = url.deletingPathExtension().lastPathComponent
+
+            let document = Document(
+                title: title,
+                sourceType: .clipboard,
+                extractedText: paragraphs,
+                fileURL: url
+            )
+
+            modelContext.insert(document)
+            try modelContext.save()
+
+            loadDocuments()
+
+        } catch {
+            errorMessage = "Failed to import text file: \(error.localizedDescription)"
+        }
+
+        isProcessing = false
+    }
+
     func importDocument(from url: URL, sourceType: SourceType) async {
         isProcessing = true
         errorMessage = nil
