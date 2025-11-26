@@ -194,7 +194,6 @@ actor CTCForcedAligner {
             &outputShapeLen
         )
         let inferenceElapsed = CFAbsoluteTimeGetCurrent() - inferenceStart
-        print("[CTCForcedAligner] ONNX inference took \(String(format: "%.3f", inferenceElapsed))s for \(audioSamples.count) samples")
 
         if result != 0 {
             let error = OnnxSessionGetLastError()
@@ -211,8 +210,6 @@ actor CTCForcedAligner {
 
         let actualFrames = Int(outputShape[1])
         let actualVocab = outputShapeLen > 2 ? Int(outputShape[2]) : vocabSize
-
-        print("[CTCForcedAligner] Inference complete: \(actualFrames) frames x \(actualVocab) vocab")
 
         // Reshape output into 2D array [frames x vocab]
         var emissions: [[Float]] = []
@@ -483,7 +480,6 @@ actor CTCForcedAligner {
         let actualFrameCount = emissions.count
         let audioDurationSecs = Double(samples.count) / Double(self.sampleRate)
         let frameRate = Double(actualFrameCount) / audioDurationSecs
-        print("[CTCForcedAligner] Frame rate: \(String(format: "%.1f", frameRate)) fps (\(actualFrameCount) frames / \(String(format: "%.3f", audioDurationSecs))s)")
 
         var wordTimings = mergeToWords(
             tokenSpans: tokenSpans,
@@ -610,9 +606,6 @@ actor CTCForcedAligner {
     ) -> [AlignmentResult.WordTiming] {
         guard let tokenizer = tokenizer else { return [] }
         guard !tokenSpans.isEmpty else { return [] }
-
-        print("[CTCForcedAligner] 🔗 mergeToWords: \(tokenSpans.count) token spans, frameRate=\(frameRate), sentenceOffset=\(sentenceStartOffset)")
-        print("[CTCForcedAligner] 🔗 Transcript: '\(transcript.prefix(50))...'")
 
         // 1. Split transcript into words with their character positions
         var words: [(text: String, startOffset: Int, endOffset: Int)] = []
