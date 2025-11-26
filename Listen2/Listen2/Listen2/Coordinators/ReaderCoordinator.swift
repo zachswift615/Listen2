@@ -145,20 +145,11 @@ final class ReaderCoordinator: ObservableObject {
 
     func toggleControls() {
         areControlsVisible.toggle()
-
-        if areControlsVisible {
-            scheduleControlsAutoHide()
-        } else {
-            cancelControlsAutoHide()
-        }
+        // No auto-hide - user must tap again to hide controls
     }
 
     func keepControlsVisible() {
-        // Reset auto-hide timer on user interaction
-        if areControlsVisible {
-            cancelControlsAutoHide()
-            scheduleControlsAutoHide()
-        }
+        // No-op - auto-hide is disabled, controls stay visible until user taps
     }
 
     func scheduleControlsAutoHide(after delay: TimeInterval = 3.0) {
