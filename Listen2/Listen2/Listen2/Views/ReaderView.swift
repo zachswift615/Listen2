@@ -147,7 +147,9 @@ private struct ReaderViewContent: View {
             }
             .onAppear {
                 viewModel.loadTOC()
-                coordinator.scheduleControlsAutoHide()  // Auto-hide controls after 3s
+                Task {
+                    coordinator.scheduleControlsAutoHide()  // Auto-hide controls after 3s
+                }
             }
         }
     }
