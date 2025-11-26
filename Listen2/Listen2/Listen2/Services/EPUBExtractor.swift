@@ -263,6 +263,14 @@ final class EPUBExtractor {
             options: .regularExpression
         )
 
+        // Replace single newlines with spaces (fixes hard line breaks within paragraphs)
+        // This must come AFTER normalizing paragraph breaks (double newlines)
+        text = text.replacingOccurrences(
+            of: "(?<!\n)\n(?!\n)",
+            with: " ",
+            options: .regularExpression
+        )
+
         // Clean up excessive whitespace
         text = text.replacingOccurrences(
             of: "[ \t]+",
