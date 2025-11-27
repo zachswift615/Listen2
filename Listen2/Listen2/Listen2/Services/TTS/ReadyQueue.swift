@@ -204,7 +204,10 @@ actor ReadyQueue {
     /// Get current buffer status
     func getStatus() -> String {
         let mbUsed = Double(currentBufferBytes) / (1024 * 1024)
-        return "Ready: \(ready.count)/\(ReadyQueueConstants.maxSentenceLookahead), \(String(format: "%.1f", mbUsed))MB, Window: \(paragraphWindow.count) paragraphs, Highlighting: \(wordHighlightingEnabled ? "on" : "off")"
+        let processingList = processing.map { $0.description }.joined(separator: ", ")
+        let processingInfo = processing.isEmpty ? "none" : "\(processing.count) [\(processingList)]"
+
+        return "Ready: \(ready.count)/\(ReadyQueueConstants.maxSentenceLookahead), Processing: \(processingInfo), Skipped: \(skipped.count), Buffer: \(String(format: "%.2f", mbUsed))MB, Window: \(paragraphWindow.count) paragraphs, Highlighting: \(wordHighlightingEnabled ? "on" : "off")"
     }
 
     // MARK: - Private: Position Management
