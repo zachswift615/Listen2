@@ -109,12 +109,13 @@ xcodebuild test -project Listen2.xcodeproj -scheme Listen2 \
 - **TTS Engine** - `Listen2/Services/TTSService.swift` manages text-to-speech playback with word-level tracking
 - **Persistence** - SwiftData models in `Listen2/Models/` with automatic change tracking
 
-### Design Documents
+### Documentation
 
-All design decisions are documented in `docs/plans/`:
-- `2025-11-05-voice-reader-app-design.md` - Original app design
-- `2025-11-05-voice-reader-mvp.md` - MVP implementation plan (11 tasks)
-- `2025-01-07-reader-enhancements-design.md` - Upcoming features (TOC, overlay controls, voice filtering)
+- **Framework Updates**: See `docs/FRAMEWORK_UPDATE_GUIDE.md` for updating sherpa-onnx.xcframework
+- **EPUB Setup**: See `EPUB_SETUP.md` for ZIPFoundation dependency setup
+- **Implementation Plans**: Current plans in `docs/plans/`
+- **Testing**: Test documentation in `docs/testing/`
+- **Archived Docs**: Historical design docs and session handoffs in `docs/archive/`
 
 ## How It Works
 
