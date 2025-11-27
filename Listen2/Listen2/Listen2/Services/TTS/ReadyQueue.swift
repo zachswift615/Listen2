@@ -515,19 +515,31 @@ actor ReadyQueue {
                 }
             }
 
-            do {
-                alignment = try await ctcAligner.align(
-                    audioSamples: allSamples,
-                    sampleRate: ReadyQueueConstants.sampleRate,
-                    transcript: text,
-                    paragraphIndex: paragraphIndex,
-                    sentenceStartOffset: offset
-                )
+            // Safety check: Skip CTC alignment if audio/text is too large to prevent memory spike
+            // Trellis matrix size = numFrames × (2 × numTokens + 1)
+            // Estimate: 1 char ≈ 1 token, 22050 samples/sec, 49 frames/sec
+            let estimatedFrames = allSamples.count / 450  // ~49 frames/sec @ 22050Hz
+            let estimatedTokens = text.count
+            let estimatedTrellisSize = estimatedFrames * (2 * estimatedTokens + 1)
 
-            } catch {
-                // Log alignment failure - audio will play but highlighting unavailable
-                TTSLogger.alignment.error("CTC alignment failed for text: '\(text, privacy: .public)' - Error: \(error, privacy: .public)")
-                // alignment remains nil for graceful degradation
+            // Skip if trellis would exceed ~1 million cells (avoids multi-MB allocation)
+            if estimatedTrellisSize > 1_000_000 {
+                TTSLogger.alignment.warning("Skipping CTC alignment for large sentence (est. \(estimatedTrellisSize) trellis cells): '\(text.prefix(50), privacy: .public)...'")
+            } else {
+                do {
+                    alignment = try await ctcAligner.align(
+                        audioSamples: allSamples,
+                        sampleRate: ReadyQueueConstants.sampleRate,
+                        transcript: text,
+                        paragraphIndex: paragraphIndex,
+                        sentenceStartOffset: offset
+                    )
+
+                } catch {
+                    // Log alignment failure - audio will play but highlighting unavailable
+                    TTSLogger.alignment.error("CTC alignment failed for text: '\(text, privacy: .public)' - Error: \(error, privacy: .public)")
+                    // alignment remains nil for graceful degradation
+                }
             }
 
             // Check cancellation/session after alignment
