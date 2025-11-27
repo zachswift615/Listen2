@@ -19,6 +19,9 @@ actor ReadyQueue {
     private let synthesisQueue: SynthesisQueue
     private let ctcAligner: CTCForcedAligner
 
+    /// Logger for pipeline events
+    private let logger = TTSLogger.pipeline
+
     /// Callback to fetch paragraph text on-demand (avoids storing entire document)
     private var fetchParagraph: ((Int) -> String?)?
     private var totalParagraphCount: (() -> Int)?
