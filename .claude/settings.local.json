@@ -3,7 +3,10 @@
     "allow": [
       "Bash(find:*)",
       "WebSearch",
-      "Bash(xcodebuild:*)"
+      "Bash(xcodebuild:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git show:*)"
     ],
     "deny": [],
     "ask": []

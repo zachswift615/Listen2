@@ -106,8 +106,7 @@ actor ReadyQueue {
     /// - Parameters:
     ///   - paragraphIndex: Paragraph to start from
     ///   - sentenceIndex: Sentence within paragraph (default 0)
-    ///   - preserveBuffer: If true, keep buffered sentences for target paragraph and beyond
-    func startFrom(paragraphIndex: Int, sentenceIndex: Int = 0, preserveBuffer: Bool = false) {
+    func startFrom(paragraphIndex: Int, sentenceIndex: Int = 0) {
         // Increment session ID to invalidate any in-flight operations
         sessionID += 1
         let currentSession = sessionID
@@ -117,21 +116,12 @@ actor ReadyQueue {
         pipelineTask?.cancel()
         pipelineTask = nil
 
-        // Reset or preserve buffer based on flag
-        if preserveBuffer {
-            // Keep sentences for target paragraph and beyond, remove older ones
-            ready = ready.filter { $0.key.paragraphIndex >= paragraphIndex }
-            skipped = skipped.filter { $0.paragraphIndex >= paragraphIndex }
-            processing = processing.filter { $0.paragraphIndex >= paragraphIndex }
-
-            // Recalculate buffer bytes
-            currentBufferBytes = ready.values.reduce(0) { $0 + $1.chunks.reduce(0) { $0 + $1.count } }
-        } else {
-            ready.removeAll()
-            skipped.removeAll()
-            processing.removeAll()
-            currentBufferBytes = 0
-        }
+        // Always clear cache to prevent memory leaks
+        ready.removeAll()
+        skipped.removeAll()
+        processing.removeAll()
+        currentBufferBytes = 0
+        logger.info("Cache cleared on navigation to P\(paragraphIndex)S\(sentenceIndex)")
 
         // Update position tracking
         currentParagraphIndex = paragraphIndex
