@@ -431,7 +431,12 @@ actor CTCForcedAligner {
         paragraphIndex: Int,
         sentenceStartOffset: Int = 0
     ) async throws -> AlignmentResult {
-        guard isInitialized, let tokenizer = tokenizer else {
+        // Lazy initialization - load model on first use to save ~800MB at startup
+        if !isInitialized {
+            try await initialize()
+        }
+
+        guard let tokenizer = tokenizer else {
             throw AlignmentError.modelNotInitialized
         }
 

@@ -18,16 +18,19 @@ final class SettingsViewModel: ObservableObject {
 
     // MARK: - Available Voices
 
-    // Create a temporary service instance just for querying available voices
-    // This is safe because we're only reading voice lists, not managing playback state
-    private let voiceQueryService = TTSService()
+    // Use VoiceManager directly to avoid loading ONNX models (~500MB) just for voice queries
+    private let voiceManager = VoiceManager()
 
     var piperVoices: [AVVoice] {
-        voiceQueryService.piperVoices()
+        voiceManager.downloadedVoices()
+            .map { AVVoice(from: $0) }
+            .sorted { $0.language < $1.language }
     }
 
     var iosVoices: [AVVoice] {
-        voiceQueryService.iosVoices()
+        AVSpeechSynthesisVoice.speechVoices()
+            .map { AVVoice(from: $0) }
+            .sorted { $0.language < $1.language }
     }
 
     var availableVoices: [AVVoice] {

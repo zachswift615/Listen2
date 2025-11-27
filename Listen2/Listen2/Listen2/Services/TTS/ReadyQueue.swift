@@ -199,6 +199,10 @@ actor ReadyQueue {
         skipped.removeAll()
         processing.removeAll()
         currentBufferBytes = 0
+
+        // Clear paragraph cache to release document memory when navigating away
+        paragraphWindow.removeAll()
+        paragraphSentences.removeAll()
     }
 
     /// Get current buffer status
@@ -379,7 +383,6 @@ actor ReadyQueue {
 
     /// Main pipeline loop - processes sentences ahead of playback across paragraphs
     private func runPipeline(session: Int) async {
-
         while !shouldStop && !Task.isCancelled && session == sessionID {
             // Check if we have room in the buffer (count and memory)
             guard ready.count < ReadyQueueConstants.maxSentenceLookahead &&
@@ -469,7 +472,6 @@ actor ReadyQueue {
 
         // STEP 1: Synthesize audio
         let chunkDelegate = PipelineChunkDelegate()
-
         do {
             // streamSentence returns WAV data, but we use raw chunks from delegate for alignment
             _ = try await synthesisQueue.streamSentence(text, delegate: chunkDelegate)
@@ -534,7 +536,6 @@ actor ReadyQueue {
                         paragraphIndex: paragraphIndex,
                         sentenceStartOffset: offset
                     )
-
                 } catch {
                     // Log alignment failure - audio will play but highlighting unavailable
                     TTSLogger.alignment.error("CTC alignment failed for text: '\(text, privacy: .public)' - Error: \(error, privacy: .public)")

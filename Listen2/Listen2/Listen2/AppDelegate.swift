@@ -11,14 +11,14 @@ import AVFoundation
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey : Any]? = nil) -> Bool {
         print("[AppDelegate] 🚀 App launching...")
-        
+
         // 1. Configure Audio Session
         setupAudioSession()
-        
+
         // 2. Register for Remote Control Events
         UIApplication.shared.beginReceivingRemoteControlEvents()
         print("[AppDelegate] 📡 Registered for remote control events")
-        
+
         return true
     }
     

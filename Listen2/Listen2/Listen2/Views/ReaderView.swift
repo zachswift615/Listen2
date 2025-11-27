@@ -43,7 +43,7 @@ private struct ReaderViewContent: View {
                 // Full-screen text (background layer)
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
+                        LazyVStack(alignment: .leading, spacing: DesignSystem.Spacing.md) {
                             ForEach(Array(viewModel.document.extractedText.enumerated()), id: \.offset) { index, paragraph in
                                 paragraphView(text: paragraph, index: index)
                                     .id(index)

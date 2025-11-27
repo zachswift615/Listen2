@@ -82,6 +82,7 @@ final class TTSService: NSObject, ObservableObject {
     private var readyQueue: ReadyQueue?
     private var currentText: [String] = []
     private var currentVoice: AVSpeechSynthesisVoice?
+    private var currentPiperVoiceID: String? // Track current Piper voice to avoid unnecessary reinit
     private var currentTitle: String = "Document"
     private var shouldAutoAdvance = true // Track whether to auto-advance
     private var wordMap: DocumentWordMap? // Word map for precise highlighting
@@ -134,10 +135,11 @@ final class TTSService: NSObject, ObservableObject {
             }
         }
 
-        // Try to initialize Piper TTS and alignment service
+        // Initialize Piper TTS (alignment service is lazy-loaded when needed)
         Task {
             await initializePiperProvider()
-            await initializeAlignmentService()
+            // NOTE: CTC alignment service is now lazy-loaded when word highlighting is first used
+            // This saves ~800MB at app startup
         }
 
         // Setup now playing manager
@@ -164,7 +166,9 @@ final class TTSService: NSObject, ObservableObject {
                 voiceManager: voiceManager
             )
             try await piperProvider.initialize()
+
             self.provider = piperProvider
+            self.currentPiperVoiceID = bundledVoice.id  // Track initial voice
 
             // Initialize synthesis queue with provider
             self.synthesisQueue = SynthesisQueue(
@@ -362,6 +366,14 @@ final class TTSService: NSObject, ObservableObject {
                 return
             }
 
+            // Extract voice ID from "piper:en_US-lessac-medium" format
+            let voiceID = String(voice.id.dropFirst("piper:".count))
+
+            // Skip reinitialization if voice hasn't changed
+            if voiceID == currentPiperVoiceID {
+                return
+            }
+
             // Capture playback state before stopping
             let wasPlaying = isPlaying
             let currentIndex = currentProgress.paragraphIndex
@@ -375,9 +387,6 @@ final class TTSService: NSObject, ObservableObject {
                 stop()
             }
 
-            // Extract voice ID from "piper:en_US-lessac-medium" format
-            let voiceID = String(voice.id.dropFirst("piper:".count))
-
             // Reinitialize Piper provider with new voice
             Task {
                 do {
@@ -389,6 +398,7 @@ final class TTSService: NSObject, ObservableObject {
 
                     // Update properties (already on MainActor)
                     provider = piperProvider
+                    currentPiperVoiceID = voiceID  // Track current voice to avoid unnecessary reinit
 
                     // CORRECT ORDER: Cancel → Clear → Update
                     // Buffer contents are voice-dependent and must be cleared BEFORE creating new queue
