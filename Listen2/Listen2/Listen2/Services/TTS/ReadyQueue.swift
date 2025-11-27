@@ -460,12 +460,25 @@ actor ReadyQueue {
             // streamSentence returns WAV data, but we use raw chunks from delegate for alignment
             _ = try await synthesisQueue.streamSentence(text, delegate: chunkDelegate)
         } catch {
+            logger.error("Synthesis failed for P\(paragraphIndex)S\(sentenceIndex): \(error.localizedDescription, privacy: .public) | Text: '\(text, privacy: .public)'")
+
+            // Clean up immediately - remove from processing set
+            let key = SentenceKey(paragraphIndex: paragraphIndex, sentenceIndex: sentenceIndex)
+            processing.remove(key)
+
+            // Return nil to skip this sentence (will be marked as skipped by caller)
             return nil
         }
 
         let chunks = chunkDelegate.getChunks()
 
         guard !chunks.isEmpty else {
+            logger.warning("Synthesis produced empty chunks for P\(paragraphIndex)S\(sentenceIndex) | Text: '\(text, privacy: .public)'")
+
+            // Clean up - remove from processing set
+            let key = SentenceKey(paragraphIndex: paragraphIndex, sentenceIndex: sentenceIndex)
+            processing.remove(key)
+
             return nil
         }
 
