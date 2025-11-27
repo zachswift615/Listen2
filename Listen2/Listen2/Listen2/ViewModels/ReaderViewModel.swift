@@ -56,15 +56,28 @@ final class ReaderViewModel: ObservableObject {
 
     private func setupBindings() {
         // Subscribe to TTS service updates
+        // Use dropFirst() to skip initial value and preserve saved position
         ttsService.$currentProgress
+            .dropFirst()
             .sink { [weak self] progress in
                 self?.currentParagraphIndex = progress.paragraphIndex
                 self?.currentWordRange = progress.wordRange
             }
             .store(in: &cancellables)
 
+        // Update isPlaying state immediately
         ttsService.$isPlaying
             .assign(to: &$isPlaying)
+
+        // Save position when playback pauses (skip initial emission)
+        ttsService.$isPlaying
+            .dropFirst()
+            .sink { [weak self] isPlaying in
+                if !isPlaying {
+                    self?.savePosition()
+                }
+            }
+            .store(in: &cancellables)
 
         ttsService.$playbackRate
             .assign(to: &$playbackRate)
@@ -170,7 +183,8 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func cleanup() {
+        savePosition()  // Save correct position BEFORE stopping
+        cancellables.removeAll()  // Cancel subscriptions so TTS reset doesn't overwrite position
         ttsService.stop()
-        savePosition()
     }
 }

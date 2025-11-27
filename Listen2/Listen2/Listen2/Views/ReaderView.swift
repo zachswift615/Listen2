@@ -18,6 +18,7 @@ struct ReaderView: View {
 
 private struct ReaderViewContent: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var viewModel: ReaderViewModel
     @StateObject private var coordinator = ReaderCoordinator()
     @State private var showingVoicePicker = false
@@ -59,6 +60,15 @@ private struct ReaderViewContent: View {
                     .onChange(of: viewModel.currentParagraphIndex) { _, newIndex in
                         withAnimation {
                             proxy.scrollTo(newIndex, anchor: .center)
+                        }
+                    }
+                    .onAppear {
+                        // Scroll to saved position on initial load
+                        if viewModel.currentParagraphIndex > 0 {
+                            // Delay scroll slightly to ensure view is laid out
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                proxy.scrollTo(viewModel.currentParagraphIndex, anchor: .center)
+                            }
                         }
                     }
                 }
@@ -155,6 +165,14 @@ private struct ReaderViewContent: View {
             }
             .onAppear {
                 viewModel.loadTOC()
+            }
+            .onDisappear {
+                viewModel.savePosition()
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .background || newPhase == .inactive {
+                    viewModel.savePosition()
+                }
             }
         
     }
