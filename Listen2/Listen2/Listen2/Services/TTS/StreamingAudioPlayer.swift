@@ -332,7 +332,16 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
     }
 
     func pause() {
-        playerNode.pause()
+        // Quick fade-out to avoid audio glitch/pop when pausing
+        let originalVolume = playerNode.volume
+        playerNode.volume = 0
+
+        // Small delay to let the volume change take effect before pausing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
+            self?.playerNode.pause()
+            self?.playerNode.volume = originalVolume  // Restore for resume
+        }
+
         isPlaying = false
         stopDisplayLink()
     }
