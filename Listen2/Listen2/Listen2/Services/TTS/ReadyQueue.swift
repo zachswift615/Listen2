@@ -511,7 +511,9 @@ actor ReadyQueue {
                 )
 
             } catch {
-                // Continue without alignment - highlighting won't work but audio will play
+                // Log alignment failure - audio will play but highlighting unavailable
+                TTSLogger.alignment.error("CTC alignment failed for text: '\(text, privacy: .public)' - Error: \(error, privacy: .public)")
+                // alignment remains nil for graceful degradation
             }
 
             // Check cancellation/session after alignment
