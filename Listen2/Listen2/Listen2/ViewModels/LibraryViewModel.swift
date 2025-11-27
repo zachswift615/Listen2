@@ -99,7 +99,13 @@ final class LibraryViewModel: ObservableObject {
 
         do {
             // Read the text file
-            let text = try String(contentsOf: url, encoding: .utf8)
+            var text = try String(contentsOf: url, encoding: .utf8)
+
+            // Strip markdown syntax if it's a markdown file
+            let ext = url.pathExtension.lowercased()
+            if ext == "md" || ext == "markdown" {
+                text = stripMarkdownSyntax(text)
+            }
 
             // Process into paragraphs
             let paragraphs = documentProcessor.processClipboardText(text)
@@ -201,5 +207,143 @@ final class LibraryViewModel: ObservableObject {
         }
 
         isProcessing = false
+    }
+
+    // MARK: - Markdown Processing
+
+    /// Strips markdown syntax to produce clean text for TTS
+    private func stripMarkdownSyntax(_ text: String) -> String {
+        var result = text
+
+        // Remove code blocks (``` ... ```)
+        result = result.replacingOccurrences(
+            of: "```[\\s\\S]*?```",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove inline code (`code`)
+        result = result.replacingOccurrences(
+            of: "`([^`]+)`",
+            with: "$1",
+            options: .regularExpression
+        )
+
+        // Remove images ![alt](url)
+        result = result.replacingOccurrences(
+            of: "!\\[[^\\]]*\\]\\([^)]+\\)",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Convert links [text](url) to just text
+        result = result.replacingOccurrences(
+            of: "\\[([^\\]]+)\\]\\([^)]+\\)",
+            with: "$1",
+            options: .regularExpression
+        )
+
+        // Remove reference-style links [text][ref]
+        result = result.replacingOccurrences(
+            of: "\\[([^\\]]+)\\]\\[[^\\]]*\\]",
+            with: "$1",
+            options: .regularExpression
+        )
+
+        // Remove heading markers (# ## ### etc.)
+        result = result.replacingOccurrences(
+            of: "^#{1,6}\\s*",
+            with: "",
+            options: .regularExpression
+        )
+        // Also handle headings not at start of string (after newlines)
+        result = result.replacingOccurrences(
+            of: "\n#{1,6}\\s*",
+            with: "\n",
+            options: .regularExpression
+        )
+
+        // Remove bold/italic markers (**text**, __text__, *text*, _text_)
+        // Bold first (** or __)
+        result = result.replacingOccurrences(
+            of: "\\*\\*([^*]+)\\*\\*",
+            with: "$1",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "__([^_]+)__",
+            with: "$1",
+            options: .regularExpression
+        )
+        // Then italic (* or _)
+        result = result.replacingOccurrences(
+            of: "\\*([^*]+)\\*",
+            with: "$1",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "(?<![\\w])_([^_]+)_(?![\\w])",
+            with: "$1",
+            options: .regularExpression
+        )
+
+        // Remove strikethrough ~~text~~
+        result = result.replacingOccurrences(
+            of: "~~([^~]+)~~",
+            with: "$1",
+            options: .regularExpression
+        )
+
+        // Remove horizontal rules (---, ***, ___)
+        result = result.replacingOccurrences(
+            of: "^[-*_]{3,}\\s*$",
+            with: "",
+            options: .regularExpression
+        )
+
+        // Remove blockquotes (> )
+        result = result.replacingOccurrences(
+            of: "^>+\\s*",
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "\n>+\\s*",
+            with: "\n",
+            options: .regularExpression
+        )
+
+        // Remove unordered list markers (- * +)
+        result = result.replacingOccurrences(
+            of: "^[\\-*+]\\s+",
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "\n[\\-*+]\\s+",
+            with: "\n",
+            options: .regularExpression
+        )
+
+        // Remove ordered list markers (1. 2. etc.)
+        result = result.replacingOccurrences(
+            of: "^\\d+\\.\\s+",
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "\n\\d+\\.\\s+",
+            with: "\n",
+            options: .regularExpression
+        )
+
+        // Clean up extra whitespace
+        result = result.replacingOccurrences(
+            of: "\n{3,}",
+            with: "\n\n",
+            options: .regularExpression
+        )
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
