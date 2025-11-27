@@ -231,10 +231,11 @@ actor ReadyQueue {
             paragraphSentences.removeValue(forKey: pIdx)
         }
 
-        // Also evict ready/skipped sentences for removed paragraphs (prevents memory leak)
+        // Also evict ready/skipped/processing sentences for removed paragraphs (prevents memory leak)
         if !paragraphsToRemove.isEmpty {
             var evictedSentences = 0
             var freedBytes = 0
+            var stuckProcessingSentences = 0
 
             for pIdx in paragraphsToRemove {
                 // Evict ready sentences
@@ -249,7 +250,27 @@ actor ReadyQueue {
                 }
 
                 // Evict skipped sentences
+                let skippedCountBefore = skipped.count
                 skipped = skipped.filter { $0.paragraphIndex != pIdx }
+                evictedSentences += (skippedCountBefore - skipped.count)
+
+                // Evict stuck processing sentences (cleanup orphaned processing state)
+                let processingKeysToEvict = processing.filter { $0.paragraphIndex == pIdx }
+                for key in processingKeysToEvict {
+                    processing.remove(key)
+                    stuckProcessingSentences += 1
+                }
+            }
+
+            // Log buffer eviction
+            if evictedSentences > 0 {
+                let freedMB = Double(freedBytes) / (1024 * 1024)
+                TTSLogger.buffer.info("Evicted \(evictedSentences) sentences from buffer, freed \(String(format: "%.2f", freedMB)) MB")
+            }
+
+            // Warn about stuck processing sentences
+            if stuckProcessingSentences > 0 {
+                TTSLogger.buffer.warning("Cleaned up \(stuckProcessingSentences) stuck processing sentences during window slide")
             }
         }
     }
