@@ -299,6 +299,12 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
 
     func stop() {
         playerNode.stop()
+
+        // CRITICAL: Reset playerNode to clear scheduled buffers
+        // AVAudioPlayerNode retains all scheduled buffers until played or reset
+        // Without this, rapid paragraph skipping accumulates hundreds of MB of audio
+        playerNode.reset()
+
         isPlaying = false
         currentTime = 0
         totalDuration = 0
