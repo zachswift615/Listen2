@@ -6,7 +6,10 @@
       "Bash(xcodebuild:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git show:*)"
+      "Bash(git show:*)",
+      "Skill(superpowers:brainstorming)",
+      "Bash(xcrun swiftc:*)",
+      "Bash(xcrun simctl:*)"
     ],
     "deny": [],
     "ask": []

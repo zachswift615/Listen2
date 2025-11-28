@@ -55,15 +55,10 @@ final class ReaderViewModel: ObservableObject {
         }
 
         // Set initial highlight level from AppStorage, or use device-recommended default
-        print("[ReaderViewModel] highlightLevelRaw = '\(highlightLevelRaw)'")
         if let savedLevel = HighlightLevel(rawValue: highlightLevelRaw) {
-            print("[ReaderViewModel] Using saved level: \(savedLevel)")
             self.effectiveHighlightLevel = savedLevel
         } else {
-            // No saved preference - use device-recommended default
-            let recommended = DeviceCapabilityService.recommendedHighlightLevel
-            print("[ReaderViewModel] Using device-recommended level: \(recommended)")
-            self.effectiveHighlightLevel = recommended
+            self.effectiveHighlightLevel = DeviceCapabilityService.recommendedHighlightLevel
         }
 
         // Delay bindings to avoid publishing during view init

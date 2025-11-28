@@ -104,34 +104,26 @@ enum DeviceCapabilityService {
     /// Current device's capability tier based on device model (more reliable than memory on simulator)
     static var deviceTier: DeviceTier {
         let model = modelIdentifier
-        let memoryGB = physicalMemoryGB
-
-        // Log for debugging
-        print("[DeviceCapability] Model: '\(model)', Memory: \(String(format: "%.1f", memoryGB)) GB")
 
         // Check by device model first (most reliable)
         if legacyDevices.contains(model) {
-            print("[DeviceCapability] Detected as LEGACY device")
             return .legacy
         }
         if lowMemoryDevices.contains(model) {
-            print("[DeviceCapability] Detected as LOW_MEMORY device")
             return .lowMemory
         }
 
         // Fallback to memory-based detection for unknown devices
-        let tier: DeviceTier
+        let memoryGB = physicalMemoryGB
         if memoryGB < 3.0 {
-            tier = .legacy
+            return .legacy
         } else if memoryGB < 5.0 {
-            tier = .lowMemory
+            return .lowMemory
         } else if memoryGB < 7.0 {
-            tier = .standard
+            return .standard
         } else {
-            tier = .high
+            return .high
         }
-        print("[DeviceCapability] Fallback to memory-based: \(tier)")
-        return tier
     }
 
     // MARK: - Feature Recommendations

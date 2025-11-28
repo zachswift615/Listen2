@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "tts": {
+        "command": "/Users/zachswift/projects/ai_voice/venv/bin/python",
+        "args": ["-m", "claude_tts_mcp.server"],
+        "cwd": "/Users/zachswift/projects/ai_voice"
+      },
     "jility": {
       "command": "/Users/zachswift/projects/Jility/target/release/jility-mcp",
       "args": [],

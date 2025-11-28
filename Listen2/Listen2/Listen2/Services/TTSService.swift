@@ -556,20 +556,24 @@ final class TTSService: NSObject, ObservableObject {
             return
         }
 
-        // Stop audio but DON'T clear document state (stop() clears currentText)
-        stopAudioOnly()
-        speakParagraph(at: nextIndex)
+        // Stop audio and wait for cleanup before starting next paragraph
+        Task {
+            await stopAudioOnly()
+            speakParagraph(at: nextIndex)
+        }
     }
 
     func skipToPrevious() {
         let prevIndex = max(0, currentProgress.paragraphIndex - 1)
-        // Stop audio but DON'T clear document state (stop() clears currentText)
-        stopAudioOnly()
-        speakParagraph(at: prevIndex)
+        // Stop audio and wait for cleanup before starting previous paragraph
+        Task {
+            await stopAudioOnly()
+            speakParagraph(at: prevIndex)
+        }
     }
 
     /// Stop audio playback without clearing document state (for skip buttons)
-    private func stopAudioOnly() {
+    private func stopAudioOnly() async {
         // Cancel active speak task to stop pre-synthesis and playback
         if let task = activeSpeakTask {
             task.cancel()
@@ -583,17 +587,13 @@ final class TTSService: NSObject, ObservableObject {
             activeResumer = nil
         }
 
-        Task {
-            await audioPlayer.stop()
-            // Clear chunk buffer (prevents stale pre-synthesized chunks from previous paragraph)
-            await chunkBuffer.clearAll()
-            // Clear sentence cache for new paragraph
-            await synthesisQueue?.clearAll()
-            await readyQueue?.stopPipeline()
-            await MainActor.run {
-                wordHighlighter.stop()
-            }
-        }
+        // Await all cleanup to prevent race conditions with new playback
+        await audioPlayer.stop()
+        await chunkBuffer.clearAll()
+        await synthesisQueue?.clearAll()
+        await readyQueue?.stopPipeline()
+        wordHighlighter.stop()
+
         fallbackSynthesizer.stopSpeaking(at: .immediate)
         stopWordScheduler()
         isPlaying = false
