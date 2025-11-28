@@ -217,6 +217,15 @@ struct LibraryView: View {
         let trimmed = linkText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        // Extract URL from text - handles case where user pastes text containing a URL
+        guard let extractedURL = extractURLFromText(trimmed) else {
+            await MainActor.run {
+                viewModel.errorMessage = "Could not find a valid URL in the pasted text. Please paste a Google Drive or direct download link."
+                viewModel.isProcessing = false
+            }
+            return
+        }
+
         await MainActor.run {
             viewModel.isProcessing = true
             viewModel.errorMessage = nil
@@ -224,12 +233,13 @@ struct LibraryView: View {
 
         do {
             // Convert Google Drive share link to direct download URL if needed
-            let downloadURL = try convertToDownloadURL(trimmed)
+            var downloadURL = try convertToDownloadURL(extractedURL)
+            let isGoogleDrive = extractedURL.contains("drive.google.com") || extractedURL.contains("drive.usercontent.google.com")
 
             print("[Import] Downloading from: \(downloadURL)")
 
             // Download the file
-            let (tempURL, response) = try await URLSession.shared.download(from: downloadURL)
+            var (tempURL, response) = try await URLSession.shared.download(from: downloadURL)
 
             // Log response info for debugging
             if let httpResponse = response as? HTTPURLResponse {
@@ -238,6 +248,37 @@ struct LibraryView: View {
                 print("[Import] Content-Disposition: \(httpResponse.value(forHTTPHeaderField: "Content-Disposition") ?? "none")")
             }
             print("[Import] Suggested filename: \(response.suggestedFilename ?? "none")")
+
+            // Check if Google Drive returned HTML (virus scan warning page) instead of the file
+            if isGoogleDrive,
+               let httpResponse = response as? HTTPURLResponse,
+               let contentType = httpResponse.value(forHTTPHeaderField: "Content-Type"),
+               contentType.contains("text/html") {
+                print("[Import] Got HTML response from Google Drive, attempting to extract confirmation URL")
+
+                // Read the HTML content to find the confirmation URL
+                let htmlContent = try String(contentsOf: tempURL, encoding: .utf8)
+                try? FileManager.default.removeItem(at: tempURL)
+
+                if let confirmURL = extractGoogleDriveConfirmURL(from: htmlContent, originalURL: downloadURL) {
+                    print("[Import] Found confirmation URL, retrying download")
+                    downloadURL = confirmURL
+                    (tempURL, response) = try await URLSession.shared.download(from: downloadURL)
+
+                    // Log retry response
+                    if let httpResponse = response as? HTTPURLResponse {
+                        print("[Import] Retry Status: \(httpResponse.statusCode)")
+                        print("[Import] Retry Content-Type: \(httpResponse.value(forHTTPHeaderField: "Content-Type") ?? "none")")
+                    }
+                } else {
+                    print("[Import] Could not extract confirmation URL from HTML")
+                    await MainActor.run {
+                        viewModel.errorMessage = "Could not download from Google Drive. Make sure the file's sharing is set to 'Anyone with the link' (not 'Restricted')."
+                        viewModel.isProcessing = false
+                    }
+                    return
+                }
+            }
 
             // Try to determine filename from Content-Disposition header or URL
             guard let filename = extractFilename(from: response, url: downloadURL) else {
@@ -275,11 +316,164 @@ struct LibraryView: View {
         }
     }
 
+    /// Extracts the actual download URL from Google Drive's virus scan confirmation page
+    private func extractGoogleDriveConfirmURL(from html: String, originalURL: URL) -> URL? {
+        // Google Drive confirmation pages contain forms or links with the actual download URL
+        // Look for patterns like:
+        // - /uc?export=download&confirm=XXXX&id=FILE_ID
+        // - action="...confirm=XXXX..."
+        // - href="...confirm=XXXX..."
+        // - uuid=XXXX (newer format)
+
+        print("[Import] HTML length: \(html.count) characters")
+
+        // Try to find the confirm token
+        let patterns = [
+            "confirm=([a-zA-Z0-9_-]+)&",  // confirm=TOKEN&
+            "confirm=([a-zA-Z0-9_-]+)\"",  // confirm=TOKEN"
+            "confirm=([a-zA-Z0-9_-]+)'",   // confirm=TOKEN'
+            "/uc\\?export=download&amp;confirm=([a-zA-Z0-9_-]+)",  // URL-encoded in HTML
+            "download_warning_[^\"']*=([a-zA-Z0-9_-]+)",  // Cookie-based token
+            "uuid=([a-zA-Z0-9_-]+)",  // UUID format used in newer pages
+            "at=([a-zA-Z0-9_-]+)"  // Auth token format
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+               let tokenRange = Range(match.range(at: 1), in: html) {
+                let token = String(html[tokenRange])
+
+                // Skip if token is just "t" (the generic one we already tried)
+                if token == "t" { continue }
+
+                // Build the new URL with the actual confirmation token
+                if let fileID = extractFileID(from: originalURL) {
+                    // Try the newer usercontent domain first
+                    let confirmURLString = "https://drive.usercontent.google.com/download?id=\(fileID)&export=download&confirm=\(token)"
+                    print("[Import] Extracted confirm token: \(token)")
+                    return URL(string: confirmURLString)
+                }
+            }
+        }
+
+        // Also try to find a direct download link in the page
+        let downloadLinkPatterns = [
+            "href=\"(/uc\\?export=download[^\"]+)\"",
+            "action=\"(/uc\\?export=download[^\"]+)\"",
+            "href=\"(https://drive\\.usercontent\\.google\\.com/download[^\"]+)\"",
+            "action=\"(https://drive\\.usercontent\\.google\\.com/download[^\"]+)\"",
+            "form-action[^>]+action=\"([^\"]+)\""
+        ]
+
+        for pattern in downloadLinkPatterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive),
+               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+               let urlRange = Range(match.range(at: 1), in: html) {
+                var urlPath = String(html[urlRange])
+                // Decode HTML entities
+                urlPath = urlPath.replacingOccurrences(of: "&amp;", with: "&")
+
+                print("[Import] Found download link pattern: \(urlPath)")
+
+                // Handle relative URLs
+                if urlPath.hasPrefix("/") {
+                    if let fullURL = URL(string: "https://drive.google.com\(urlPath)") {
+                        print("[Import] Found direct download link: \(fullURL)")
+                        return fullURL
+                    }
+                } else if urlPath.hasPrefix("http") {
+                    if let fullURL = URL(string: urlPath) {
+                        print("[Import] Found direct download link: \(fullURL)")
+                        return fullURL
+                    }
+                }
+            }
+        }
+
+        // Log a snippet of the HTML for debugging
+        let previewLength = min(500, html.count)
+        let preview = String(html.prefix(previewLength))
+        print("[Import] HTML preview: \(preview)")
+
+        return nil
+    }
+
+    /// Extracts a URL from text that may contain other content
+    /// Handles cases where users paste logs or text that happens to contain a URL
+    private func extractURLFromText(_ text: String) -> String? {
+        // If it looks like a clean URL already, use it
+        if text.hasPrefix("http://") || text.hasPrefix("https://") {
+            // Check if it's JUST a URL (no spaces/newlines except at ends)
+            let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanText.contains(" ") && !cleanText.contains("\n") {
+                return cleanText
+            }
+        }
+
+        // Try to find a URL in the text using data detector
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let range = NSRange(text.startIndex..., in: text)
+
+        if let match = detector?.firstMatch(in: text, options: [], range: range),
+           let urlRange = Range(match.range, in: text) {
+            let urlString = String(text[urlRange])
+            // Prioritize Google Drive and common file hosting URLs
+            if urlString.contains("drive.google.com") ||
+               urlString.contains("dropbox.com") ||
+               urlString.hasSuffix(".epub") ||
+               urlString.hasSuffix(".pdf") ||
+               urlString.hasSuffix(".txt") {
+                return urlString
+            }
+        }
+
+        // Search for all URLs and prioritize relevant ones
+        let matches = detector?.matches(in: text, options: [], range: range) ?? []
+        for match in matches {
+            if let urlRange = Range(match.range, in: text) {
+                let urlString = String(text[urlRange])
+                if urlString.contains("drive.google.com") {
+                    return urlString
+                }
+            }
+        }
+
+        // Fall back to first URL found
+        if let match = matches.first,
+           let urlRange = Range(match.range, in: text) {
+            return String(text[urlRange])
+        }
+
+        return nil
+    }
+
+    /// Extracts the file ID from a Google Drive URL
+    private func extractFileID(from url: URL) -> String? {
+        // Try to get from URL query parameter
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           let queryItems = components.queryItems,
+           let idItem = queryItems.first(where: { $0.name == "id" }),
+           let id = idItem.value {
+            return id
+        }
+
+        // Try to extract from path
+        let urlString = url.absoluteString
+        let pattern = "drive\\.google\\.com/file/d/([a-zA-Z0-9_-]+)"
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: urlString, range: NSRange(urlString.startIndex..., in: urlString)),
+           let idRange = Range(match.range(at: 1), in: urlString) {
+            return String(urlString[idRange])
+        }
+
+        return nil
+    }
+
     private func convertToDownloadURL(_ urlString: String) throws -> URL {
         // Handle Google Drive share links
         // Format: https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-        // Convert to: https://drive.google.com/uc?export=download&confirm=t&id=FILE_ID
-        // The confirm=t parameter bypasses the virus scan warning for large files
+        // Try multiple download URL formats as Google keeps changing their API
 
         if urlString.contains("drive.google.com/file/d/") {
             // Extract file ID using regex
@@ -291,7 +485,10 @@ struct LibraryView: View {
             }
 
             let fileID = String(urlString[idRange])
-            let downloadURLString = "https://drive.google.com/uc?export=download&confirm=t&id=\(fileID)"
+
+            // Use the newer drive.usercontent.google.com endpoint
+            // This often works better for public files
+            let downloadURLString = "https://drive.usercontent.google.com/download?id=\(fileID)&export=download&confirm=t"
 
             guard let url = URL(string: downloadURLString) else {
                 throw URLError(.badURL)

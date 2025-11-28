@@ -52,7 +52,7 @@ private struct ReaderViewContent: View {
                         .padding()
                     }
                     .contentShape(Rectangle())
-                    .onTapGesture {
+                    .onTapGesture(count: 1) {
                         withAnimation(DesignSystem.Animation.controlSlideIn) {
                             coordinator.toggleControls()
                         }
@@ -187,7 +187,11 @@ private struct ReaderViewContent: View {
                 isCurrentParagraph ? DesignSystem.Colors.highlightParagraph : Color.clear
             )
             .cornerRadius(DesignSystem.CornerRadius.md)
-            // Removed tap gesture - overlay tap gesture now works
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) {
+                // Double-tap: jump to this paragraph and start playback
+                coordinator.navigateToParagraph(index, viewModel: viewModel)
+            }
     }
 
     private func attributedText(for text: String, isCurrentParagraph: Bool) -> AttributedString {

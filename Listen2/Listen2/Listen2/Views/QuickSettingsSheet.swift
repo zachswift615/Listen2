@@ -11,6 +11,7 @@ struct QuickSettingsSheet: View {
     @ObservedObject var viewModel: ReaderViewModel
     var coordinator: ReaderCoordinator? = nil
     @StateObject private var voiceFilterManager = VoiceFilterManager()
+    @StateObject private var settingsViewModel = SettingsViewModel()
     @AppStorage("paragraphPauseDelay") private var pauseDuration: Double = 0.3
     @Environment(\.dismiss) private var dismiss
 
@@ -22,6 +23,7 @@ struct QuickSettingsSheet: View {
                 speedSection
                 voiceSection
                 pauseSection
+                highlightSection
             }
             .navigationTitle("Quick Settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -110,6 +112,29 @@ struct QuickSettingsSheet: View {
             Text("Timing")
         } footer: {
             Text("Pause duration between paragraphs")
+        }
+    }
+
+    private var highlightSection: some View {
+        Section {
+            HStack {
+                Text("Text Highlighting")
+                Spacer()
+                Picker("", selection: Binding(
+                    get: { settingsViewModel.highlightLevel },
+                    set: { settingsViewModel.highlightLevel = $0 }
+                )) {
+                    ForEach(HighlightLevel.allCases) { level in
+                        Text(level.displayName)
+                            .tag(level)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+        } header: {
+            Text("Display")
+        } footer: {
+            Text(settingsViewModel.highlightLevel.description)
         }
     }
 }

@@ -141,6 +141,28 @@ final class ReaderCoordinator: ObservableObject {
         dismissTOC()
     }
 
+    // MARK: - Paragraph Navigation (Double-tap)
+
+    func navigateToParagraph(
+        _ paragraphIndex: Int,
+        viewModel: ReaderViewModel
+    ) {
+        // Stop current playback (this clears all buffers/queues in TTSService)
+        viewModel.ttsService.stop()
+
+        // Jump to paragraph
+        viewModel.currentParagraphIndex = paragraphIndex
+
+        // Start playback from the new paragraph
+        viewModel.ttsService.startReading(
+            paragraphs: viewModel.document.extractedText,
+            from: paragraphIndex,
+            title: viewModel.document.title,
+            wordMap: viewModel.document.wordMap,
+            documentID: viewModel.document.id
+        )
+    }
+
     // MARK: - Unified Controls Management
 
     func toggleControls() {

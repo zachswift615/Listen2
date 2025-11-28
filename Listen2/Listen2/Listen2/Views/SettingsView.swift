@@ -41,8 +41,6 @@ struct SettingsView: View {
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
 
-                    Divider()
-
                     // Paragraph Pause
                     VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
                         HStack {
@@ -66,8 +64,6 @@ struct SettingsView: View {
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
-
-                    Divider()
 
                     // Highlight Level Picker
                     VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
