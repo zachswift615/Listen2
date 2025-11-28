@@ -14,14 +14,20 @@ final class ReaderViewModel: ObservableObject {
 
     @Published var currentParagraphIndex: Int
     @Published var currentWordRange: Range<String.Index>?
+    @Published var currentSentenceLocation: Int?
+    @Published var currentSentenceLength: Int?
     @Published var isPlaying: Bool = false
     @Published var playbackRate: Float = 1.0
     @Published var selectedVoice: AVVoice?
     @Published var tocEntries: [TOCEntry] = []
     @Published var isLoading: Bool = true
 
+    /// Cached highlight level (updated when settings change)
+    @Published var effectiveHighlightLevel: HighlightLevel = .word
+
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
     @AppStorage("selectedVoiceId") private var selectedVoiceId: String = ""
+    @AppStorage("highlightLevel") private var highlightLevelRaw: String = ""
 
     let document: Document
     let ttsService: TTSService
@@ -46,6 +52,18 @@ final class ReaderViewModel: ObservableObject {
             ttsService.setVoice(savedVoice)
         } else {
             self.selectedVoice = ttsService.availableVoices().first { $0.language.hasPrefix("en") }
+        }
+
+        // Set initial highlight level from AppStorage, or use device-recommended default
+        print("[ReaderViewModel] highlightLevelRaw = '\(highlightLevelRaw)'")
+        if let savedLevel = HighlightLevel(rawValue: highlightLevelRaw) {
+            print("[ReaderViewModel] Using saved level: \(savedLevel)")
+            self.effectiveHighlightLevel = savedLevel
+        } else {
+            // No saved preference - use device-recommended default
+            let recommended = DeviceCapabilityService.recommendedHighlightLevel
+            print("[ReaderViewModel] Using device-recommended level: \(recommended)")
+            self.effectiveHighlightLevel = recommended
         }
 
         // Delay bindings to avoid publishing during view init
@@ -81,6 +99,19 @@ final class ReaderViewModel: ObservableObject {
 
         ttsService.$playbackRate
             .assign(to: &$playbackRate)
+
+        // Subscribe to sentence range for sentence-level highlighting
+        ttsService.$currentSentenceLocation
+            .sink { [weak self] location in
+                self?.currentSentenceLocation = location
+            }
+            .store(in: &cancellables)
+
+        ttsService.$currentSentenceLength
+            .sink { [weak self] length in
+                self?.currentSentenceLength = length
+            }
+            .store(in: &cancellables)
     }
 
     func togglePlayPause() {

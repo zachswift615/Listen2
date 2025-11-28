@@ -55,9 +55,28 @@ final class TTSService: NSObject, ObservableObject {
 
     @AppStorage("paragraphPauseDelay") private var paragraphPauseDelay: Double = 0.3
     @AppStorage("defaultPlaybackRate") private var defaultPlaybackRate: Double = 1.0
-    @AppStorage("wordHighlightingEnabled") private var wordHighlightingEnabled: Bool = true
+    @AppStorage("highlightLevel") private var highlightLevelRaw: String = ""
+
     /// Track previous highlighting setting to detect changes
-    private var previousHighlightingSetting: Bool = true
+    private var previousHighlightLevel: HighlightLevel = .sentence
+
+    /// User's selected highlight level (defaults to device-recommended if not set)
+    private var highlightLevel: HighlightLevel {
+        if highlightLevelRaw.isEmpty {
+            return DeviceCapabilityService.recommendedHighlightLevel
+        }
+        return HighlightLevel(rawValue: highlightLevelRaw) ?? DeviceCapabilityService.recommendedHighlightLevel
+    }
+
+    /// Effective highlight level - just returns the user's choice (or device-recommended default)
+    var effectiveHighlightLevel: HighlightLevel {
+        return highlightLevel
+    }
+
+    /// Whether CTC alignment should run (only for word-level highlighting)
+    private var shouldRunCTCAlignment: Bool {
+        effectiveHighlightLevel == .word
+    }
 
     // MARK: - Published Properties
 
@@ -66,6 +85,10 @@ final class TTSService: NSObject, ObservableObject {
     @Published private(set) var playbackRate: Float = 1.0
     @Published private(set) var isInitializing: Bool = true
     @Published private(set) var isPreparing: Bool = false
+
+    /// Current sentence range for sentence-level highlighting (paragraph-relative offsets)
+    @Published private(set) var currentSentenceLocation: Int?
+    @Published private(set) var currentSentenceLength: Int?
 
     // MARK: - Private Properties
 
@@ -149,7 +172,7 @@ final class TTSService: NSObject, ObservableObject {
         setupAudioSessionObservers()
 
         // Track initial highlighting setting
-        previousHighlightingSetting = wordHighlightingEnabled
+        previousHighlightLevel = highlightLevel
     }
 
     private func initializePiperProvider() async {
@@ -443,11 +466,11 @@ final class TTSService: NSObject, ObservableObject {
 
     func startReading(paragraphs: [String], from index: Int, title: String = "Document", wordMap: DocumentWordMap? = nil, documentID: UUID? = nil) {
         // Check if highlighting setting changed - invalidate cache if so
-        if wordHighlightingEnabled != previousHighlightingSetting {
+        if highlightLevel != previousHighlightLevel {
             Task {
                 await readyQueue?.stopPipeline()
             }
-            previousHighlightingSetting = wordHighlightingEnabled
+            previousHighlightLevel = highlightLevel
         }
 
         // Configure audio session on first playback (lazy initialization)
@@ -511,9 +534,9 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func resume() {
-        // Restart word scheduler if we have alignment data
+        // Restart word scheduler if we have alignment data and using word-level highlighting
         // (scheduler was stopped on pause because scheduled events continue while audio is paused)
-        if let alignment = currentSchedulerAlignment, wordHighlightingEnabled {
+        if let alignment = currentSchedulerAlignment, effectiveHighlightLevel == .word {
             setupWordScheduler(alignment: alignment)
         }
 
@@ -660,8 +683,8 @@ final class TTSService: NSObject, ObservableObject {
             }
 
             do {
-                // STEP 1: Configure word highlighting setting
-                await readyQueue.setWordHighlightingEnabled(wordHighlightingEnabled)
+                // STEP 1: Configure word highlighting setting (only run CTC for word-level)
+                await readyQueue.setWordHighlightingEnabled(shouldRunCTCAlignment)
 
                 // STEP 2: Check if first sentence is already buffered (from cross-paragraph lookahead)
                 let firstReady = await readyQueue.isReady(paragraphIndex: index, sentenceIndex: 0)
@@ -757,9 +780,27 @@ final class TTSService: NSObject, ObservableObject {
                 // Mark scheduling complete
                 audioPlayer.finishScheduling()
 
-                // Start word scheduler only if we have alignment AND highlighting enabled
-                if let alignment = sentence.alignment, wordHighlightingEnabled {
-                    setupWordScheduler(alignment: alignment)
+                // Handle highlighting based on effective level
+                switch self.effectiveHighlightLevel {
+                case .word:
+                    // Word-level: start word scheduler if we have alignment
+                    if let alignment = sentence.alignment {
+                        self.setupWordScheduler(alignment: alignment)
+                    }
+                    self.currentSentenceLocation = nil
+                    self.currentSentenceLength = nil
+                case .sentence:
+                    // Sentence-level: set the current sentence range
+                    self.currentSentenceLocation = sentence.sentenceOffset
+                    self.currentSentenceLength = sentence.text.count
+                case .paragraph:
+                    // Paragraph-level: handled in ReaderView (whole paragraph highlighted)
+                    self.currentSentenceLocation = nil
+                    self.currentSentenceLength = nil
+                case .off:
+                    // No highlighting
+                    self.currentSentenceLocation = nil
+                    self.currentSentenceLength = nil
                 }
 
                 // Update state

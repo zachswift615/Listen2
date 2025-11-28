@@ -25,7 +25,7 @@ enum DesignSystem {
         // Reading highlights
         static let highlightWord = Color.yellow.opacity(0.5)
         static let highlightParagraph = Color.blue.opacity(0.08)
-        static let highlightSentence = Color.blue.opacity(0.05)
+        static let highlightSentence = Color.yellow.opacity(0.5)  // Same as word for visibility
 
         // Neutrals (adapt to light/dark mode)
         static let textPrimary = Color.primary

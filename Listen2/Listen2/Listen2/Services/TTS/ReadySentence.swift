@@ -52,16 +52,25 @@ struct SentenceKey: Hashable, CustomStringConvertible, Sendable {
     }
 }
 
-/// Configurable constants for buffer limits - tune these as needed
+/// Configurable constants for buffer limits - device-aware for memory optimization
 enum ReadyQueueConstants {
-    /// Maximum sentences to buffer ahead
-    static let maxSentenceLookahead: Int = 5
+    /// Maximum sentences to buffer ahead (adaptive based on device memory)
+    static var maxSentenceLookahead: Int {
+        DeviceCapabilityService.maxSentenceLookahead
+    }
 
     /// Maximum paragraphs to keep in sliding window
     static let maxParagraphWindow: Int = 5
 
-    /// Maximum buffer size in bytes (~10MB)
-    static let maxBufferBytes: Int = 10 * 1024 * 1024
+    /// Maximum buffer size in bytes (adaptive based on device memory)
+    static var maxBufferBytes: Int {
+        DeviceCapabilityService.maxBufferBytes
+    }
+
+    /// Maximum trellis size for CTC alignment (adaptive based on device memory)
+    static var maxTrellisSize: Int {
+        DeviceCapabilityService.maxTrellisSize
+    }
 
     /// Maximum wait time for a sentence (30 seconds)
     static let maxWaitIterations: Int = 600

@@ -69,17 +69,41 @@ struct SettingsView: View {
 
                     Divider()
 
-                    // Word Highlighting Toggle
-                    Toggle(isOn: $viewModel.wordHighlightingEnabled) {
-                        VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
-                            Text("Word Highlighting")
+                    // Highlight Level Picker
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                        HStack {
+                            Text("Text Highlighting")
                                 .font(DesignSystem.Typography.body)
-                            Text("Highlight words as they're spoken. Disabling improves performance.")
-                                .font(DesignSystem.Typography.caption)
-                                .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            Spacer()
+                            Picker("", selection: Binding(
+                                get: { viewModel.highlightLevel },
+                                set: { viewModel.highlightLevel = $0 }
+                            )) {
+                                ForEach(HighlightLevel.allCases) { level in
+                                    Text(level.displayName)
+                                        .tag(level)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .tint(DesignSystem.Colors.primary)
+                        }
+
+                        Text(viewModel.highlightLevel.description)
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+
+                        // Show warning on restricted devices
+                        if viewModel.isWordLevelRestricted && viewModel.highlightLevel == .word {
+                            HStack(spacing: DesignSystem.Spacing.xs) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                Text("Word-level highlighting may cause performance issues on this device. Consider using Sentence or Paragraph level instead.")
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(.orange)
+                            }
+                            .padding(.top, DesignSystem.Spacing.xxs)
                         }
                     }
-                    .tint(DesignSystem.Colors.primary)
                     .padding(.vertical, DesignSystem.Spacing.xs)
                 } header: {
                     Text("Playback")

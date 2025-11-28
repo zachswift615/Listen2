@@ -524,8 +524,8 @@ actor ReadyQueue {
             let estimatedTokens = text.count
             let estimatedTrellisSize = estimatedFrames * (2 * estimatedTokens + 1)
 
-            // Skip if trellis would exceed ~1 million cells (avoids multi-MB allocation)
-            if estimatedTrellisSize > 1_000_000 {
+            // Skip if trellis would exceed device-specific limit (avoids multi-MB allocation)
+            if estimatedTrellisSize > ReadyQueueConstants.maxTrellisSize {
                 TTSLogger.alignment.warning("Skipping CTC alignment for large sentence (est. \(estimatedTrellisSize) trellis cells): '\(text.prefix(50), privacy: .public)...'")
             } else {
                 do {

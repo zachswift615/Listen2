@@ -193,33 +193,73 @@ private struct ReaderViewContent: View {
     private func attributedText(for text: String, isCurrentParagraph: Bool) -> AttributedString {
         var attributedString = AttributedString(text)
 
-        // Only apply word highlighting if this is the currently playing paragraph
-        // This reduces unnecessary computations for inactive paragraphs
-        guard isCurrentParagraph, let wordRange = viewModel.currentWordRange else {
+        // Only apply highlighting if this is the currently playing paragraph
+        guard isCurrentParagraph else {
             return attributedString
         }
 
-        // Validate that the word range is within the text bounds
-        guard wordRange.lowerBound >= text.startIndex &&
-              wordRange.upperBound <= text.endIndex else {
-            return attributedString
-        }
+        let highlightLevel = viewModel.effectiveHighlightLevel
 
-        // Convert String.Index range to AttributedString range
-        let startOffset = text.distance(from: text.startIndex, to: wordRange.lowerBound)
-        let endOffset = text.distance(from: text.startIndex, to: wordRange.upperBound)
+        switch highlightLevel {
+        case .word:
+            // Word-level highlighting
+            guard let wordRange = viewModel.currentWordRange else {
+                return attributedString
+            }
 
-        // Validate offsets are within bounds
-        guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
-            return attributedString
-        }
+            // Validate that the word range is within the text bounds
+            guard wordRange.lowerBound >= text.startIndex &&
+                  wordRange.upperBound <= text.endIndex else {
+                return attributedString
+            }
 
-        let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
-        let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
+            // Convert String.Index range to AttributedString range
+            let startOffset = text.distance(from: text.startIndex, to: wordRange.lowerBound)
+            let endOffset = text.distance(from: text.startIndex, to: wordRange.upperBound)
 
-        if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
-            attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightWord
-            attributedString[attrStartIndex..<attrEndIndex].font = DesignSystem.Typography.bodyLarge
+            // Validate offsets are within bounds
+            guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
+                return attributedString
+            }
+
+            let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
+            let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
+
+            if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
+                attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightWord
+                attributedString[attrStartIndex..<attrEndIndex].font = DesignSystem.Typography.bodyLarge
+            }
+
+        case .sentence:
+            // Sentence-level highlighting
+            guard let location = viewModel.currentSentenceLocation,
+                  let length = viewModel.currentSentenceLength else {
+                return attributedString
+            }
+
+            let startOffset = location
+            let endOffset = location + length
+
+            // Validate offsets are within bounds
+            guard startOffset >= 0 && endOffset <= text.count && startOffset < endOffset else {
+                return attributedString
+            }
+
+            let attrStartIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: startOffset)
+            let attrEndIndex = attributedString.index(attributedString.startIndex, offsetByCharacters: endOffset)
+
+            if attrStartIndex < attributedString.endIndex && attrEndIndex <= attributedString.endIndex {
+                attributedString[attrStartIndex..<attrEndIndex].backgroundColor = DesignSystem.Colors.highlightSentence
+            }
+
+        case .paragraph:
+            // Paragraph-level highlighting is handled by the background of paragraphView
+            // No text-level highlighting needed here
+            break
+
+        case .off:
+            // No highlighting
+            break
         }
 
         return attributedString
