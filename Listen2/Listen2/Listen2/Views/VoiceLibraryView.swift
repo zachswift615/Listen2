@@ -336,6 +336,10 @@ struct VoiceLibraryView: View {
     // MARK: - Actions
 
     private func downloadVoice(_ voice: Voice) {
+        // Stop any sample playback before starting download
+        // (prevents audio distortion from resource contention)
+        samplePlayer.stop()
+
         Task {
             do {
                 try await viewModel.download(voice: voice)
