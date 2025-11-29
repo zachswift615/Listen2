@@ -6,9 +6,90 @@
 //
 
 import SwiftUI
+import AVFoundation
+
+// MARK: - Sample Audio Player
+
+/// Manages playback of voice sample audio from URLs
+@MainActor
+class SampleAudioPlayer: ObservableObject {
+    @Published var currentlyPlayingVoiceID: String?
+    @Published var isLoading: Bool = false
+
+    private var player: AVPlayer?
+    private var playerItem: AVPlayerItem?
+    private var observation: NSKeyValueObservation?
+    private var endObserver: Any?
+
+    func play(voiceID: String, sampleURL: URL) {
+        // Stop current playback if any
+        stop()
+
+        isLoading = true
+        currentlyPlayingVoiceID = voiceID
+
+        // Create player item and player
+        playerItem = AVPlayerItem(url: sampleURL)
+        player = AVPlayer(playerItem: playerItem)
+
+        // Observe when playback ends
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.stop()
+            }
+        }
+
+        // Observe when ready to play
+        observation = playerItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
+            Task { @MainActor in
+                guard let self = self else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.isLoading = false
+                    self.player?.play()
+                case .failed:
+                    self.isLoading = false
+                    self.stop()
+                default:
+                    break
+                }
+            }
+        }
+    }
+
+    func stop() {
+        player?.pause()
+        player = nil
+        playerItem = nil
+        currentlyPlayingVoiceID = nil
+        isLoading = false
+
+        // Clean up observers
+        observation?.invalidate()
+        observation = nil
+        if let endObserver = endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        endObserver = nil
+    }
+
+    func togglePlayback(voice: Voice) {
+        if currentlyPlayingVoiceID == voice.id {
+            stop()
+        } else if let sampleURLString = voice.sampleURL,
+                  let sampleURL = URL(string: sampleURLString) {
+            play(voiceID: voice.id, sampleURL: sampleURL)
+        }
+    }
+}
 
 struct VoiceLibraryView: View {
     @StateObject private var viewModel = VoiceLibraryViewModel()
+    @StateObject private var samplePlayer = SampleAudioPlayer()
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteConfirmation: Voice?
     @State private var errorMessage: String?
@@ -172,8 +253,11 @@ struct VoiceLibraryView: View {
                         isDownloaded: true,
                         isDownloading: viewModel.downloadingVoices.contains(voice.id),
                         downloadProgress: viewModel.downloadProgress[voice.id] ?? 0.0,
+                        isPlayingSample: samplePlayer.currentlyPlayingVoiceID == voice.id,
+                        isLoadingSample: samplePlayer.isLoading && samplePlayer.currentlyPlayingVoiceID == voice.id,
                         onDownload: { downloadVoice(voice) },
-                        onDelete: { showingDeleteConfirmation = voice }
+                        onDelete: { showingDeleteConfirmation = voice },
+                        onPlaySample: { samplePlayer.togglePlayback(voice: voice) }
                     )
                 }
             } header: {
@@ -189,8 +273,11 @@ struct VoiceLibraryView: View {
                         isDownloaded: false,
                         isDownloading: viewModel.downloadingVoices.contains(voice.id),
                         downloadProgress: viewModel.downloadProgress[voice.id] ?? 0.0,
+                        isPlayingSample: samplePlayer.currentlyPlayingVoiceID == voice.id,
+                        isLoadingSample: samplePlayer.isLoading && samplePlayer.currentlyPlayingVoiceID == voice.id,
                         onDownload: { downloadVoice(voice) },
-                        onDelete: { showingDeleteConfirmation = voice }
+                        onDelete: { showingDeleteConfirmation = voice },
+                        onPlaySample: { samplePlayer.togglePlayback(voice: voice) }
                     )
                 }
             } header: {
@@ -284,11 +371,34 @@ struct VoiceRowView: View {
     let isDownloaded: Bool
     let isDownloading: Bool
     let downloadProgress: Double
+    let isPlayingSample: Bool
+    let isLoadingSample: Bool
     let onDownload: () -> Void
     let onDelete: () -> Void
+    let onPlaySample: () -> Void
+
+    /// Whether this voice has a sample available
+    private var hasSample: Bool {
+        voice.sampleURL != nil
+    }
 
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.sm) {
+            // Play sample button (if available)
+            if hasSample {
+                Button(action: onPlaySample) {
+                    if isLoadingSample {
+                        ProgressView()
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: isPlayingSample ? "stop.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 28))
+                            .foregroundStyle(isPlayingSample ? DesignSystem.Colors.error : DesignSystem.Colors.primary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+
             // Voice info
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
                 // Voice name

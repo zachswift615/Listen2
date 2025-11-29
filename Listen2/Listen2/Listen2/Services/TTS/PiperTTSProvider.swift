@@ -42,7 +42,11 @@ final class PiperTTSProvider: TTSProvider {
 
     // MARK: - TTSProvider Protocol
 
-    var sampleRate: Int { 22050 }
+    /// Returns the actual sample rate from the TTS model (varies by voice: 16000, 22050, etc.)
+    var sampleRate: Int {
+        guard let tts = tts else { return 22050 }
+        return Int(tts.sampleRate)
+    }
 
     // MARK: - Initialization
 

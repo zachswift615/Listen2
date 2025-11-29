@@ -73,16 +73,59 @@ final class StreamingAudioPlayer: NSObject, ObservableObject {
         displayLink?.invalidate()
     }
 
+    // MARK: - Sample Rate
+
+    /// Current sample rate (default 22050 Hz for most Piper voices)
+    private(set) var currentSampleRate: Double = 22050
+
+    /// Update the audio format to match a new sample rate
+    /// Call this when switching to a voice with a different sample rate
+    func setSampleRate(_ sampleRate: Int) {
+        let newRate = Double(sampleRate)
+        guard newRate != currentSampleRate else { return }
+
+        // Stop current playback
+        playerNode.stop()
+
+        // Disconnect and reconnect with new format
+        audioEngine.disconnectNodeOutput(playerNode)
+
+        guard let newFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: newRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            return
+        }
+
+        currentFormat = newFormat
+        currentSampleRate = newRate
+
+        // Reconnect with new format
+        audioEngine.connect(
+            playerNode,
+            to: audioEngine.mainMixerNode,
+            format: newFormat
+        )
+
+        // Restart engine if it was running
+        if !audioEngine.isRunning {
+            audioEngine.prepare()
+            try? audioEngine.start()
+        }
+    }
+
     // MARK: - Setup
 
     private func setupAudioEngine() {
         // Attach player node to engine
         audioEngine.attach(playerNode)
 
-        // Create format: 22050 Hz, mono, float32
+        // Create format: default 22050 Hz, mono, float32
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 22050,
+            sampleRate: currentSampleRate,
             channels: 1,
             interleaved: false
         ) else {

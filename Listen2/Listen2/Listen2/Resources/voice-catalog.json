@@ -7,7 +7,7 @@
       "gender": "female",
       "quality": "medium",
       "size_mb": 60,
-      "sample_url": null,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/lessac/medium/speaker_0.mp3",
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2",
       "checksum": "sha256:placeholder",
       "is_bundled": true
@@ -19,7 +19,7 @@
       "gender": "female",
       "quality": "high",
       "size_mb": 109,
-      "sample_url": null,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/lessac/high/speaker_0.mp3",
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-high.tar.bz2",
       "checksum": "sha256:placeholder",
       "is_bundled": false
@@ -31,7 +31,7 @@
       "gender": "female",
       "quality": "medium",
       "size_mb": 61,
-      "sample_url": null,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/hfc_female/medium/speaker_0.mp3",
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_female-medium.tar.bz2",
       "checksum": "sha256:placeholder",
       "is_bundled": false
@@ -43,7 +43,7 @@
       "gender": "male",
       "quality": "medium",
       "size_mb": 61,
-      "sample_url": null,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/hfc_male/medium/speaker_0.mp3",
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-hfc_male-medium.tar.bz2",
       "checksum": "sha256:placeholder",
       "is_bundled": false
@@ -55,12 +55,84 @@
       "gender": "male",
       "quality": "high",
       "size_mb": 75,
-      "sample_url": null,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/ryan/high/speaker_0.mp3",
       "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ryan-high.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-danny-low",
+      "name": "Danny",
+      "language": "en_US",
+      "gender": "male",
+      "quality": "low",
+      "size_mb": 30,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/danny/low/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-danny-low.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-joe-medium",
+      "name": "Joe",
+      "language": "en_US",
+      "gender": "male",
+      "quality": "medium",
+      "size_mb": 61,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/joe/medium/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-joe-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_US-amy-medium",
+      "name": "Amy",
+      "language": "en_US",
+      "gender": "female",
+      "quality": "medium",
+      "size_mb": 61,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_US/amy/medium/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-amy-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_GB-cori-high",
+      "name": "Cori",
+      "language": "en_GB",
+      "gender": "female",
+      "quality": "high",
+      "size_mb": 75,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_GB/cori/high/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-cori-high.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_GB-northern_english_male-medium",
+      "name": "Northern English Male",
+      "language": "en_GB",
+      "gender": "male",
+      "quality": "medium",
+      "size_mb": 61,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_GB/northern_english_male/medium/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-northern_english_male-medium.tar.bz2",
+      "checksum": "sha256:placeholder",
+      "is_bundled": false
+    },
+    {
+      "id": "en_GB-alba-medium",
+      "name": "Alba",
+      "language": "en_GB",
+      "gender": "female",
+      "quality": "medium",
+      "size_mb": 61,
+      "sample_url": "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples/en/en_GB/alba/medium/speaker_0.mp3",
+      "download_url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_GB-alba-medium.tar.bz2",
       "checksum": "sha256:placeholder",
       "is_bundled": false
     }
   ],
-  "version": "1.1",
-  "last_updated": "2025-11-23"
+  "version": "1.2",
+  "last_updated": "2025-11-29"
 }

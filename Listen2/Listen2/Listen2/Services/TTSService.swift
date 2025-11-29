@@ -193,6 +193,9 @@ final class TTSService: NSObject, ObservableObject {
             self.provider = piperProvider
             self.currentPiperVoiceID = bundledVoice.id  // Track initial voice
 
+            // Set audio player sample rate to match the voice
+            await audioPlayer.setSampleRate(piperProvider.sampleRate)
+
             // Initialize synthesis queue with provider
             self.synthesisQueue = SynthesisQueue(
                 provider: piperProvider
@@ -405,13 +408,36 @@ final class TTSService: NSObject, ObservableObject {
             let savedWordMap = wordMap
             let savedDocumentID = currentDocumentID
 
-            // Stop current playback if active
-            if wasPlaying {
-                stop()
-            }
-
             // Reinitialize Piper provider with new voice
+            // All cleanup and restart happens in one Task to ensure proper sequencing
             Task {
+                // STEP 1: Stop current playback WITHOUT clearing document state
+                // (stop() resets currentText/currentProgress which causes UI issues)
+                if wasPlaying {
+                    // Cancel active speak task FIRST
+                    if let task = activeSpeakTask {
+                        task.cancel()
+                        activeSpeakTask = nil
+                    }
+
+                    // Resume any active continuation to prevent leaks
+                    if let resumer = activeResumer {
+                        resumer.resume(throwing: CancellationError())
+                        activeResumer = nil
+                    }
+
+                    // CRITICAL: Stop the readyQueue pipeline so waitAndTake() exits immediately
+                    // This must be awaited to ensure the old pipeline is fully stopped
+                    await readyQueue?.stopPipeline()
+                    await audioPlayer.stop()
+
+                    wordHighlighter.stop()
+                    fallbackSynthesizer.stopSpeaking(at: .immediate)
+                    stopWordScheduler()
+                    isPlaying = false
+                }
+
+                // STEP 2: Initialize new voice provider
                 do {
                     let piperProvider = PiperTTSProvider(
                         voiceID: voiceID,
@@ -423,23 +449,38 @@ final class TTSService: NSObject, ObservableObject {
                     provider = piperProvider
                     currentPiperVoiceID = voiceID  // Track current voice to avoid unnecessary reinit
 
-                    // CORRECT ORDER: Cancel → Clear → Update
-                    // Buffer contents are voice-dependent and must be cleared BEFORE creating new queue
-                    await chunkBuffer.clearAll()
-                    await readyQueue?.stopPipeline()
+                    // Update audio player sample rate to match the new voice
+                    // (e.g., Danny is 16000 Hz, Lessac is 22050 Hz)
+                    await audioPlayer.setSampleRate(piperProvider.sampleRate)
 
-                    // Update synthesis queue with new provider
+                    // Clear buffers before creating new queue
+                    await chunkBuffer.clearAll()
+
+                    // STEP 3: Create new synthesis queue and ready queue
                     synthesisQueue = SynthesisQueue(
                         provider: piperProvider
                     )
 
-                    // If was playing, restart from saved position with new voice
+                    // CRITICAL: Update readyQueue with new synthesisQueue
+                    // ReadyQueue holds a reference to synthesisQueue, so it must be recreated
+                    // otherwise it will continue using the old voice's provider
+                    self.readyQueue = ReadyQueue(synthesisQueue: self.synthesisQueue!, ctcAligner: self.ctcAligner)
+
+                    // STEP 4: If was playing, restart from saved position with new voice
                     if wasPlaying {
-                        // Restore document state
+                        // Restore document state (in case anything cleared it)
                         currentText = savedText
                         currentTitle = savedTitle
                         wordMap = savedWordMap
                         currentDocumentID = savedDocumentID
+
+                        // CRITICAL: Set up document source for the new ReadyQueue
+                        // Without this, getSentenceCount returns 0 and handleParagraphComplete
+                        // gets called immediately, causing runaway advance through all paragraphs
+                        await self.readyQueue?.setDocumentSource(
+                            totalCount: { [weak self] in self?.currentText.count ?? 0 },
+                            fetchParagraph: { [weak self] index in self?.currentText[safe: index] }
+                        )
 
                         // Initialize new queue with saved content
                         await synthesisQueue?.setContent(
