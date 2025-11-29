@@ -201,12 +201,13 @@ final class VoiceManager {
             throw VoiceError.invalidURL
         }
 
-        // Download to temp file
+        // Download to temp file with progress tracking
         let tempFile = fileManager.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".tar.bz2")
 
-        // Download
-        let (downloadedURL, response) = try await URLSession.shared.download(from: url)
+        // Download with progress tracking (download is 0-50% of total progress)
+        let request = URLRequest(url: url)
+        let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
 
         // Verify response
         guard let httpResponse = response as? HTTPURLResponse,
@@ -214,8 +215,29 @@ final class VoiceManager {
             throw VoiceError.downloadFailed(reason: "HTTP error")
         }
 
-        // Move to temp location
-        try fileManager.moveItem(at: downloadedURL, to: tempFile)
+        // Get expected size for progress calculation
+        let expectedSize = httpResponse.expectedContentLength
+        var downloadedSize: Int64 = 0
+        var downloadedData = Data()
+        downloadedData.reserveCapacity(expectedSize > 0 ? Int(expectedSize) : voice.sizeMB * 1024 * 1024)
+
+        // Stream download with progress updates
+        for try await byte in asyncBytes {
+            downloadedData.append(byte)
+            downloadedSize += 1
+
+            // Update progress periodically (every ~100KB to avoid too many updates)
+            if downloadedSize % 102400 == 0 {
+                if expectedSize > 0 {
+                    // Download is 0-50% of total progress
+                    let downloadProgress = Double(downloadedSize) / Double(expectedSize) * 0.5
+                    progress(downloadProgress)
+                }
+            }
+        }
+
+        // Write to temp file
+        try downloadedData.write(to: tempFile)
 
         progress(0.5)  // Download complete, extraction next
 
