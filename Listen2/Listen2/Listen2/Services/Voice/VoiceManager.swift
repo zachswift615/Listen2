@@ -8,6 +8,45 @@
 import Foundation
 import SWCompression
 
+// MARK: - Download Progress Delegate
+
+/// URLSession delegate for tracking download progress
+private class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
+    private let progressHandler: (Double) -> Void
+    private let completionHandler: (Result<URL, Error>) -> Void
+
+    init(progress: @escaping (Double) -> Void, completion: @escaping (Result<URL, Error>) -> Void) {
+        self.progressHandler = progress
+        self.completionHandler = completion
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        // Copy to a temp location we control (the original will be deleted)
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".download")
+        do {
+            try FileManager.default.copyItem(at: location, to: tempURL)
+            completionHandler(.success(tempURL))
+        } catch {
+            completionHandler(.failure(error))
+        }
+        session.invalidateAndCancel()
+    }
+
+    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        if totalBytesExpectedToWrite > 0 {
+            let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+            progressHandler(progress)
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error = error {
+            completionHandler(.failure(error))
+            session.invalidateAndCancel()
+        }
+    }
+}
+
 /// Manages Piper TTS voices (catalog, downloads, storage)
 final class VoiceManager {
 
@@ -205,39 +244,25 @@ final class VoiceManager {
         let tempFile = fileManager.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".tar.bz2")
 
-        // Download with progress tracking (download is 0-50% of total progress)
-        let request = URLRequest(url: url)
-        let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
-
-        // Verify response
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw VoiceError.downloadFailed(reason: "HTTP error")
-        }
-
-        // Get expected size for progress calculation
-        let expectedSize = httpResponse.expectedContentLength
-        var downloadedSize: Int64 = 0
-        var downloadedData = Data()
-        downloadedData.reserveCapacity(expectedSize > 0 ? Int(expectedSize) : voice.sizeMB * 1024 * 1024)
-
-        // Stream download with progress updates
-        for try await byte in asyncBytes {
-            downloadedData.append(byte)
-            downloadedSize += 1
-
-            // Update progress periodically (every ~100KB to avoid too many updates)
-            if downloadedSize % 102400 == 0 {
-                if expectedSize > 0 {
+        // Download with progress tracking using delegate (download is 0-50% of total progress)
+        let downloadedURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
+            let delegate = DownloadProgressDelegate(
+                progress: { downloadProgress in
                     // Download is 0-50% of total progress
-                    let downloadProgress = Double(downloadedSize) / Double(expectedSize) * 0.5
-                    progress(downloadProgress)
+                    progress(downloadProgress * 0.5)
+                },
+                completion: { result in
+                    continuation.resume(with: result)
                 }
-            }
+            )
+
+            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+            let task = session.downloadTask(with: url)
+            task.resume()
         }
 
-        // Write to temp file
-        try downloadedData.write(to: tempFile)
+        // Move to temp location
+        try fileManager.moveItem(at: downloadedURL, to: tempFile)
 
         progress(0.5)  // Download complete, extraction next
 

@@ -448,14 +448,23 @@ struct VoiceRowView: View {
 
             // Action button
             if isDownloading {
-                // Download progress
+                // Download/extraction progress
                 VStack(spacing: DesignSystem.Spacing.xxs) {
-                    ProgressView(value: downloadProgress)
-                        .frame(width: 50)
-
-                    Text("\(Int(downloadProgress * 100))%")
-                        .font(DesignSystem.Typography.caption2)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    if downloadProgress >= 0.5 {
+                        // Extraction phase - show indeterminate spinner
+                        ProgressView()
+                            .frame(width: 50, height: 4)
+                        Text("Extracting...")
+                            .font(DesignSystem.Typography.caption2)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    } else {
+                        // Download phase - show progress bar
+                        ProgressView(value: downloadProgress, total: 0.5)
+                            .frame(width: 50)
+                        Text("\(Int(downloadProgress * 200))%")
+                            .font(DesignSystem.Typography.caption2)
+                            .foregroundStyle(DesignSystem.Colors.textSecondary)
+                    }
                 }
             } else if isDownloaded {
                 // Delete button (only for non-bundled voices)
