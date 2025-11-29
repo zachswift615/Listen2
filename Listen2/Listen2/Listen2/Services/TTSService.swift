@@ -108,6 +108,8 @@ final class TTSService: NSObject, ObservableObject {
     private var currentPiperVoiceID: String? // Track current Piper voice to avoid unnecessary reinit
     private var currentTitle: String = "Document"
     private var shouldAutoAdvance = true // Track whether to auto-advance
+    private var needsRestartAfterVoiceChange = false // Set when voice changes while paused
+    private var voiceChangeTask: Task<Void, Never>? // Track voice change Task for synchronization
     private var wordMap: DocumentWordMap? // Word map for precise highlighting
     private var currentDocumentID: UUID? // Current document ID for alignment caching
 
@@ -400,44 +402,58 @@ final class TTSService: NSObject, ObservableObject {
                 return
             }
 
-            // Capture playback state before stopping
+            // CRITICAL: Set this IMMEDIATELY (before Task) to prevent race conditions
+            // If two setVoice calls happen quickly, both would pass the above check
+            // before either Task updates currentPiperVoiceID, causing duplicate init
+            let previousVoiceID = currentPiperVoiceID
+            currentPiperVoiceID = voiceID
+
+            // Capture playback state BEFORE any cleanup
             let wasPlaying = isPlaying
             let currentIndex = currentProgress.paragraphIndex
+
+            // CRITICAL: Cancel any existing speak task IMMEDIATELY (synchronously)
+            // If user changes voice while playback from a previous voice change is running,
+            // we need to stop that playback NOW to prevent two speakParagraph calls racing
+            if let existingTask = activeSpeakTask {
+                existingTask.cancel()
+                activeSpeakTask = nil
+            }
+            if let resumer = activeResumer {
+                resumer.resume(throwing: CancellationError())
+                activeResumer = nil
+            }
+
+            // Stop audio and highlighting immediately
+            audioPlayer.stop()
+            wordHighlighter.stop()
+            stopWordScheduler()
+            if wasPlaying {
+                isPlaying = false
+            }
+
+            // CRITICAL: Set restart flag IMMEDIATELY if paused with content
+            // If user presses play before Task completes, resume() needs to know
+            // to start fresh instead of trying to resume (no audio to resume)
+            if !wasPlaying && !currentText.isEmpty {
+                needsRestartAfterVoiceChange = true
+            }
             let savedText = currentText
             let savedTitle = currentTitle
             let savedWordMap = wordMap
             let savedDocumentID = currentDocumentID
 
             // Reinitialize Piper provider with new voice
-            // All cleanup and restart happens in one Task to ensure proper sequencing
-            Task {
-                // STEP 1: Stop current playback WITHOUT clearing document state
-                // (stop() resets currentText/currentProgress which causes UI issues)
-                if wasPlaying {
-                    // Cancel active speak task FIRST
-                    if let task = activeSpeakTask {
-                        task.cancel()
-                        activeSpeakTask = nil
-                    }
+            // Track Task so resume() can wait for it to complete
+            // Note: playback cleanup is done synchronously above; this Task handles voice init
+            voiceChangeTask = Task {
+                defer { voiceChangeTask = nil }
 
-                    // Resume any active continuation to prevent leaks
-                    if let resumer = activeResumer {
-                        resumer.resume(throwing: CancellationError())
-                        activeResumer = nil
-                    }
+                // Stop the readyQueue pipeline so any waitAndTake() calls exit
+                await readyQueue?.stopPipeline()
+                fallbackSynthesizer.stopSpeaking(at: .immediate)
 
-                    // CRITICAL: Stop the readyQueue pipeline so waitAndTake() exits immediately
-                    // This must be awaited to ensure the old pipeline is fully stopped
-                    await readyQueue?.stopPipeline()
-                    await audioPlayer.stop()
-
-                    wordHighlighter.stop()
-                    fallbackSynthesizer.stopSpeaking(at: .immediate)
-                    stopWordScheduler()
-                    isPlaying = false
-                }
-
-                // STEP 2: Initialize new voice provider
+                // STEP 1: Initialize new voice provider
                 do {
                     let piperProvider = PiperTTSProvider(
                         voiceID: voiceID,
@@ -447,7 +463,7 @@ final class TTSService: NSObject, ObservableObject {
 
                     // Update properties (already on MainActor)
                     provider = piperProvider
-                    currentPiperVoiceID = voiceID  // Track current voice to avoid unnecessary reinit
+                    // Note: currentPiperVoiceID is set synchronously before Task starts to prevent race conditions
 
                     // Update audio player sample rate to match the new voice
                     // (e.g., Danny is 16000 Hz, Lessac is 22050 Hz)
@@ -466,8 +482,9 @@ final class TTSService: NSObject, ObservableObject {
                     // otherwise it will continue using the old voice's provider
                     self.readyQueue = ReadyQueue(synthesisQueue: self.synthesisQueue!, ctcAligner: self.ctcAligner)
 
-                    // STEP 4: If was playing, restart from saved position with new voice
-                    if wasPlaying {
+                    // STEP 4: Always restore document state if we have saved content
+                    // This is needed even when paused, so startReading works after voice change
+                    if !savedText.isEmpty {
                         // Restore document state (in case anything cleared it)
                         currentText = savedText
                         currentTitle = savedTitle
@@ -489,12 +506,17 @@ final class TTSService: NSObject, ObservableObject {
                             documentID: savedDocumentID,
                             wordMap: savedWordMap
                         )
+                    }
 
-                        // Restart playback from saved position
+                    // STEP 5: If was playing, restart playback from saved position
+                    // Note: needsRestartAfterVoiceChange is already set synchronously before Task
+                    if wasPlaying {
                         speakParagraph(at: currentIndex)
                     }
                 } catch {
-                    // Failed to switch voice - continue with current voice
+                    // Failed to switch voice - revert ID and flag so retry attempts work
+                    currentPiperVoiceID = previousVoiceID
+                    needsRestartAfterVoiceChange = false
                 }
             }
         } else {
@@ -547,6 +569,9 @@ final class TTSService: NSObject, ObservableObject {
         // This prevents race condition with didFinish from previous utterance
         shouldAutoAdvance = false
 
+        // Clear voice change flag since we're starting fresh
+        needsRestartAfterVoiceChange = false
+
         currentProgress = ReadingProgress(
             paragraphIndex: index,
             wordRange: nil,
@@ -575,6 +600,36 @@ final class TTSService: NSObject, ObservableObject {
     }
 
     func resume() {
+        // Guard against multiple resume calls
+        guard !isPlaying else { return }
+
+        // If voice change is in progress, wait for it to complete before resuming
+        // This prevents race conditions where resume() is called before ReadyQueue is set up
+        if let voiceTask = voiceChangeTask {
+            Task {
+                _ = await voiceTask.value  // Wait for voice change to complete
+                await MainActor.run {
+                    // Double-check we're still not playing after waiting
+                    guard !self.isPlaying else { return }
+                    self.resumeAfterVoiceChange()
+                }
+            }
+            return
+        }
+
+        resumeAfterVoiceChange()
+    }
+
+    /// Internal resume logic, called after any pending voice change completes
+    private func resumeAfterVoiceChange() {
+        // If voice changed while paused, we need to start fresh (no audio to resume)
+        if needsRestartAfterVoiceChange {
+            needsRestartAfterVoiceChange = false
+            let currentIndex = currentProgress.paragraphIndex
+            speakParagraph(at: currentIndex)
+            return
+        }
+
         // Restart word scheduler if we have alignment data and using word-level highlighting
         // (scheduler was stopped on pause because scheduled events continue while audio is paused)
         if let alignment = currentSchedulerAlignment, effectiveHighlightLevel == .word {
@@ -710,6 +765,14 @@ final class TTSService: NSObject, ObservableObject {
         // Cancel any existing speak task before starting a new one
         if let existingTask = activeSpeakTask {
             existingTask.cancel()
+        }
+
+        // CRITICAL: Resume any active continuation to prevent leak
+        // When cancelling the task above, playReadySentence's continuation
+        // is still waiting - we must resume it to prevent "leaked continuation" error
+        if let resumer = activeResumer {
+            resumer.resume(throwing: CancellationError())
+            activeResumer = nil
         }
 
         // Use ReadyQueue for unified pipeline

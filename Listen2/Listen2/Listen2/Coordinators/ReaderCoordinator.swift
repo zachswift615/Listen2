@@ -86,29 +86,17 @@ final class ReaderCoordinator: ObservableObject {
         _ newVoice: AVVoice,
         viewModel: ReaderViewModel
     ) {
-        // Capture current state
-        let wasPlaying = viewModel.isPlaying
-        let currentParagraph = viewModel.currentParagraphIndex
-
-        // Stop immediately
-        viewModel.ttsService.stop()
-
-        // Update voice
-        viewModel.ttsService.setVoice(newVoice)
-
-        // Restart if was playing
-        if wasPlaying {
-            viewModel.ttsService.startReading(
-                paragraphs: viewModel.document.extractedText,
-                from: currentParagraph,
-                title: viewModel.document.title,
-                wordMap: viewModel.document.wordMap,
-                documentID: viewModel.document.id
-            )
-        }
-
-        // Update UI and persist
-        viewModel.setVoice(newVoice)  // This now includes persistence
+        // Let viewModel handle everything - TTSService.setVoice() internally:
+        // 1. Captures playback state BEFORE stopping
+        // 2. Stops current playback
+        // 3. Initializes new voice provider
+        // 4. Restarts playback if was playing
+        // 5. Uses saved document content (not cleared by stop())
+        //
+        // Previous approach had race conditions: calling stop() first cleared
+        // currentText=[], then setVoice() captured savedText=[] causing runaway
+        // paragraph advance when getSentenceCount() returned 0.
+        viewModel.setVoice(newVoice)
     }
 
     // MARK: - TOC Navigation
