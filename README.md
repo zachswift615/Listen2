@@ -4,14 +4,12 @@ A native iOS app that transforms PDFs and ebooks into natural-sounding audiobook
 
 ## Why Listen2?
 
-Listen2 was born from frustration with existing voice reader apps. They're either too expensive with celebrity voices, filled with unfixable bugs, or require constant internet connectivity.
+Listen2 was built to provide a simple, focused reading experience with high-quality voices that work entirely offline.
 
-Listen2 solves these problems with:
 - **On-device neural TTS** - Natural-sounding voices powered by Piper, no internet required
 - **Word-level highlighting** - Follow along with synchronized text highlighting
 - **Multiple voice options** - Download additional voices from the Voice Library
 - **Zero friction** - Import from Files, Google Drive, or clipboard and start listening
-- **Completely free** - No subscriptions, no ads, no paywalls
 
 ## Features
 
