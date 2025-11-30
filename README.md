@@ -9,13 +9,13 @@ Listen2 was built to provide a simple, focused reading experience with high-qual
 - **On-device neural TTS** - Natural-sounding voices powered by Piper, no internet required
 - **Word-level highlighting** - Follow along with synchronized text highlighting
 - **Multiple voice options** - Download additional voices from the Voice Library
-- **Zero friction** - Import from Files, Google Drive, or clipboard and start listening
+- **Zero friction** - Import from Files or clipboard and start listening
 
 ## Features
 
 ### Core Reading Experience
 - **PDF & EPUB Support** - Import documents with smart text extraction
-- **Google Drive Integration** - Browse and import documents directly from your Drive
+- **Google Drive Import** - Import documents via shared Google Drive links
 - **Clipboard Import** - Paste text and start listening immediately
 - **Neural TTS** - On-device Piper voices with natural prosody and intonation
 - **Background Playback** - Continues reading when backgrounded or locked
@@ -89,7 +89,7 @@ Listen2/
 │   │   └── CTCForcedAligner    # Word timing extraction
 │   ├── Voice/           # Voice management & downloads
 │   ├── DocumentProcessor# PDF/EPUB text extraction
-│   └── GoogleDrive/     # Drive API integration
+│   └── GoogleDrive/     # Drive link import
 ├── Design/              # Design system tokens
 └── Frameworks/          # sherpa-onnx, ONNX Runtime
 ```
