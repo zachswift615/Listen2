@@ -1,42 +1,108 @@
-# Listen2 🎧
+# Listen2
 
-A modern, elegant voice reader app for iOS. Using Piper voices, VoxPDF technology, having PDF, clipboard and EPUB support, as well as word level highlighting. 
+A native iOS app that transforms PDFs and ebooks into natural-sounding audiobooks using on-device neural text-to-speech.
 
 ## Why Listen2?
 
-Listen2 was born from frustration with existing voice reader apps. They are either too celebrity voice focused and expensive, or filled with bugs that drive me nuts that I can't fix. 
+Listen2 was born from frustration with existing voice reader apps. They're either too expensive with celebrity voices, filled with unfixable bugs, or require constant internet connectivity.
 
 Listen2 solves these problems with:
-- ✅ **Intelligent hyphenation handling** - Seamlessly joins hyphenated words across PDF line breaks
-- ✅ **Zero friction** - Import and start listening in seconds
-- ✅ **Completely free** - No subscriptions, no ads, no paywalls
-- ✅ **Native performance** - Built with SwiftUI and native iOS voices
+- **On-device neural TTS** - Natural-sounding voices powered by Piper, no internet required
+- **Word-level highlighting** - Follow along with synchronized text highlighting
+- **Multiple voice options** - Download additional voices from the Voice Library
+- **Zero friction** - Import from Files, Google Drive, or clipboard and start listening
+- **Completely free** - No subscriptions, no ads, no paywalls
 
 ## Features
 
 ### Core Reading Experience
-- 📄 **PDF Support** - Import and read PDF documents with smart text extraction
-- 📋 **Clipboard Import** - Paste text and start listening immediately
-- 🎙️ **Piper** - A fast and local neural text-to-speech engine that embeds espeak-ng for phonemization
-- ⚡ **Background Playback** - Continues reading when app is backgrounded or device is locked
-- 🎚️ **Playback Controls** - Adjust speed (0.5x-2.5x), pause duration, and voice selection
-- 🔖 **Position Saving** - Automatically remembers where you left off
+- **PDF & EPUB Support** - Import documents with smart text extraction
+- **Google Drive Integration** - Browse and import documents directly from your Drive
+- **Clipboard Import** - Paste text and start listening immediately
+- **Neural TTS** - On-device Piper voices with natural prosody and intonation
+- **Background Playback** - Continues reading when backgrounded or locked
+- **Lock Screen Controls** - Play, pause, and skip from Now Playing
+
+### Text Highlighting
+- **Word-level highlighting** - Real-time highlighting synchronized via CTC forced alignment
+- **Sentence-level highlighting** - Alternative mode for less visual distraction
+- **Paragraph-level highlighting** - Minimal highlighting showing current position
+- **Configurable** - Choose your preferred highlighting style in settings
+
+### Voice Library
+- **Multiple voices** - Download additional Piper voices (male, female, various accents)
+- **Voice preview** - Sample voices before downloading
+- **Easy switching** - Change voices mid-playback without losing position
+- **Offline storage** - Downloaded voices work without internet
 
 ### Smart Text Processing
-- 🔧 **Hyphenation Fix** - Intelligently joins words split across PDF lines
-- 📖 **Paragraph Detection** - Groups lines into semantic paragraphs for natural reading
-- 🗑️ **Clutter Filtering** - Skips page numbers, headers, and TOC entries
-- 📍 **Paragraph Highlighting** - Visual feedback shows current reading position
+- **Hyphenation fix** - Intelligently joins words split across PDF lines
+- **Paragraph detection** - Groups lines into semantic paragraphs for natural reading
+- **TOC extraction** - Navigate via table of contents when available
+- **Clutter filtering** - Skips page numbers, headers, and boilerplate
 
 ### User Experience
-- 🎨 **Thoughtful Design** - Comprehensive design system with calm blue palette
-- ⚙️ **Configurable Settings** - Customize speed, voice, and pause preferences
-- 🔒 **Lock Screen Controls** - Play, pause, and skip from lock screen
-- 📱 **Universal App** - Optimized for both iPhone and iPad
+- **Reading position memory** - Automatically remembers where you left off
+- **Playback speed control** - Adjust from 0.5x to 2.5x
+- **Paragraph pause** - Configurable pause duration between paragraphs
+- **Quick Settings** - Access speed, voice, and highlighting without leaving reader
 
-## Screenshots
+## Architecture
 
-[Coming Soon]
+Listen2 uses a streaming audio pipeline architecture for smooth, responsive playback:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        TTSService                                │
+│  Orchestrates playback, manages state, handles voice switching  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+        ┌──────────────────┼──────────────────┐
+        ▼                  ▼                  ▼
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│ SynthesisQueue│  │  ReadyQueue   │  │ AudioPlayer   │
+│ Generates     │  │ Buffers ready │  │ Streams via   │
+│ audio chunks  │──▶│ sentences    │──▶│ AVAudioEngine │
+└───────────────┘  └───────────────┘  └───────────────┘
+        │                  │                  │
+        ▼                  ▼                  ▼
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│ PiperTTS      │  │ CTCAligner    │  │ WordScheduler │
+│ Neural speech │  │ Forced align  │  │ Timed highlight│
+│ synthesis     │  │ for timing    │  │ events        │
+└───────────────┘  └───────────────┘  └───────────────┘
+```
+
+### Project Structure
+
+```
+Listen2/
+├── Models/              # SwiftData models (Document, ReadingProgress)
+├── ViewModels/          # Observable view models with Combine bindings
+├── Views/               # SwiftUI views (Library, Reader, Settings, VoiceLibrary)
+├── Coordinators/        # Navigation and complex view interactions
+├── Services/
+│   ├── TTSService       # Main playback orchestration
+│   ├── TTS/             # Audio pipeline components
+│   │   ├── SynthesisQueue      # Async audio generation
+│   │   ├── ReadyQueue          # Sentence buffering & scheduling
+│   │   ├── StreamingAudioPlayer# AVAudioEngine streaming
+│   │   ├── PiperTTSProvider    # Neural TTS wrapper
+│   │   └── CTCForcedAligner    # Word timing extraction
+│   ├── Voice/           # Voice management & downloads
+│   ├── DocumentProcessor# PDF/EPUB text extraction
+│   └── GoogleDrive/     # Drive API integration
+├── Design/              # Design system tokens
+└── Frameworks/          # sherpa-onnx, ONNX Runtime
+```
+
+### Key Technologies
+- **SwiftUI** - Declarative UI with iOS 17+ features
+- **SwiftData** - Type-safe persistence for documents and settings
+- **AVAudioEngine** - Low-latency streaming audio playback
+- **Piper TTS** - On-device neural text-to-speech via sherpa-onnx
+- **ONNX Runtime** - ML inference for TTS and alignment models
+- **CTC Forced Alignment** - Word-level timing extraction for highlighting
 
 ## Requirements
 
@@ -50,137 +116,74 @@ Listen2 solves these problems with:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/zachswift/Listen2.git
+   git clone https://github.com/zachswift615/Listen2.git
    cd Listen2
    ```
 
 2. Open the project in Xcode:
    ```bash
-   cd Listen2/Listen2
-   open Listen2.xcodeproj
+   open Listen2/Listen2/Listen2.xcodeproj
    ```
 
 3. Build and run (⌘R) on your device or simulator
 
 ### For Users
 
-[App Store link coming soon]
+TestFlight beta available - contact for access.
 
-## Architecture
+## Documentation
 
-Listen2 follows a clean **MVVM architecture** with modern iOS patterns:
-
-```
-Listen2/
-├── Models/          # SwiftData models (Document, Voice, ReadingProgress)
-├── ViewModels/      # Observable view models with Combine bindings
-├── Views/           # SwiftUI views (Library, Reader, Settings)
-├── Services/        # Business logic (DocumentProcessor, TTSService)
-└── Design/          # Design system with comprehensive tokens
-```
-
-### Key Technologies
-- **SwiftUI** - Modern declarative UI framework
-- **SwiftData** - Type-safe persistence layer
-- **AVFoundation** - Native text-to-speech with AVSpeechSynthesizer
-- **PDFKit** - PDF text extraction and processing
-- **Combine** - Reactive state management
-
-### Design Patterns
-- MVVM with protocol-oriented design
-- Service layer for business logic
-- Design tokens for consistent styling
-- Dependency injection via initializers
-
-## Development
-
-### Running Tests
-
-```bash
-cd Listen2/Listen2
-xcodebuild test -project Listen2.xcodeproj -scheme Listen2 \
-  -destination 'platform=iOS Simulator,name=iPhone 16'
-```
-
-### Project Structure
-
-- **Design System** - `Listen2/Design/DesignSystem.swift` contains all color, typography, spacing, and animation tokens
-- **Document Processing** - `Listen2/Services/DocumentProcessor.swift` handles PDF text extraction and hyphenation fixing
-- **TTS Engine** - `Listen2/Services/TTSService.swift` manages text-to-speech playback with word-level tracking
-- **Persistence** - SwiftData models in `Listen2/Models/` with automatic change tracking
-
-### Documentation
-
-- **Framework Updates**: See `docs/FRAMEWORK_UPDATE_GUIDE.md` for updating sherpa-onnx.xcframework
-- **EPUB Setup**: See `EPUB_SETUP.md` for ZIPFoundation dependency setup
-- **Implementation Plans**: Current plans in `docs/plans/`
-- **Testing**: Test documentation in `docs/testing/`
-- **Archived Docs**: Historical design docs and session handoffs in `docs/archive/`
+- **Framework Updates**: See `docs/FRAMEWORK_UPDATE_GUIDE.md` for updating sherpa-onnx
+- **EPUB Setup**: See `EPUB_SETUP.md` for ZIPFoundation dependency
+- **Scripts**: Xcode project configuration scripts in `scripts/xcode/`
 
 ## How It Works
 
+### Streaming Audio Pipeline
+
+Listen2 uses a multi-stage pipeline for responsive playback:
+
+1. **SynthesisQueue** - Generates audio chunks asynchronously using Piper TTS
+2. **ReadyQueue** - Buffers synthesized sentences with alignment data
+3. **StreamingAudioPlayer** - Streams chunks via AVAudioEngine for gapless playback
+4. **WordScheduler** - Fires timed events to update word highlighting
+
+This architecture enables:
+- Starting playback before entire document is synthesized
+- Smooth voice switching without losing position
+- Responsive pause/resume and navigation
+- Memory-efficient handling of large documents
+
+### Word-Level Highlighting
+
+CTC forced alignment extracts precise word timings:
+
+1. Audio is synthesized by Piper TTS
+2. CTC aligner processes the audio waveform and text together
+3. The model outputs character-level timestamps aligned to audio frames
+4. Word boundaries are calculated by grouping character timestamps
+5. WordScheduler fires highlight events synced to playback
+
 ### The Hyphenation Fix
 
-PDFs often break words across line boundaries with hyphens:
+PDFs often break words across lines:
 ```
 This is an ex-
 ample of hyphenation.
 ```
 
-Other readers process this as: "This is an ex [pause] ample of hyphenation."
-
-**Listen2's solution:**
-1. During paragraph joining, detect lines ending with hyphens (including trailing whitespace)
-2. Remove the hyphen and join directly without space
-3. Result: "This is an example of hyphenation." ✨
-
-See `DocumentProcessor.swift:joinLinesIntoParagraphs()` for implementation.
-
-### Performance Optimizations
-
-Listen2 is optimized for real-device performance:
-- **Word highlighting disabled** - Prevented 0.6s UI hangs on iPhone 15 Pro Max
-- **Lazy audio session** - Configured only on first playback
-- **Paragraph-only highlighting** - Smooth 60fps scrolling during TTS
-- **Efficient text processing** - Minimal memory allocations during paragraph joining
-
-## Roadmap
-
-### v1.1 - Reader Enhancements (In Design)
-- 📑 Table of Contents navigation
-- 🎛️ In-reader settings overlay
-- 🌍 Voice filtering by language and gender
-- 🔧 Voice change reliability improvements
-
-### Future Considerations
-- 📚 EPUB support
-- 🌐 Web article import via URL
-- 📊 Reading statistics
-- ☁️ iCloud sync
-- 📱 Widgets and Siri shortcuts
-
-## Contributing
-
-This is a personal project, but feedback and suggestions are welcome! Feel free to:
-- Open issues for bugs or feature requests
-- Share your experience using Listen2
-- Suggest improvements to the text processing algorithms
+Listen2 detects and joins these seamlessly during text extraction.
 
 ## Credits
 
 **Built with:**
-- SwiftUI and SwiftData
-- AVFoundation for native iOS voices
-- PDFKit for PDF text extraction
-
-**Inspired by:**
-- Voice Dream Reader (but with better hyphenation!)
-- Apple Books (for UX patterns)
-- Speechify (validated the need for a simpler alternative)
+- SwiftUI, SwiftData, AVFoundation
+- [Piper TTS](https://github.com/rhasspy/piper) - Neural text-to-speech
+- [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) - On-device inference
+- [ONNX Runtime](https://onnxruntime.ai/) - ML model execution
 
 **Developed by:** Zach Swift
 **Development Partner:** Claude (Anthropic)
-**Project Repository:** [GitHub](https://github.com/zachswift/Listen2)
 
 ## License
 
@@ -188,4 +191,4 @@ This is a personal project, but feedback and suggestions are welcome! Feel free 
 
 ---
 
-**Built with ❤️ and 🤖 to make reading accessible and enjoyable.**
+**Built with care to make reading accessible and enjoyable.**
