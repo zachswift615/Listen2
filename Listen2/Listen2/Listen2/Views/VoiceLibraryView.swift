@@ -25,12 +25,22 @@ class SampleAudioPlayer: ObservableObject {
         // Stop current playback if any
         stop()
 
+        // Ensure audio session is active and configured for playback
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            print("[SamplePlayer] Failed to configure audio session: \(error)")
+        }
+
         isLoading = true
         currentlyPlayingVoiceID = voiceID
 
         // Create player item and player
         playerItem = AVPlayerItem(url: sampleURL)
         player = AVPlayer(playerItem: playerItem)
+        player?.volume = 1.0
 
         // Observe when playback ends
         endObserver = NotificationCenter.default.addObserver(
