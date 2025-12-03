@@ -60,13 +60,12 @@ final class AudioSessionManager: ObservableObject {
     func activateSession() throws {
         do {
             // Configure for background playback with spoken audio optimization
-            // .duckOthers lowers VoiceOver volume when our TTS plays, rather than
-            // fighting for audio. This preserves Now Playing controls (unlike
-            // .interruptSpokenAudioAndMixWithOthers which breaks them).
+            // No options - we want exclusive audio focus for Now Playing controls
+            // VoiceOver conflicts are handled by limiting announcements during playback
             try audioSession.setCategory(
                 .playback,
                 mode: .spokenAudio,
-                options: [.duckOthers]
+                options: []
             )
 
             // Activate the session
