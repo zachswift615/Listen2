@@ -60,11 +60,12 @@ final class AudioSessionManager: ObservableObject {
     func activateSession() throws {
         do {
             // Configure for background playback with spoken audio optimization
-            // No .mixWithOthers - we want to claim exclusive audio focus for Now Playing controls
+            // .interruptSpokenAudioAndMixWithOthers allows our TTS to interrupt VoiceOver
+            // while still allowing Now Playing controls to work
             try audioSession.setCategory(
                 .playback,
                 mode: .spokenAudio,
-                options: []
+                options: [.interruptSpokenAudioAndMixWithOthers]
             )
 
             // Activate the session

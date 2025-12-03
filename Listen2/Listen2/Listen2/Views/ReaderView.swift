@@ -179,12 +179,18 @@ private struct ReaderViewContent: View {
             }
             // Accessibility announcements for state changes
             .onChange(of: viewModel.isPlaying) { _, isPlaying in
-                let announcement = isPlaying ? "Playing" : "Paused"
-                UIAccessibility.post(notification: .announcement, argument: announcement)
+                guard UIAccessibility.isVoiceOverRunning else { return }
+                // Only announce pause - "Playing" would conflict with TTS audio
+                if !isPlaying {
+                    UIAccessibility.post(notification: .announcement, argument: "Paused")
+                }
             }
             .onChange(of: viewModel.currentParagraphIndex) { oldIndex, newIndex in
-                // Only announce if VoiceOver is running and index actually changed
-                guard UIAccessibility.isVoiceOverRunning, oldIndex != newIndex else { return }
+                // Only announce if VoiceOver is running, not playing, and index changed
+                // Don't announce during playback - it would interrupt the TTS
+                guard UIAccessibility.isVoiceOverRunning,
+                      !viewModel.isPlaying,
+                      oldIndex != newIndex else { return }
                 let total = viewModel.document.extractedText.count
                 let announcement = "Paragraph \(newIndex + 1) of \(total)"
                 UIAccessibility.post(notification: .announcement, argument: announcement)
