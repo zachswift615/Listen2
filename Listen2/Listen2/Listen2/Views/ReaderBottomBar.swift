@@ -31,6 +31,7 @@ struct ReaderBottomBar: View {
                         .font(DesignSystem.Typography.caption)
                         .monospacedDigit()
                 }
+                .accessibilityHidden(true) // Hide from VoiceOver, slider has full context
 
                 Slider(value: Binding(
                     get: { playbackSpeed },
@@ -40,6 +41,9 @@ struct ReaderBottomBar: View {
                     }
                 ), in: 0.5...2.5, step: 0.1)
                 .frame(maxWidth: 150)
+                .accessibilityLabel("Playback speed")
+                .accessibilityValue(String(format: "%.1f times", playbackSpeed))
+                .accessibilityHint("Adjust how fast the text is read")
 
                 Spacer()
 
@@ -53,6 +57,8 @@ struct ReaderBottomBar: View {
                     .font(DesignSystem.Typography.caption)
                 }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("Voice: \(currentVoice)")
+                .accessibilityHint("Double tap to change voice")
             }
 
             // Playback buttons
@@ -63,6 +69,8 @@ struct ReaderBottomBar: View {
                         .font(.system(size: DesignSystem.ControlBar.skipButtonSize))
                 }
                 .foregroundColor(DesignSystem.Colors.primary)
+                .accessibilityLabel("Skip back")
+                .accessibilityHint("Go to previous paragraph")
 
                 // Play/Pause
                 Button(action: onPlayPause) {
@@ -70,6 +78,8 @@ struct ReaderBottomBar: View {
                         .font(.system(size: DesignSystem.ControlBar.playButtonSize))
                 }
                 .foregroundColor(DesignSystem.Colors.primary)
+                .accessibilityLabel(isPlaying ? "Pause" : "Play")
+                .accessibilityHint(isPlaying ? "Pause reading" : "Start reading")
 
                 // Skip forward
                 Button(action: onSkipForward) {
@@ -77,6 +87,8 @@ struct ReaderBottomBar: View {
                         .font(.system(size: DesignSystem.ControlBar.skipButtonSize))
                 }
                 .foregroundColor(DesignSystem.Colors.primary)
+                .accessibilityLabel("Skip forward")
+                .accessibilityHint("Go to next paragraph")
             }
         }
         .padding(.horizontal, DesignSystem.Spacing.md)

@@ -5,6 +5,7 @@
 
 import Foundation
 import SwiftUI
+import UIKit
 
 @MainActor
 final class ReaderCoordinator: ObservableObject {
@@ -15,6 +16,11 @@ final class ReaderCoordinator: ObservableObject {
     @Published var isShowingTOC: Bool = false
     @Published var isShowingQuickSettings: Bool = false
     @Published var areControlsVisible: Bool = true  // Unified control visibility (starts visible)
+
+    /// Returns true if controls should be visible (always true when VoiceOver is running)
+    var effectiveControlsVisible: Bool {
+        UIAccessibility.isVoiceOverRunning || areControlsVisible
+    }
 
     // MARK: - Private Properties
 

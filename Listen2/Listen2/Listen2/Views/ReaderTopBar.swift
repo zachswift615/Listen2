@@ -28,6 +28,7 @@ struct ReaderTopBar: View {
                     .foregroundColor(DesignSystem.Colors.primary)
                     .frame(height: DesignSystem.ControlBar.largeTouchTarget)
                 }
+                .accessibilityLabel("Back to Library")
 
                 Spacer()
 
@@ -37,6 +38,7 @@ struct ReaderTopBar: View {
                     .foregroundColor(DesignSystem.Colors.textPrimary)
                     .lineLimit(1)
                     .frame(maxWidth: 200)
+                    .accessibilityAddTraits(.isHeader)
 
                 Spacer()
 
@@ -50,6 +52,8 @@ struct ReaderTopBar: View {
                             height: DesignSystem.ControlBar.largeTouchTarget
                         )
                 }
+                .accessibilityLabel("Table of Contents")
+                .accessibilityHint("Show chapter list")
 
                 // Settings button
                 Button(action: onSettings) {
@@ -61,6 +65,8 @@ struct ReaderTopBar: View {
                             height: DesignSystem.ControlBar.largeTouchTarget
                         )
                 }
+                .accessibilityLabel("Settings")
+                .accessibilityHint("Adjust reading settings")
             }
             .padding(.horizontal, DesignSystem.Spacing.md)
             .padding(.top, topSafeArea + DesignSystem.Spacing.xs)

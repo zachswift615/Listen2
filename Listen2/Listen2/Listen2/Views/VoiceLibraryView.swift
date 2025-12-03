@@ -179,6 +179,8 @@ struct VoiceLibraryView: View {
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .accessibilityLabel("Filter by download status")
+                .accessibilityValue(viewModel.filterDownloadStatus.displayName)
 
                 // Gender filter
                 Menu {
@@ -202,6 +204,8 @@ struct VoiceLibraryView: View {
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .accessibilityLabel("Filter by gender")
+                .accessibilityValue(viewModel.filterGender?.capitalized ?? "All")
 
                 // Quality filter
                 Menu {
@@ -225,6 +229,8 @@ struct VoiceLibraryView: View {
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .accessibilityLabel("Filter by quality")
+                .accessibilityValue(viewModel.filterQuality?.capitalized ?? "All")
 
                 // Clear filters
                 if viewModel.hasActiveFilters {
@@ -238,6 +244,7 @@ struct VoiceLibraryView: View {
                             .background(Color(.systemGray5))
                             .cornerRadius(DesignSystem.CornerRadius.round)
                     }
+                    .accessibilityLabel("Clear all filters")
                 }
             }
             .padding(.horizontal, DesignSystem.Spacing.md)
@@ -411,6 +418,8 @@ struct VoiceRowView: View {
                     }
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(isPlayingSample ? "Stop sample" : "Play sample")
+                .accessibilityHint(isPlayingSample ? "Stop playing voice sample" : "Listen to a sample of this voice")
             }
 
             // Voice info
@@ -480,6 +489,8 @@ struct VoiceRowView: View {
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
                     }
                 }
+                .accessibilityLabel("Downloading")
+                .accessibilityValue(downloadProgress >= 0.5 ? "Extracting" : "\(Int(downloadProgress * 200)) percent")
             } else if isDownloaded {
                 // Delete button (only for non-bundled voices)
                 if !voice.isBundled {
@@ -488,10 +499,13 @@ struct VoiceRowView: View {
                             .font(.system(size: DesignSystem.IconSize.medium))
                             .foregroundStyle(DesignSystem.Colors.error)
                     }
+                    .accessibilityLabel("Delete voice")
+                    .accessibilityHint("Remove this voice from device")
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: DesignSystem.IconSize.medium))
                         .foregroundStyle(DesignSystem.Colors.success)
+                        .accessibilityLabel("Installed")
                 }
             } else {
                 // Download button
@@ -500,9 +514,12 @@ struct VoiceRowView: View {
                         .font(.system(size: DesignSystem.IconSize.medium))
                         .foregroundStyle(DesignSystem.Colors.primary)
                 }
+                .accessibilityLabel("Download voice")
+                .accessibilityHint("Download this voice to use it")
             }
         }
         .padding(.vertical, DesignSystem.Spacing.xxs)
+        .accessibilityElement(children: .contain)
     }
 }
 

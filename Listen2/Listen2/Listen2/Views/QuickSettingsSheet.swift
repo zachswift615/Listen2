@@ -53,6 +53,7 @@ struct QuickSettingsSheet: View {
                     Text(String(format: "%.1fx", viewModel.playbackRate))
                         .foregroundColor(.secondary)
                 }
+                .accessibilityHidden(true)
 
                 Slider(
                     value: Binding(
@@ -62,6 +63,8 @@ struct QuickSettingsSheet: View {
                     in: 0.5...2.5,
                     step: 0.1
                 )
+                .accessibilityLabel("Playback speed")
+                .accessibilityValue(String(format: "%.1f times", viewModel.playbackRate))
             }
         } header: {
             Text("Playback")
@@ -87,6 +90,9 @@ struct QuickSettingsSheet: View {
                         .foregroundColor(.secondary)
                 }
             }
+            .accessibilityLabel("Voice")
+            .accessibilityValue(viewModel.selectedVoice?.name ?? "Default")
+            .accessibilityHint("Double tap to change voice")
         } header: {
             Text("Voice")
         }
@@ -101,12 +107,16 @@ struct QuickSettingsSheet: View {
                     Text(String(format: "%.1fs", pauseDuration))
                         .foregroundColor(.secondary)
                 }
+                .accessibilityHidden(true)
 
                 Slider(
                     value: $pauseDuration,
                     in: 0.0...1.0,
                     step: 0.1
                 )
+                .accessibilityLabel("Paragraph pause duration")
+                .accessibilityValue(String(format: "%.1f seconds", pauseDuration))
+                .accessibilityHint("Time to pause between paragraphs")
             }
         } header: {
             Text("Timing")
@@ -130,6 +140,8 @@ struct QuickSettingsSheet: View {
                     }
                 }
                 .pickerStyle(.menu)
+                .accessibilityLabel("Text highlighting level")
+                .accessibilityValue(settingsViewModel.highlightLevel.displayName)
             }
         } header: {
             Text("Display")
@@ -158,6 +170,7 @@ struct VoicePickerSheet: View {
                 filterBar
 
                 List(filteredVoices) { voice in
+                    let isSelected = viewModel.selectedVoice?.id == voice.id
                     Button(action: {
                         if let coordinator = coordinator {
                             coordinator.changeVoice(voice, viewModel: viewModel)
@@ -188,13 +201,16 @@ struct VoicePickerSheet: View {
 
                             Spacer()
 
-                            if viewModel.selectedVoice?.id == voice.id {
+                            if isSelected {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(.accentColor)
                             }
                         }
                     }
                     .foregroundColor(.primary)
+                    .accessibilityLabel("\(voice.name), \(voice.language), \(voice.gender.rawValue)")
+                    .accessibilityHint(isSelected ? "Currently selected" : "Double tap to select")
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 }
             }
             .navigationTitle("Select Voice")
@@ -241,6 +257,8 @@ struct VoicePickerSheet: View {
                     .background(Color.accentColor.opacity(0.2))
                     .cornerRadius(16)
                 }
+                .accessibilityLabel("Filter by gender")
+                .accessibilityValue(filterManager.selectedGender?.rawValue.capitalized ?? "All")
 
                 // Clear filters
                 if !filterManager.selectedLanguages.isEmpty || filterManager.selectedGender != nil {
@@ -254,6 +272,8 @@ struct VoicePickerSheet: View {
                             .background(Color(.systemGray5))
                             .cornerRadius(16)
                     }
+                    .accessibilityLabel("Clear filters")
+                    .accessibilityHint("Remove all voice filters")
                 }
             }
             .padding()

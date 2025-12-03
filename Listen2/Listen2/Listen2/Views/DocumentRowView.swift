@@ -59,6 +59,18 @@ struct DocumentRowView: View {
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
         }
         .padding(.vertical, DesignSystem.Spacing.xxs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+        .accessibilityHint("Double tap to open and read")
+    }
+
+    private var accessibilityDescription: String {
+        var parts: [String] = [document.title, document.sourceType.rawValue]
+        if document.progressPercentage > 0 {
+            parts.append("\(document.progressPercentage) percent complete")
+        }
+        parts.append("Last read \(friendlyTimeAgo(document.lastRead))")
+        return parts.joined(separator: ", ")
     }
 
     private func friendlyTimeAgo(_ date: Date) -> String {

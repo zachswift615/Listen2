@@ -46,6 +46,7 @@ struct LibraryView: View {
                     } label: {
                         Image(systemName: "gearshape")
                     }
+                    .accessibilityLabel("Settings")
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -75,6 +76,8 @@ struct LibraryView: View {
                     } label: {
                         Image(systemName: "plus")
                     }
+                    .accessibilityLabel("Add document")
+                    .accessibilityHint("Import from file, clipboard, or link")
                 }
             }
             .fileImporter(
@@ -187,6 +190,7 @@ struct LibraryView: View {
                 Label("Try Sample Content", systemImage: "star.fill")
             }
             .buttonStyle(.primary)
+            .accessibilityHint("Load example documents to try the app")
         }
     }
 

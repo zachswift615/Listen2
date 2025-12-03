@@ -52,15 +52,18 @@ struct TOCBottomSheet: View {
         HStack {
             Image(systemName: "magnifyingglass")
                 .foregroundColor(.secondary)
+                .accessibilityHidden(true)
 
             TextField("Search chapters...", text: $searchText)
                 .textFieldStyle(.plain)
+                .accessibilityLabel("Search chapters")
 
             if !searchText.isEmpty {
                 Button(action: { searchText = "" }) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
+                .accessibilityLabel("Clear search")
             }
         }
         .padding()
@@ -69,6 +72,7 @@ struct TOCBottomSheet: View {
 
     private var tocList: some View {
         List(filteredEntries) { entry in
+            let isCurrent = isCurrentEntry(entry)
             Button(action: {
                 onSelectEntry(entry)
             }) {
@@ -85,14 +89,28 @@ struct TOCBottomSheet: View {
 
                     Spacer()
 
-                    if isCurrentEntry(entry) {
+                    if isCurrent {
                         Image(systemName: "checkmark")
                             .foregroundColor(.accentColor)
                     }
                 }
                 .padding(.leading, CGFloat(entry.level * 20))
             }
+            .accessibilityLabel(tocEntryAccessibilityLabel(entry: entry, isCurrent: isCurrent))
+            .accessibilityHint("Double tap to jump to this section")
+            .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
         }
+    }
+
+    private func tocEntryAccessibilityLabel(entry: TOCEntry, isCurrent: Bool) -> String {
+        var label = entry.title
+        if entry.level > 0 {
+            label = "Subsection: \(label)"
+        }
+        if isCurrent {
+            label += ", current section"
+        }
+        return label
     }
 
     private var emptyState: some View {

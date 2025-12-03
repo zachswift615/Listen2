@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 struct ReaderView: View {
     @EnvironmentObject var ttsService: TTSService
@@ -53,6 +54,8 @@ private struct ReaderViewContent: View {
                     }
                     .contentShape(Rectangle())
                     .onTapGesture(count: 1) {
+                        // Skip tap gesture when VoiceOver is running - controls stay visible
+                        guard !UIAccessibility.isVoiceOverRunning else { return }
                         withAnimation(DesignSystem.Animation.controlSlideIn) {
                             coordinator.toggleControls()
                         }
@@ -75,7 +78,7 @@ private struct ReaderViewContent: View {
 
                 // Floating controls (overlay layer)
                 VStack(spacing: 0) {
-                    if coordinator.areControlsVisible {
+                    if coordinator.effectiveControlsVisible {
                         ReaderTopBar(
                             documentTitle: viewModel.document.title,
                             onBack: {
@@ -97,7 +100,7 @@ private struct ReaderViewContent: View {
 
                     Spacer()
 
-                    if coordinator.areControlsVisible {
+                    if coordinator.effectiveControlsVisible {
                         ReaderBottomBar(
                             playbackSpeed: Binding(
                                 get: { Double(viewModel.playbackRate) },
@@ -130,7 +133,7 @@ private struct ReaderViewContent: View {
                         .transition(.move(edge: .bottom))
                     }
                 }
-                .animation(DesignSystem.Animation.controlSlideIn, value: coordinator.areControlsVisible)
+                .animation(DesignSystem.Animation.controlSlideIn, value: coordinator.effectiveControlsVisible)
 
                 // Loading overlay
                 if viewModel.isLoading {
@@ -179,6 +182,7 @@ private struct ReaderViewContent: View {
 
     private func paragraphView(text: String, index: Int) -> some View {
         let isCurrentParagraph = index == viewModel.currentParagraphIndex
+        let totalParagraphs = viewModel.document.extractedText.count
 
         return Text(attributedText(for: text, isCurrentParagraph: isCurrentParagraph))
             .font(DesignSystem.Typography.bodyLarge)
@@ -192,6 +196,10 @@ private struct ReaderViewContent: View {
                 // Double-tap: jump to this paragraph and start playback
                 coordinator.navigateToParagraph(index, viewModel: viewModel)
             }
+            .accessibilityLabel("Paragraph \(index + 1) of \(totalParagraphs)")
+            .accessibilityValue(text)
+            .accessibilityHint(isCurrentParagraph ? "Currently playing. Double tap to restart from here" : "Double tap to start reading from here")
+            .accessibilityAddTraits(isCurrentParagraph ? [.isSelected] : [])
     }
 
     private func attributedText(for text: String, isCurrentParagraph: Bool) -> AttributedString {
@@ -273,6 +281,7 @@ private struct ReaderViewContent: View {
         NavigationStack {
             List {
                 ForEach(viewModel.ttsService.availableVoices()) { voice in
+                    let isSelected = voice.id == viewModel.selectedVoice?.id
                     Button {
                         viewModel.setVoice(voice)
                         showingVoicePicker = false
@@ -289,13 +298,16 @@ private struct ReaderViewContent: View {
 
                             Spacer()
 
-                            if voice.id == viewModel.selectedVoice?.id {
+                            if isSelected {
                                 Image(systemName: "checkmark")
                                     .foregroundStyle(DesignSystem.Colors.primary)
                             }
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(voice.name), \(voice.displayName)")
+                    .accessibilityHint(isSelected ? "Currently selected" : "Double tap to select")
+                    .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                 }
             }
             .navigationTitle("Select Voice")
