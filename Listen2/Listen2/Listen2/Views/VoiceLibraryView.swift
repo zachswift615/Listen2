@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AVFoundation
+import UIKit
 
 // MARK: - Sample Audio Player
 
@@ -175,10 +176,11 @@ struct VoiceLibraryView: View {
                     )
                     .font(DesignSystem.Typography.caption)
                     .padding(.horizontal, DesignSystem.Spacing.sm)
-                    .padding(.vertical, DesignSystem.Spacing.xxs)
+                    .padding(.vertical, DesignSystem.Spacing.xs)
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .frame(minHeight: 44) // Minimum touch target
                 .accessibilityLabel("Filter by download status")
                 .accessibilityValue(viewModel.filterDownloadStatus.displayName)
 
@@ -200,10 +202,11 @@ struct VoiceLibraryView: View {
                     )
                     .font(DesignSystem.Typography.caption)
                     .padding(.horizontal, DesignSystem.Spacing.sm)
-                    .padding(.vertical, DesignSystem.Spacing.xxs)
+                    .padding(.vertical, DesignSystem.Spacing.xs)
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .frame(minHeight: 44) // Minimum touch target
                 .accessibilityLabel("Filter by gender")
                 .accessibilityValue(viewModel.filterGender?.capitalized ?? "All")
 
@@ -225,10 +228,11 @@ struct VoiceLibraryView: View {
                     )
                     .font(DesignSystem.Typography.caption)
                     .padding(.horizontal, DesignSystem.Spacing.sm)
-                    .padding(.vertical, DesignSystem.Spacing.xxs)
+                    .padding(.vertical, DesignSystem.Spacing.xs)
                     .background(DesignSystem.Colors.primary.opacity(0.2))
                     .cornerRadius(DesignSystem.CornerRadius.round)
                 }
+                .frame(minHeight: 44) // Minimum touch target
                 .accessibilityLabel("Filter by quality")
                 .accessibilityValue(viewModel.filterQuality?.capitalized ?? "All")
 
@@ -240,10 +244,11 @@ struct VoiceLibraryView: View {
                         Text("Clear")
                             .font(DesignSystem.Typography.caption)
                             .padding(.horizontal, DesignSystem.Spacing.sm)
-                            .padding(.vertical, DesignSystem.Spacing.xxs)
+                            .padding(.vertical, DesignSystem.Spacing.xs)
                             .background(Color(.systemGray5))
                             .cornerRadius(DesignSystem.CornerRadius.round)
                     }
+                    .frame(minHeight: 44) // Minimum touch target
                     .accessibilityLabel("Clear all filters")
                 }
             }
@@ -313,6 +318,7 @@ struct VoiceLibraryView: View {
                 Image(systemName: "externaldrive.fill")
                     .foregroundStyle(DesignSystem.Colors.primary)
                     .font(.system(size: DesignSystem.IconSize.medium))
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxxs) {
                     Text("Voice Storage")
@@ -327,6 +333,8 @@ struct VoiceLibraryView: View {
                 Spacer()
             }
             .padding(.vertical, DesignSystem.Spacing.xxs)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Voice Storage: \(viewModel.downloadedVoicesCount) voices using \(formatBytes(viewModel.totalDiskUsage))")
         }
     }
 
@@ -337,6 +345,7 @@ struct VoiceLibraryView: View {
             Image(systemName: "speaker.wave.3")
                 .font(.system(size: 64))
                 .foregroundStyle(DesignSystem.Colors.textTertiary)
+                .accessibilityHidden(true)
 
             Text("No Voices Found")
                 .font(DesignSystem.Typography.title3)
@@ -348,6 +357,8 @@ struct VoiceLibraryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(DesignSystem.Spacing.xl)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("No voices found. Try adjusting your filters.")
     }
 
     // MARK: - Actions
@@ -360,8 +371,12 @@ struct VoiceLibraryView: View {
         Task {
             do {
                 try await viewModel.download(voice: voice)
+                // Announce download completion for VoiceOver users
+                UIAccessibility.post(notification: .announcement, argument: "\(voice.name) voice downloaded successfully")
             } catch {
                 errorMessage = error.localizedDescription
+                // Announce download failure for VoiceOver users
+                UIAccessibility.post(notification: .announcement, argument: "Failed to download \(voice.name) voice")
             }
         }
     }

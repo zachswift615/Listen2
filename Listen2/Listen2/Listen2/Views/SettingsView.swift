@@ -27,6 +27,7 @@ struct SettingsView: View {
                                 .font(DesignSystem.Typography.mono)
                                 .foregroundStyle(DesignSystem.Colors.primary)
                         }
+                        .accessibilityHidden(true)
 
                         Slider(
                             value: $viewModel.defaultSpeed,
@@ -34,10 +35,14 @@ struct SettingsView: View {
                             step: 0.1
                         )
                         .tint(DesignSystem.Colors.primary)
+                        .accessibilityLabel("Default playback speed")
+                        .accessibilityValue(String(format: "%.1f times", viewModel.defaultSpeed))
+                        .accessibilityHint("Range 0.5 to 2.5 times normal speed")
 
                         Text("Speed range: 0.5x - 2.5x")
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            .accessibilityHidden(true)
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
 
@@ -51,6 +56,7 @@ struct SettingsView: View {
                                 .font(DesignSystem.Typography.mono)
                                 .foregroundStyle(DesignSystem.Colors.primary)
                         }
+                        .accessibilityHidden(true)
 
                         Slider(
                             value: $viewModel.paragraphPauseDelay,
@@ -58,10 +64,14 @@ struct SettingsView: View {
                             step: 0.1
                         )
                         .tint(DesignSystem.Colors.primary)
+                        .accessibilityLabel("Pause between paragraphs")
+                        .accessibilityValue(String(format: "%.1f seconds", viewModel.paragraphPauseDelay))
+                        .accessibilityHint("Range 0 to 1 second")
 
                         Text("Pause duration: 0.0s - 1.0s")
                             .font(DesignSystem.Typography.caption)
                             .foregroundStyle(DesignSystem.Colors.textSecondary)
+                            .accessibilityHidden(true)
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
 
@@ -93,11 +103,13 @@ struct SettingsView: View {
                             HStack(spacing: DesignSystem.Spacing.xs) {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundStyle(.orange)
+                                    .accessibilityHidden(true)
                                 Text("Word-level highlighting may cause performance issues on this device. Consider using Sentence or Paragraph level instead.")
                                     .font(DesignSystem.Typography.caption)
                                     .foregroundStyle(.orange)
                             }
                             .padding(.top, DesignSystem.Spacing.xxs)
+                            .accessibilityLabel("Warning: Word-level highlighting may cause performance issues on this device")
                         }
                     }
                     .padding(.vertical, DesignSystem.Spacing.xs)
@@ -131,6 +143,9 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Default Voice")
+                    .accessibilityValue(viewModel.selectedVoice?.displayName ?? "Not selected")
+                    .accessibilityHint("Double tap to change default voice")
 
                     Button {
                         showingVoiceLibrary = true
@@ -154,6 +169,8 @@ struct SettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Voice Library")
+                    .accessibilityHint("Download and manage additional voices")
                 } header: {
                     Text("Voice")
                 }
@@ -173,6 +190,7 @@ struct SettingsView: View {
                         Image(systemName: "book.fill")
                             .font(.system(size: DesignSystem.IconSize.medium))
                             .foregroundStyle(DesignSystem.Colors.primary)
+                            .accessibilityHidden(true)
 
                         VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxxs) {
                             Text("Listen2")
@@ -185,6 +203,7 @@ struct SettingsView: View {
                         }
                     }
                     .padding(.vertical, DesignSystem.Spacing.xxs)
+                    .accessibilityElement(children: .combine)
                 } header: {
                     Text("About")
                 }
@@ -214,6 +233,7 @@ struct SettingsView: View {
                 Section {
                     // Piper voices
                     ForEach(viewModel.piperVoices) { voice in
+                        let isSelected = voice.id == viewModel.selectedVoice?.id
                         Button {
                             viewModel.selectedVoice = voice
                             showingVoicePicker = false
@@ -231,7 +251,7 @@ struct SettingsView: View {
 
                                 Spacer()
 
-                                if voice.id == viewModel.selectedVoice?.id {
+                                if isSelected {
                                     Image(systemName: "checkmark")
                                         .foregroundStyle(DesignSystem.Colors.primary)
                                         .font(.system(size: DesignSystem.IconSize.medium, weight: .semibold))
@@ -239,6 +259,9 @@ struct SettingsView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("\(voice.name), \(voice.displayName)")
+                        .accessibilityHint(isSelected ? "Currently selected" : "Double tap to select")
+                        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                     }
                 } header: {
                     Text("Voice")
@@ -257,6 +280,7 @@ struct SettingsView: View {
                     // iOS voice picker (only shown when toggle enabled)
                     if useIOSVoice {
                         ForEach(viewModel.iosVoices) { voice in
+                            let isSelected = voice.id == viewModel.selectedVoice?.id
                             Button {
                                 viewModel.selectedVoice = voice
                                 showingVoicePicker = false
@@ -274,7 +298,7 @@ struct SettingsView: View {
 
                                     Spacer()
 
-                                    if voice.id == viewModel.selectedVoice?.id {
+                                    if isSelected {
                                         Image(systemName: "checkmark")
                                             .foregroundStyle(DesignSystem.Colors.primary)
                                             .font(.system(size: DesignSystem.IconSize.medium, weight: .semibold))
@@ -282,6 +306,9 @@ struct SettingsView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("\(voice.name), \(voice.displayName)")
+                            .accessibilityHint(isSelected ? "Currently selected" : "Double tap to select")
+                            .accessibilityAddTraits(isSelected ? [.isSelected] : [])
                         }
                     }
                 } header: {

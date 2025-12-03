@@ -177,7 +177,19 @@ private struct ReaderViewContent: View {
                     viewModel.savePosition()
                 }
             }
-        
+            // Accessibility announcements for state changes
+            .onChange(of: viewModel.isPlaying) { _, isPlaying in
+                let announcement = isPlaying ? "Playing" : "Paused"
+                UIAccessibility.post(notification: .announcement, argument: announcement)
+            }
+            .onChange(of: viewModel.currentParagraphIndex) { oldIndex, newIndex in
+                // Only announce if VoiceOver is running and index actually changed
+                guard UIAccessibility.isVoiceOverRunning, oldIndex != newIndex else { return }
+                let total = viewModel.document.extractedText.count
+                let announcement = "Paragraph \(newIndex + 1) of \(total)"
+                UIAccessibility.post(notification: .announcement, argument: announcement)
+            }
+
     }
 
     private func paragraphView(text: String, index: Int) -> some View {
