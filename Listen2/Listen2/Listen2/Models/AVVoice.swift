@@ -33,11 +33,11 @@ struct AVVoice: Identifiable, Hashable {
     init(from piperVoice: Voice) {
         self.id = "piper:\(piperVoice.id)"  // Prefix to distinguish from AVSpeech
         self.name = piperVoice.displayName
-        self.language = piperVoice.language
+        self.language = piperVoice.language.code  // Use language code
         // Map Piper quality to AVSpeech quality
         self.quality = Self.mapPiperQuality(piperVoice.quality)
-        // Map Piper gender
-        self.gender = AVVoiceGender(rawValue: piperVoice.gender) ?? .neutral
+        // Piper voices don't have gender metadata, default to neutral
+        self.gender = .neutral
         self.isPiperVoice = true
     }
 

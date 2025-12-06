@@ -1,17 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find:*)",
-      "WebSearch",
-      "Bash(xcodebuild:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git show:*)",
+      "Bash(git push)",
       "Skill(superpowers:brainstorming)",
-      "Bash(xcrun swiftc:*)",
-      "Bash(xcrun simctl:*)"
+      "Bash(xcodebuild:*)",
+      "mcp__tts__speak_tool",
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git rev-parse:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "enabledMcpjsonServers": [
+    "tts",
+    "jility"
+  ]
 }

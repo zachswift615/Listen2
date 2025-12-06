@@ -7,11 +7,13 @@
 
 import SwiftUI
 import SwiftData
+import AppIntents
 
 @main
 struct Listen2App: App {
     @StateObject private var ttsService = TTSService()
     @State private var urlToImport: URL?
+    @State private var siriReadClipboard: Bool = false
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -31,14 +33,36 @@ struct Listen2App: App {
             if ttsService.isInitializing {
                 LoadingView()
             } else {
-                LibraryView(modelContext: sharedModelContainer.mainContext, urlToImport: $urlToImport)
-                    .environmentObject(ttsService)
-                    .onOpenURL { url in
-                        // Handle incoming document URLs from "Open With"
-                        urlToImport = url
-                    }
+                LibraryView(
+                    modelContext: sharedModelContainer.mainContext,
+                    urlToImport: $urlToImport,
+                    siriReadClipboard: $siriReadClipboard
+                )
+                .environmentObject(ttsService)
+                .onOpenURL { url in
+                    // Handle incoming document URLs from "Open With"
+                    urlToImport = url
+                }
+                .onAppear {
+                    checkSiriTrigger()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                    checkSiriTrigger()
+                }
             }
         }
         .modelContainer(sharedModelContainer)
+    }
+
+    private func checkSiriTrigger() {
+        if UserDefaults.standard.bool(forKey: "siriReadClipboard") {
+            UserDefaults.standard.set(false, forKey: "siriReadClipboard")
+            siriReadClipboard = true
+        }
+    }
+
+    init() {
+        // Register App Shortcuts with Siri
+        Listen2Shortcuts.updateAppShortcutParameters()
     }
 }

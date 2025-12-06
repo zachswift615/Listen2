@@ -295,13 +295,14 @@ final class VoiceManager {
 
     // MARK: - Downloads
 
-    /// Download a voice from remote URL
+    /// Download a voice from Hugging Face
     /// - Parameters:
-    ///   - voiceID: Voice ID to download
+    ///   - voice: Voice to download
     ///   - progress: Progress callback (0.0-1.0)
-    func download(voiceID: String, progress: @escaping (Double) -> Void) async throws {
-        guard let voice = availableVoices().first(where: { $0.id == voiceID }) else {
-            throw VoiceError.voiceNotFound
+    func download(voice: Voice, progress: @escaping (Double) -> Void) async throws {
+        guard let onnxPath = voice.onnxFilePath,
+              let jsonPath = voice.onnxJsonFilePath else {
+            throw VoiceError.invalidURL
         }
 
         // Check free space (require 2x voice size for safety)
@@ -310,115 +311,88 @@ final class VoiceManager {
             throw VoiceError.insufficientSpace(required: voice.sizeMB * 2, available: Int(freeSpace() / 1024 / 1024))
         }
 
-        // Download URL
-        guard let url = URL(string: voice.downloadURL) else {
+        let voiceDir = voicesDirectory.appendingPathComponent(voice.id)
+        try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
+
+        // Download URLs
+        let baseURL = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+        guard let onnxURL = URL(string: "\(baseURL)/\(onnxPath)"),
+              let jsonURL = URL(string: "\(baseURL)/\(jsonPath)") else {
             throw VoiceError.invalidURL
         }
 
-        // Download to temp file with progress tracking
-        let tempFile = fileManager.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString + ".tar.bz2")
-
-        // Download with progress tracking using delegate (download is 0-50% of total progress)
-        let downloadedURL = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL, Error>) in
-            let delegate = DownloadProgressDelegate(
-                progress: { downloadProgress in
-                    // Download is 0-50% of total progress
-                    progress(downloadProgress * 0.5)
-                },
-                completion: { result in
-                    continuation.resume(with: result)
-                }
-            )
-
-            let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-            let task = session.downloadTask(with: url)
-            task.resume()
+        // Download .onnx file (main model, ~95% of size)
+        progress(0.0)
+        let onnxData = try await downloadFile(from: onnxURL) { downloadProgress in
+            progress(downloadProgress * 0.9)  // 0-90%
         }
 
-        // Move to temp location
-        try fileManager.moveItem(at: downloadedURL, to: tempFile)
+        // Save .onnx as model.onnx
+        let modelPath = voiceDir.appendingPathComponent("model.onnx")
+        try onnxData.write(to: modelPath)
+        progress(0.9)
 
-        progress(0.5)  // Download complete, extraction next
+        // Download .onnx.json file (small config)
+        let jsonData = try await downloadFile(from: jsonURL) { _ in }
+        let jsonFilePath = voiceDir.appendingPathComponent("model.onnx.json")
+        try jsonData.write(to: jsonFilePath)
+        progress(0.95)
 
-        // Extract tar.bz2 using SWCompression (works on both iOS and macOS)
-        let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
-        try fileManager.createDirectory(at: voiceDir, withIntermediateDirectories: true)
-
-        // Perform CPU-intensive decompression and extraction on background thread
-        let extractionResult = try await Task.detached(priority: .userInitiated) { [voiceDir, tempFile, fileManager, progress] in
-            do {
-                // Read the compressed tar.bz2 file
-                let compressedData = try Data(contentsOf: tempFile)
-
-                // Decompress bzip2 (CPU-intensive - can take 2-3 minutes for 64MB files)
-                progress(0.55)  // Show some progress
-                let decompressedData = try BZip2.decompress(data: compressedData)
-                progress(0.75)  // Decompression complete
-
-                // Extract tar archive
-                progress(0.80)
-                let tarContents = try TarContainer.open(container: decompressedData)
-
-                // Extract all files, stripping the top-level directory
-                var extractedCount = 0
-                let totalEntries = tarContents.count
-                for (index, entry) in tarContents.enumerated() {
-                    // Skip directories
-                    guard entry.info.type == .regular || entry.info.type == .symbolicLink else {
-                        continue
-                    }
-
-                    // Strip first path component (removes top-level directory from archive)
-                    var pathComponents = entry.info.name.split(separator: "/").map(String.init)
-                    guard pathComponents.count > 1 else {
-                        // Skip if only one component (shouldn't happen)
-                        continue
-                    }
-                    pathComponents.removeFirst()
-                    var relativePath = pathComponents.joined(separator: "/")
-
-                    // Rename voice-specific .onnx file to generic model.onnx
-                    if relativePath.hasSuffix(".onnx") && !relativePath.hasSuffix("model.onnx") {
-                        relativePath = "model.onnx"
-                    }
-
-                    let filePath = voiceDir.appendingPathComponent(relativePath)
-
-                    // Create parent directory if needed
-                    let parentDir = filePath.deletingLastPathComponent()
-                    if !fileManager.fileExists(atPath: parentDir.path) {
-                        try fileManager.createDirectory(at: parentDir, withIntermediateDirectories: true)
-                    }
-
-                    // Write file data
-                    if let data = entry.data {
-                        try data.write(to: filePath)
-                        extractedCount += 1
-                        if extractedCount % 100 == 0 {
-                            let extractProgress = 0.80 + (0.19 * Double(index) / Double(totalEntries))
-                            progress(extractProgress)
-                        }
-                    }
-                }
-
-                return extractedCount
-            } catch {
-                print("[VoiceManager] ❌ Extraction failed: \(error.localizedDescription)")
-                throw error
-            }
-        }.value
-
-        // Check if extraction succeeded
-        if extractionResult == 0 {
-            try? fileManager.removeItem(at: voiceDir)
-            throw VoiceError.extractionFailed(reason: "No files extracted")
-        }
-
+        // Generate tokens.txt from phoneme_id_map in JSON
+        try generateTokensFile(from: jsonData, to: voiceDir.appendingPathComponent("tokens.txt"))
         progress(1.0)
 
-        // Cleanup temp file
-        try? fileManager.removeItem(at: tempFile)
+        print("[VoiceManager] ✅ Downloaded voice: \(voice.id)")
+    }
+
+    /// Download a file with progress tracking
+    private func downloadFile(from url: URL, progress: @escaping (Double) -> Void) async throws -> Data {
+        let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw VoiceError.downloadFailed(reason: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        }
+
+        let expectedLength = httpResponse.expectedContentLength
+        var data = Data()
+        data.reserveCapacity(expectedLength > 0 ? Int(expectedLength) : 50_000_000)
+
+        var downloadedBytes: Int64 = 0
+        for try await byte in asyncBytes {
+            data.append(byte)
+            downloadedBytes += 1
+
+            if expectedLength > 0 && downloadedBytes % 100_000 == 0 {
+                let progressValue = Double(downloadedBytes) / Double(expectedLength)
+                progress(progressValue)
+            }
+        }
+
+        return data
+    }
+
+    /// Generate tokens.txt from phoneme_id_map in .onnx.json
+    private func generateTokensFile(from jsonData: Data, to path: URL) throws {
+        // Parse the JSON to get phoneme_id_map
+        guard let json = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let phonemeIdMap = json["phoneme_id_map"] as? [String: [Int]] else {
+            throw VoiceError.extractionFailed(reason: "Missing phoneme_id_map in config")
+        }
+
+        // Convert to tokens.txt format: "symbol index" per line
+        // Sort by index to maintain order
+        let lines = phonemeIdMap
+            .compactMap { (symbol, indices) -> (String, Int)? in
+                guard let index = indices.first else { return nil }
+                return (symbol, index)
+            }
+            .sorted { $0.1 < $1.1 }
+            .map { "\($0.0) \($0.1)" }
+            .joined(separator: "\n")
+
+        try lines.write(to: path, atomically: true, encoding: .utf8)
+        print("[VoiceManager] Generated tokens.txt with \(phonemeIdMap.count) entries")
     }
 
     /// Delete a downloaded voice

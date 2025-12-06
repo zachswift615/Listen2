@@ -15,15 +15,19 @@ struct LibraryView: View {
     @State private var showingSettings = false
     @State private var showingDriveLinkSheet = false
     @State private var driveLinkText = ""
+    @State private var navigationPath = NavigationPath()
+    @State private var autoPlayDocument: Document?
     @Binding var urlToImport: URL?
+    @Binding var siriReadClipboard: Bool
 
-    init(modelContext: ModelContext, urlToImport: Binding<URL?> = .constant(nil)) {
+    init(modelContext: ModelContext, urlToImport: Binding<URL?> = .constant(nil), siriReadClipboard: Binding<Bool> = .constant(false)) {
         _viewModel = StateObject(wrappedValue: LibraryViewModel(modelContext: modelContext))
         _urlToImport = urlToImport
+        _siriReadClipboard = siriReadClipboard
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 // Main content
                 if viewModel.filteredDocuments.isEmpty {
@@ -109,8 +113,34 @@ struct LibraryView: View {
                 }
             }
             .navigationDestination(for: Document.self) { document in
-                ReaderView(document: document, modelContext: modelContext)
-                    .environmentObject(ttsService)
+                ReaderView(
+                    document: document,
+                    modelContext: modelContext,
+                    autoPlay: autoPlayDocument?.id == document.id
+                )
+                .environmentObject(ttsService)
+                .onAppear {
+                    // Clear autoPlay after navigation
+                    if autoPlayDocument?.id == document.id {
+                        autoPlayDocument = nil
+                    }
+                }
+            }
+            .onChange(of: siriReadClipboard) { _, shouldRead in
+                guard shouldRead else { return }
+                siriReadClipboard = false
+
+                Task {
+                    // Import clipboard content
+                    guard let clipboardText = UIPasteboard.general.string else { return }
+                    let document = await viewModel.importFromClipboardAndReturn(clipboardText)
+
+                    // Navigate to the new document and auto-play
+                    if let document = document {
+                        autoPlayDocument = document
+                        navigationPath.append(document)
+                    }
+                }
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()

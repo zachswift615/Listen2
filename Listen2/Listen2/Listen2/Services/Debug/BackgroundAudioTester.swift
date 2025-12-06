@@ -65,8 +65,13 @@ final class BackgroundAudioTester: NSObject, ObservableObject {
         progress = "Initializing TTS..."
 
         do {
-            // Initialize Piper TTS
-            let voice = voiceManager.bundledVoice()
+            // Get first downloaded voice
+            let downloadedVoices = voiceManager.downloadedVoices()
+            guard let voice = downloadedVoices.first else {
+                status = .error("No voices downloaded. Please download a voice first.")
+                return
+            }
+
             let provider = PiperTTSProvider(voiceID: voice.id, voiceManager: voiceManager)
             try await provider.initialize()
 

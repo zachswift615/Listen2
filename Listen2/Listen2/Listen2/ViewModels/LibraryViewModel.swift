@@ -56,6 +56,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func importFromClipboard(_ text: String) async {
+        _ = await importFromClipboardAndReturn(text)
+    }
+
+    /// Import clipboard text and return the created document (for Siri integration)
+    func importFromClipboardAndReturn(_ text: String) async -> Document? {
         isProcessing = true
         errorMessage = nil
 
@@ -64,7 +69,7 @@ final class LibraryViewModel: ObservableObject {
         guard !paragraphs.isEmpty else {
             errorMessage = "No text found in clipboard"
             isProcessing = false
-            return
+            return nil
         }
 
         let document = Document(
@@ -80,9 +85,12 @@ final class LibraryViewModel: ObservableObject {
             loadDocuments()
         } catch {
             errorMessage = "Failed to save document: \(error.localizedDescription)"
+            isProcessing = false
+            return nil
         }
 
         isProcessing = false
+        return document
     }
 
     func importTextFile(from url: URL) async {

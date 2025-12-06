@@ -91,8 +91,7 @@ class SampleAudioPlayer: ObservableObject {
     func togglePlayback(voice: Voice) {
         if currentlyPlayingVoiceID == voice.id {
             stop()
-        } else if let sampleURLString = voice.sampleURL,
-                  let sampleURL = URL(string: sampleURLString) {
+        } else if let sampleURL = voice.sampleURL {
             play(voiceID: voice.id, sampleURL: sampleURL)
         }
     }
@@ -183,32 +182,6 @@ struct VoiceLibraryView: View {
                 .frame(minHeight: 44) // Minimum touch target
                 .accessibilityLabel("Filter by download status")
                 .accessibilityValue(viewModel.filterDownloadStatus.displayName)
-
-                // Gender filter
-                Menu {
-                    Button("All Genders") {
-                        viewModel.filterGender = nil
-                    }
-                    Button("Female") {
-                        viewModel.filterGender = "female"
-                    }
-                    Button("Male") {
-                        viewModel.filterGender = "male"
-                    }
-                } label: {
-                    Label(
-                        viewModel.filterGender?.capitalized ?? "All Genders",
-                        systemImage: "person.fill"
-                    )
-                    .font(DesignSystem.Typography.caption)
-                    .padding(.horizontal, DesignSystem.Spacing.sm)
-                    .padding(.vertical, DesignSystem.Spacing.xs)
-                    .background(DesignSystem.Colors.primary.opacity(0.2))
-                    .cornerRadius(DesignSystem.CornerRadius.round)
-                }
-                .frame(minHeight: 44) // Minimum touch target
-                .accessibilityLabel("Filter by gender")
-                .accessibilityValue(viewModel.filterGender?.capitalized ?? "All")
 
                 // Quality filter
                 Menu {
@@ -444,16 +417,9 @@ struct VoiceRowView: View {
                     .font(DesignSystem.Typography.headline)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
 
-                // Language and gender
+                // Language and quality
                 HStack(spacing: DesignSystem.Spacing.xxs) {
-                    Text(voice.language)
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-
-                    Text("•")
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-
-                    Text(voice.gender.capitalized)
+                    Text(voice.language.displayName)
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(DesignSystem.Colors.textSecondary)
 
@@ -465,21 +431,10 @@ struct VoiceRowView: View {
                         .foregroundStyle(DesignSystem.Colors.textSecondary)
                 }
 
-                // Size and bundled status
-                HStack(spacing: DesignSystem.Spacing.xxs) {
-                    Text("\(voice.sizeMB) MB")
-                        .font(DesignSystem.Typography.caption)
-                        .foregroundStyle(DesignSystem.Colors.textSecondary)
-
-                    if voice.isBundled {
-                        Text("•")
-                            .foregroundStyle(DesignSystem.Colors.textSecondary)
-
-                        Text("Bundled")
-                            .font(DesignSystem.Typography.caption)
-                            .foregroundStyle(DesignSystem.Colors.primary)
-                    }
-                }
+                // Size
+                Text("\(voice.sizeMB) MB")
+                    .font(DesignSystem.Typography.caption)
+                    .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
 
             Spacer()
@@ -507,21 +462,14 @@ struct VoiceRowView: View {
                 .accessibilityLabel("Downloading")
                 .accessibilityValue(downloadProgress >= 0.5 ? "Extracting" : "\(Int(downloadProgress * 200)) percent")
             } else if isDownloaded {
-                // Delete button (only for non-bundled voices)
-                if !voice.isBundled {
-                    Button(action: onDelete) {
-                        Image(systemName: "trash")
-                            .font(.system(size: DesignSystem.IconSize.medium))
-                            .foregroundStyle(DesignSystem.Colors.error)
-                    }
-                    .accessibilityLabel("Delete voice")
-                    .accessibilityHint("Remove this voice from device")
-                } else {
-                    Image(systemName: "checkmark.circle.fill")
+                // Delete button
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
                         .font(.system(size: DesignSystem.IconSize.medium))
-                        .foregroundStyle(DesignSystem.Colors.success)
-                        .accessibilityLabel("Installed")
+                        .foregroundStyle(DesignSystem.Colors.error)
                 }
+                .accessibilityLabel("Delete voice")
+                .accessibilityHint("Remove this voice from device")
             } else {
                 // Download button
                 Button(action: onDownload) {
@@ -545,7 +493,6 @@ class VoiceLibraryViewModel: ObservableObject {
     @Published var downloadingVoices: Set<String> = []
     @Published var downloadProgress: [String: Double] = [:]
     @Published var filterDownloadStatus: DownloadStatusFilter = .all
-    @Published var filterGender: String?
     @Published var filterQuality: String?
 
     private let voiceManager = VoiceManager()
@@ -568,11 +515,6 @@ class VoiceLibraryViewModel: ObservableObject {
             voices = voices.filter { isVoiceDownloaded($0) }
         case .available:
             voices = voices.filter { !isVoiceDownloaded($0) }
-        }
-
-        // Filter by gender
-        if let gender = filterGender {
-            voices = voices.filter { $0.gender == gender }
         }
 
         // Filter by quality
@@ -600,7 +542,7 @@ class VoiceLibraryViewModel: ObservableObject {
     }
 
     var hasActiveFilters: Bool {
-        filterDownloadStatus != .all || filterGender != nil || filterQuality != nil
+        filterDownloadStatus != .all || filterQuality != nil
     }
 
     // MARK: - Methods
@@ -620,7 +562,7 @@ class VoiceLibraryViewModel: ObservableObject {
             downloadProgress.removeValue(forKey: voice.id)
         }
 
-        try await voiceManager.download(voiceID: voice.id) { [weak self] progress in
+        try await voiceManager.download(voice: voice) { [weak self] progress in
             Task { @MainActor in
                 self?.downloadProgress[voice.id] = progress
             }
@@ -637,7 +579,6 @@ class VoiceLibraryViewModel: ObservableObject {
 
     func clearFilters() {
         filterDownloadStatus = .all
-        filterGender = nil
         filterQuality = nil
     }
 

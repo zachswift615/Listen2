@@ -11,9 +11,10 @@ struct ReaderView: View {
     @EnvironmentObject var ttsService: TTSService
     let document: Document
     let modelContext: ModelContext
+    var autoPlay: Bool = false
 
     var body: some View {
-        ReaderViewContent(document: document, modelContext: modelContext, ttsService: ttsService)
+        ReaderViewContent(document: document, modelContext: modelContext, ttsService: ttsService, autoPlay: autoPlay)
     }
 }
 
@@ -23,13 +24,16 @@ private struct ReaderViewContent: View {
     @StateObject private var viewModel: ReaderViewModel
     @StateObject private var coordinator = ReaderCoordinator()
     @State private var showingVoicePicker = false
+    @State private var hasAutoPlayed = false
+    let autoPlay: Bool
 
-    init(document: Document, modelContext: ModelContext, ttsService: TTSService) {
+    init(document: Document, modelContext: ModelContext, ttsService: TTSService, autoPlay: Bool = false) {
         _viewModel = StateObject(wrappedValue: ReaderViewModel(
             document: document,
             modelContext: modelContext,
             ttsService: ttsService
         ))
+        self.autoPlay = autoPlay
     }
 
     var body: some View {
@@ -168,6 +172,15 @@ private struct ReaderViewContent: View {
             }
             .onAppear {
                 viewModel.loadTOC()
+
+                // Auto-play when triggered from Siri
+                if autoPlay && !hasAutoPlayed {
+                    hasAutoPlayed = true
+                    // Small delay to ensure view is ready
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        viewModel.togglePlayPause()
+                    }
+                }
             }
             .onDisappear {
                 viewModel.savePosition()

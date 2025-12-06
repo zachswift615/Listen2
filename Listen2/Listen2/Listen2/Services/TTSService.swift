@@ -185,15 +185,24 @@ final class TTSService: NSObject, ObservableObject {
         }
 
         do {
-            let bundledVoice = voiceManager.bundledVoice()
+            // Get selected voice ID from UserDefaults, or use first downloaded voice
+            let selectedVoiceID = UserDefaults.standard.string(forKey: "selectedVoiceID")
+            let downloadedVoices = voiceManager.downloadedVoices()
+
+            guard let voiceID = selectedVoiceID ?? downloadedVoices.first?.id else {
+                throw NSError(domain: "TTSService", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "No voice available. Please download a voice first."
+                ])
+            }
+
             let piperProvider = PiperTTSProvider(
-                voiceID: bundledVoice.id,
+                voiceID: voiceID,
                 voiceManager: voiceManager
             )
             try await piperProvider.initialize()
 
             self.provider = piperProvider
-            self.currentPiperVoiceID = bundledVoice.id  // Track initial voice
+            self.currentPiperVoiceID = voiceID  // Track initial voice
 
             // Set audio player sample rate to match the voice
             await audioPlayer.setSampleRate(piperProvider.sampleRate)
