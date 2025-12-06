@@ -125,7 +125,7 @@ private struct ReaderViewContent: View {
                                 coordinator.keepControlsVisible()
                             },
                             onPlayPause: {
-                                viewModel.togglePlayPause()
+                                viewModel.attemptPlay()
                                 coordinator.keepControlsVisible()
                             },
                             onSkipForward: {
@@ -170,6 +170,9 @@ private struct ReaderViewContent: View {
                 QuickSettingsSheet(viewModel: viewModel, coordinator: coordinator)
                     .presentationDetents([.medium])
             }
+            .sheet(isPresented: $viewModel.showUpgradePrompt) {
+                UpgradePromptView()
+            }
             .onAppear {
                 viewModel.loadTOC()
 
@@ -178,7 +181,7 @@ private struct ReaderViewContent: View {
                     hasAutoPlayed = true
                     // Small delay to ensure view is ready
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        viewModel.togglePlayPause()
+                        viewModel.attemptPlay()
                     }
                 }
             }
