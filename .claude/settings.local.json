@@ -9,7 +9,8 @@
       "mcp__tts__speak_tool",
       "Bash(mkdir:*)",
       "WebFetch(domain:github.com)",
-      "Bash(git rev-parse:*)"
+      "Bash(git rev-parse:*)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": [],
     "ask": []

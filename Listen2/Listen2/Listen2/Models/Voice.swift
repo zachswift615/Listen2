@@ -86,8 +86,20 @@ struct Voice: Identifiable, Codable, Equatable {
         "\(name.capitalized) (\(quality.capitalized) Quality)"
     }
 
-    /// Sample audio URL from piper-samples repo
+    /// Languages that have samples in piper-samples repo
+    private static let languagesWithSamples: Set<String> = [
+        "ar", "bg", "ca", "cs", "cy", "da", "de", "el", "en", "es",
+        "fa", "fi", "fr", "hi", "hu", "id", "is", "it", "ka", "kk",
+        "lb", "lv", "ml", "ne", "nl", "no", "pl", "pt", "ro", "ru",
+        "sk", "sl", "sr", "sv", "sw", "te", "tr", "uk", "vi", "zh"
+    ]
+
+    /// Sample audio URL from piper-samples repo (only for languages with samples)
     var sampleURL: URL? {
+        // Only generate sample URL for languages that have samples in the repo
+        guard Self.languagesWithSamples.contains(language.family) else {
+            return nil
+        }
         let base = "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples"
         let path = "\(language.family)/\(language.code)/\(name)/\(quality)/speaker_0.mp3"
         guard let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
