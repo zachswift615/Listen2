@@ -55,7 +55,7 @@ struct UpgradePromptView: View {
                 .background(DesignSystem.Colors.primary)
                 .foregroundStyle(.white)
                 .font(DesignSystem.Typography.headline)
-                .clipShape(RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium))
+                .clipShape(RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.md))
             }
             .disabled(purchaseManager.isPurchasing)
             .padding(.horizontal, DesignSystem.Spacing.lg)

@@ -10,7 +10,11 @@
       "Bash(mkdir:*)",
       "WebFetch(domain:github.com)",
       "Bash(git rev-parse:*)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Skill(superpowers:writing-plans)",
+      "Skill(superpowers:subagent-driven-development)",
+      "Bash(git diff:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []
