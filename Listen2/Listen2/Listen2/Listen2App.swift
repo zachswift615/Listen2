@@ -12,6 +12,7 @@ import AppIntents
 @main
 struct Listen2App: App {
     @StateObject private var ttsService = TTSService()
+    @StateObject private var purchaseManager = PurchaseManager.shared
     @State private var urlToImport: URL?
     @State private var siriReadClipboard: Bool = false
 
@@ -30,25 +31,31 @@ struct Listen2App: App {
 
     var body: some Scene {
         WindowGroup {
-            if ttsService.isInitializing {
-                LoadingView()
-            } else {
-                LibraryView(
-                    modelContext: sharedModelContainer.mainContext,
-                    urlToImport: $urlToImport,
-                    siriReadClipboard: $siriReadClipboard
-                )
-                .environmentObject(ttsService)
-                .onOpenURL { url in
-                    // Handle incoming document URLs from "Open With"
-                    urlToImport = url
+            Group {
+                if ttsService.isInitializing || purchaseManager.entitlementState == .loading {
+                    LoadingView()
+                } else {
+                    LibraryView(
+                        modelContext: sharedModelContainer.mainContext,
+                        urlToImport: $urlToImport,
+                        siriReadClipboard: $siriReadClipboard
+                    )
+                    .environmentObject(ttsService)
+                    .environmentObject(purchaseManager)
+                    .onOpenURL { url in
+                        // Handle incoming document URLs from "Open With"
+                        urlToImport = url
+                    }
+                    .onAppear {
+                        checkSiriTrigger()
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
+                        checkSiriTrigger()
+                    }
                 }
-                .onAppear {
-                    checkSiriTrigger()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
-                    checkSiriTrigger()
-                }
+            }
+            .task {
+                await purchaseManager.initialize()
             }
         }
         .modelContainer(sharedModelContainer)
