@@ -104,6 +104,12 @@ struct VoiceLibraryView: View {
     @State private var showingDeleteConfirmation: Voice?
     @State private var errorMessage: String?
 
+    private var currentLanguageDisplayName: String {
+        viewModel.availableLanguages
+            .first { $0.family == viewModel.filterLanguage }?
+            .displayName ?? "English"
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -187,6 +193,28 @@ struct VoiceLibraryView: View {
                 .frame(minHeight: 44) // Minimum touch target
                 .accessibilityLabel("Filter by download status")
                 .accessibilityValue(viewModel.filterDownloadStatus.displayName)
+
+                // Language filter (required)
+                Menu {
+                    ForEach(viewModel.availableLanguages, id: \.family) { language in
+                        Button(language.displayName) {
+                            viewModel.filterLanguage = language.family
+                        }
+                    }
+                } label: {
+                    Label(
+                        currentLanguageDisplayName,
+                        systemImage: "globe"
+                    )
+                    .font(DesignSystem.Typography.caption)
+                    .padding(.horizontal, DesignSystem.Spacing.sm)
+                    .padding(.vertical, DesignSystem.Spacing.xs)
+                    .background(DesignSystem.Colors.primary.opacity(0.3))
+                    .cornerRadius(DesignSystem.CornerRadius.round)
+                }
+                .frame(minHeight: 44) // Minimum touch target
+                .accessibilityLabel("Filter by language")
+                .accessibilityValue(currentLanguageDisplayName)
 
                 // Quality filter
                 Menu {
@@ -420,12 +448,12 @@ struct VoiceRowView: View {
 
             // Voice info
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxs) {
-                // Voice name
-                Text(voice.name)
+                // Voice name (capitalized)
+                Text(voice.name.capitalized)
                     .font(DesignSystem.Typography.headline)
                     .foregroundStyle(DesignSystem.Colors.textPrimary)
 
-                // Language and quality
+                // Language, quality, and size
                 HStack(spacing: DesignSystem.Spacing.xxs) {
                     Text(voice.language.displayName)
                         .font(DesignSystem.Typography.caption)
@@ -434,15 +462,17 @@ struct VoiceRowView: View {
                     Text("•")
                         .foregroundStyle(DesignSystem.Colors.textSecondary)
 
-                    Text("\(voice.quality.capitalized) Quality")
+                    Text(voice.quality.capitalized)
+                        .font(DesignSystem.Typography.caption)
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+
+                    Text("•")
+                        .foregroundStyle(DesignSystem.Colors.textSecondary)
+
+                    Text("\(voice.sizeMB) MB")
                         .font(DesignSystem.Typography.caption)
                         .foregroundStyle(DesignSystem.Colors.textSecondary)
                 }
-
-                // Size
-                Text("\(voice.sizeMB) MB")
-                    .font(DesignSystem.Typography.caption)
-                    .foregroundStyle(DesignSystem.Colors.textSecondary)
             }
 
             Spacer()
