@@ -108,10 +108,15 @@ struct VoiceLibraryView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Filter bar
-                filterBar
+                if !viewModel.isLoadingCatalog {
+                    filterBar
+                }
 
-                // Voice list
-                if viewModel.filteredVoices.isEmpty {
+                // Voice list or loading
+                if viewModel.isLoadingCatalog {
+                    ProgressView("Loading voices...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if viewModel.filteredAvailableVoices.isEmpty && viewModel.downloadedVoices.isEmpty {
                     emptyState
                 } else {
                     voiceList
@@ -262,7 +267,7 @@ struct VoiceLibraryView: View {
             }
 
             Section {
-                ForEach(viewModel.availableVoices) { voice in
+                ForEach(viewModel.filteredAvailableVoices) { voice in
                     VoiceRowView(
                         voice: voice,
                         isDownloaded: false,
@@ -276,10 +281,13 @@ struct VoiceLibraryView: View {
                     )
                 }
             } header: {
-                if !viewModel.availableVoices.isEmpty {
+                if !viewModel.filteredAvailableVoices.isEmpty {
                     Text("Available for Download")
                 }
             }
+        }
+        .refreshable {
+            await viewModel.refreshCatalog()
         }
     }
 
@@ -490,47 +498,65 @@ struct VoiceRowView: View {
 
 @MainActor
 class VoiceLibraryViewModel: ObservableObject {
+    @Published var allVoices: [Voice] = []
+    @Published var isLoadingCatalog: Bool = true
     @Published var downloadingVoices: Set<String> = []
     @Published var downloadProgress: [String: Double] = [:]
     @Published var filterDownloadStatus: DownloadStatusFilter = .all
+    @Published var filterLanguage: String = "en"  // Required, defaults to English
     @Published var filterQuality: String?
 
     private let voiceManager = VoiceManager()
-    private var allVoices: [Voice] = []
 
     init() {
-        loadVoices()
+        Task {
+            await loadVoices()
+        }
     }
 
     // MARK: - Computed Properties
 
-    var filteredVoices: [Voice] {
-        var voices = allVoices
+    /// All unique languages from catalog
+    var availableLanguages: [VoiceLanguage] {
+        let languages = Set(allVoices.map { $0.language })
+        return Array(languages).sorted { $0.nameEnglish < $1.nameEnglish }
+    }
 
-        // Filter by download status
-        switch filterDownloadStatus {
-        case .all:
-            break
-        case .downloaded:
-            voices = voices.filter { isVoiceDownloaded($0) }
-        case .available:
-            voices = voices.filter { !isVoiceDownloaded($0) }
-        }
+    /// Voices filtered by language and quality (for "Available" section)
+    var filteredAvailableVoices: [Voice] {
+        var voices = allVoices.filter { !isVoiceDownloaded($0) }
 
-        // Filter by quality
+        // Filter by language (required)
+        voices = voices.filter { $0.language.family == filterLanguage }
+
+        // Filter by quality (optional)
         if let quality = filterQuality {
             voices = voices.filter { $0.quality == quality }
         }
 
-        return voices
+        // Filter by download status
+        if filterDownloadStatus == .downloaded {
+            return []  // Show none in available when filtering to downloaded only
+        }
+
+        return voices.sorted { $0.name < $1.name }
     }
 
+    /// All downloaded voices (ignores language filter)
     var downloadedVoices: [Voice] {
-        filteredVoices.filter { isVoiceDownloaded($0) }
-    }
+        var voices = allVoices.filter { isVoiceDownloaded($0) }
 
-    var availableVoices: [Voice] {
-        filteredVoices.filter { !isVoiceDownloaded($0) }
+        // Filter by download status
+        if filterDownloadStatus == .available {
+            return []  // Show none in downloaded when filtering to available only
+        }
+
+        // Optionally filter by quality
+        if let quality = filterQuality {
+            voices = voices.filter { $0.quality == quality }
+        }
+
+        return voices.sorted { $0.name < $1.name }
     }
 
     var downloadedVoicesCount: Int {
@@ -543,12 +569,22 @@ class VoiceLibraryViewModel: ObservableObject {
 
     var hasActiveFilters: Bool {
         filterDownloadStatus != .all || filterQuality != nil
+        // Note: language filter is always active, so not included here
     }
 
     // MARK: - Methods
 
-    func loadVoices() {
-        allVoices = voiceManager.availableVoices()
+    func loadVoices() async {
+        isLoadingCatalog = true
+        allVoices = await voiceManager.loadCatalogAsync()
+        isLoadingCatalog = false
+    }
+
+    func refreshCatalog() async {
+        isLoadingCatalog = true
+        // Force refresh by clearing cache (optional - could add a method for this)
+        allVoices = await voiceManager.loadCatalogAsync()
+        isLoadingCatalog = false
     }
 
     func download(voice: Voice) async throws {
@@ -568,24 +604,28 @@ class VoiceLibraryViewModel: ObservableObject {
             }
         }
 
-        // Reload voices after download
-        loadVoices()
+        // Reload to update downloaded status
+        await loadVoices()
     }
 
     func delete(voice: Voice) throws {
         try voiceManager.delete(voiceID: voice.id)
-        loadVoices()
+        // Reload to update
+        Task {
+            await loadVoices()
+        }
     }
 
     func clearFilters() {
         filterDownloadStatus = .all
         filterQuality = nil
+        // Don't clear language - it's always required
     }
 
     // MARK: - Helpers
 
     private func isVoiceDownloaded(_ voice: Voice) -> Bool {
-        voiceManager.downloadedVoices().contains { $0.id == voice.id }
+        voiceManager.isVoiceDownloaded(voice.id)
     }
 }
 
