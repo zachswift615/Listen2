@@ -106,8 +106,8 @@ struct VoiceLibraryView: View {
 
     private var currentLanguageDisplayName: String {
         viewModel.availableLanguages
-            .first { $0.family == viewModel.filterLanguage }?
-            .name ?? "English"
+            .first { $0.code == viewModel.filterLanguage }?
+            .displayName ?? "English (United States)"
     }
 
     var body: some View {
@@ -196,9 +196,9 @@ struct VoiceLibraryView: View {
 
                 // Language filter (required)
                 Menu {
-                    ForEach(viewModel.availableLanguages, id: \.family) { language in
-                        Button(language.name) {
-                            viewModel.filterLanguage = language.family
+                    ForEach(viewModel.availableLanguages, id: \.code) { language in
+                        Button(language.displayName) {
+                            viewModel.filterLanguage = language.code
                         }
                     }
                 } label: {
@@ -533,7 +533,7 @@ class VoiceLibraryViewModel: ObservableObject {
     @Published var downloadingVoices: Set<String> = []
     @Published var downloadProgress: [String: Double] = [:]
     @Published var filterDownloadStatus: DownloadStatusFilter = .all
-    @Published var filterLanguage: String = "en"  // Required, defaults to English
+    @Published var filterLanguage: String = "en_US"  // Required, defaults to US English (locale code)
     @Published var filterQuality: String?
 
     private let voiceManager = VoiceManager()
@@ -546,25 +546,18 @@ class VoiceLibraryViewModel: ObservableObject {
 
     // MARK: - Computed Properties
 
-    /// All unique language families from catalog (grouped by family, not locale)
-    var availableLanguages: [(family: String, name: String)] {
-        // Group by language family (e.g., "en" not "en_US")
-        var familyToName: [String: String] = [:]
-        for voice in allVoices {
-            if familyToName[voice.language.family] == nil {
-                familyToName[voice.language.family] = voice.language.nameEnglish
-            }
-        }
-        return familyToName.map { (family: $0.key, name: $0.value) }
-            .sorted { $0.name < $1.name }
+    /// All unique language locales from catalog
+    var availableLanguages: [VoiceLanguage] {
+        let languages = Set(allVoices.map { $0.language })
+        return Array(languages).sorted { $0.displayName < $1.displayName }
     }
 
     /// Voices filtered by language and quality (for "Available" section)
     var filteredAvailableVoices: [Voice] {
         var voices = allVoices.filter { !isVoiceDownloaded($0) }
 
-        // Filter by language (required)
-        voices = voices.filter { $0.language.family == filterLanguage }
+        // Filter by language locale (required)
+        voices = voices.filter { $0.language.code == filterLanguage }
 
         // Filter by quality (optional)
         if let quality = filterQuality {
