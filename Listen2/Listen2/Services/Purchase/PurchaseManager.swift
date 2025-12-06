@@ -86,8 +86,8 @@ final class PurchaseManager: ObservableObject {
         switch result {
         case .success(let verification):
             let transaction = try checkVerified(verification)
-            await transaction.finish()
             entitlementState = .purchased
+            await transaction.finish()
 
         case .userCancelled:
             break
@@ -120,13 +120,11 @@ final class PurchaseManager: ObservableObject {
     // MARK: - Transaction Listener
 
     private func listenForTransactions() -> Task<Void, Error> {
-        Task.detached {
+        Task {
             for await result in Transaction.updates {
                 if case .verified(let transaction) = result {
-                    if transaction.productID == PurchaseManager.productID {
-                        await MainActor.run {
-                            self.entitlementState = .purchased
-                        }
+                    if transaction.productID == Self.productID {
+                        entitlementState = .purchased
                     }
                     await transaction.finish()
                 }
