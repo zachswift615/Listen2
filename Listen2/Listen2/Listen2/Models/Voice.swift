@@ -74,8 +74,11 @@ struct Voice: Identifiable, Codable, Equatable {
 
     /// Total size of all files in MB
     var sizeMB: Int {
-        let totalBytes = files.values.reduce(0) { $0 + $1.sizeBytes }
-        return Int(ceil(Double(totalBytes) / 1_000_000))
+        let downloadableFiles = files.filter { key, _ in
+            key.hasSuffix(".onnx") || key.hasSuffix(".onnx.json")
+        }
+        let totalBytes = downloadableFiles.values.reduce(0) { $0 + $1.sizeBytes }
+        return max(1, Int(ceil(Double(totalBytes) / 1_000_000)))
     }
 
     /// Display name for UI (e.g., "Amy (Low Quality)")
@@ -86,15 +89,21 @@ struct Voice: Identifiable, Codable, Equatable {
     /// Sample audio URL from piper-samples repo
     var sampleURL: URL? {
         let base = "https://raw.githubusercontent.com/rhasspy/piper-samples/master/samples"
-        let urlString = "\(base)/\(language.family)/\(language.code)/\(name)/\(quality)/speaker_0.mp3"
-        return URL(string: urlString)
+        let path = "\(language.family)/\(language.code)/\(name)/\(quality)/speaker_0.mp3"
+        guard let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        return URL(string: "\(base)/\(encodedPath)")
     }
 
     /// URLs to download from Hugging Face (onnx and json files)
     var downloadURLs: [URL] {
         let base = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
         return files.keys.compactMap { path in
-            URL(string: "\(base)/\(path)")
+            guard let encodedPath = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+                return nil
+            }
+            return URL(string: "\(base)/\(encodedPath)")
         }
     }
 
