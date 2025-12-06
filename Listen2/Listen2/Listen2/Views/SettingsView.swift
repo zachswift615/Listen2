@@ -57,7 +57,7 @@ struct SettingsView: View {
                                 .background(DesignSystem.Colors.primary)
                                 .foregroundStyle(.white)
                                 .font(DesignSystem.Typography.body.weight(.medium))
-                                .clipShape(RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.small))
+                                .clipShape(RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.sm))
                             }
                             .disabled(purchaseManager.isPurchasing)
 
