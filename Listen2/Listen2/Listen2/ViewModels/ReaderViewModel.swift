@@ -21,6 +21,7 @@ final class ReaderViewModel: ObservableObject {
     @Published var selectedVoice: AVVoice?
     @Published var tocEntries: [TOCEntry] = []
     @Published var isLoading: Bool = true
+    @Published var showUpgradePrompt: Bool = false
 
     /// Cached highlight level (updated when settings change)
     @Published var effectiveHighlightLevel: HighlightLevel = .word
@@ -32,14 +33,16 @@ final class ReaderViewModel: ObservableObject {
     let document: Document
     let ttsService: TTSService
     private let modelContext: ModelContext
+    private let purchaseManager: PurchaseManager
     private let tocService = TOCService()
     private var cancellables = Set<AnyCancellable>()
 
-    init(document: Document, modelContext: ModelContext, ttsService: TTSService) {
+    init(document: Document, modelContext: ModelContext, ttsService: TTSService, purchaseManager: PurchaseManager = .shared) {
         self.document = document
         self.currentParagraphIndex = document.currentPosition
         self.modelContext = modelContext
         self.ttsService = ttsService
+        self.purchaseManager = purchaseManager
 
         // Set initial playback rate from defaults
         self.playbackRate = Float(defaultPlaybackRate)
@@ -107,6 +110,15 @@ final class ReaderViewModel: ObservableObject {
                 self?.currentSentenceLength = length
             }
             .store(in: &cancellables)
+    }
+
+    /// Attempt to start playback, showing upgrade prompt if trial expired
+    func attemptPlay() {
+        if purchaseManager.entitlementState.canUseTTS {
+            togglePlayPause()
+        } else {
+            showUpgradePrompt = true
+        }
     }
 
     func togglePlayPause() {
