@@ -7,6 +7,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var purchaseManager: PurchaseManager
     @StateObject private var viewModel = SettingsViewModel()
     @State private var showingVoicePicker = false
     @State private var showingVoiceLibrary = false
@@ -15,6 +16,66 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // MARK: - Upgrade Section
+                Section {
+                    VStack(alignment: .leading, spacing: DesignSystem.Spacing.sm) {
+                        HStack {
+                            Image(systemName: purchaseManager.entitlementState == .purchased ? "checkmark.seal.fill" : "waveform")
+                                .font(.system(size: DesignSystem.IconSize.large))
+                                .foregroundStyle(DesignSystem.Colors.primary)
+
+                            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xxxs) {
+                                Text("Listen2 Pro")
+                                    .font(DesignSystem.Typography.headline)
+
+                                Text(purchaseManager.entitlementState.displayText)
+                                    .font(DesignSystem.Typography.caption)
+                                    .foregroundStyle(purchaseManager.entitlementState == .expired ? .orange : DesignSystem.Colors.textSecondary)
+                            }
+                        }
+
+                        if purchaseManager.entitlementState != .purchased {
+                            // Purchase button
+                            Button {
+                                Task {
+                                    try? await purchaseManager.purchase()
+                                }
+                            } label: {
+                                HStack {
+                                    if purchaseManager.isPurchasing {
+                                        ProgressView()
+                                            .tint(.white)
+                                    } else {
+                                        Text(purchaseManager.entitlementState == .expired ? "Unlock Listen2" : "Upgrade")
+                                        Spacer()
+                                        Text(purchaseManager.product?.displayPrice ?? "$24.99")
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, DesignSystem.Spacing.sm)
+                                .padding(.horizontal, DesignSystem.Spacing.md)
+                                .background(DesignSystem.Colors.primary)
+                                .foregroundStyle(.white)
+                                .font(DesignSystem.Typography.body.weight(.medium))
+                                .clipShape(RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.small))
+                            }
+                            .disabled(purchaseManager.isPurchasing)
+
+                            // Restore purchases
+                            Button("Restore Purchase") {
+                                Task {
+                                    await purchaseManager.restorePurchases()
+                                }
+                            }
+                            .font(DesignSystem.Typography.caption)
+                            .foregroundStyle(DesignSystem.Colors.primary)
+                        }
+                    }
+                    .padding(.vertical, DesignSystem.Spacing.xs)
+                } header: {
+                    Text("Subscription")
+                }
+
                 // MARK: - Playback Settings
                 Section {
                     // Playback Speed
