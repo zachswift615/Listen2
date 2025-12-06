@@ -203,6 +203,11 @@ final class LibraryViewModel: ObservableObject {
     }
 
     func importSampleDocuments() async {
+        // Check if samples already exist to prevent duplicates
+        guard !SampleContentManager.shared.hasSampleDocuments(modelContext: modelContext) else {
+            return
+        }
+
         isProcessing = true
         errorMessage = nil
 
