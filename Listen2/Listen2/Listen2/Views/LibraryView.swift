@@ -10,6 +10,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var ttsService: TTSService
+    @EnvironmentObject private var purchaseManager: PurchaseManager
     @StateObject private var viewModel: LibraryViewModel
     @State private var showingFilePicker = false
     @State private var showingSettings = false
@@ -119,6 +120,7 @@ struct LibraryView: View {
                     autoPlay: autoPlayDocument?.id == document.id
                 )
                 .environmentObject(ttsService)
+                .environmentObject(purchaseManager)
                 .onAppear {
                     // Clear autoPlay after navigation
                     if autoPlayDocument?.id == document.id {
@@ -144,6 +146,7 @@ struct LibraryView: View {
             }
             .sheet(isPresented: $showingSettings) {
                 SettingsView()
+                    .environmentObject(purchaseManager)
             }
             .sheet(isPresented: $showingDriveLinkSheet) {
                 importFromLinkSheet
