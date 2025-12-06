@@ -107,7 +107,7 @@ struct VoiceLibraryView: View {
     private var currentLanguageDisplayName: String {
         viewModel.availableLanguages
             .first { $0.family == viewModel.filterLanguage }?
-            .displayName ?? "English"
+            .name ?? "English"
     }
 
     var body: some View {
@@ -197,7 +197,7 @@ struct VoiceLibraryView: View {
                 // Language filter (required)
                 Menu {
                     ForEach(viewModel.availableLanguages, id: \.family) { language in
-                        Button(language.displayName) {
+                        Button(language.name) {
                             viewModel.filterLanguage = language.family
                         }
                     }
@@ -546,10 +546,17 @@ class VoiceLibraryViewModel: ObservableObject {
 
     // MARK: - Computed Properties
 
-    /// All unique languages from catalog
-    var availableLanguages: [VoiceLanguage] {
-        let languages = Set(allVoices.map { $0.language })
-        return Array(languages).sorted { $0.nameEnglish < $1.nameEnglish }
+    /// All unique language families from catalog (grouped by family, not locale)
+    var availableLanguages: [(family: String, name: String)] {
+        // Group by language family (e.g., "en" not "en_US")
+        var familyToName: [String: String] = [:]
+        for voice in allVoices {
+            if familyToName[voice.language.family] == nil {
+                familyToName[voice.language.family] = voice.language.nameEnglish
+            }
+        }
+        return familyToName.map { (family: $0.key, name: $0.value) }
+            .sorted { $0.name < $1.name }
     }
 
     /// Voices filtered by language and quality (for "Available" section)
