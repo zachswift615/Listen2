@@ -392,7 +392,7 @@ final class DocumentProcessor {
         return image.pngData()
     }
 
-    /// Extract cover from EPUB (look for common cover image files)
+    /// Extract cover from EPUB using OPF metadata, with filename fallback
     private func extractEPUBCover(from url: URL) async -> Data? {
         // Unzip EPUB to temp directory
         let tempDir = FileManager.default.temporaryDirectory
@@ -406,14 +406,21 @@ final class DocumentProcessor {
 
             try FileManager.default.unzipItem(at: url, to: tempDir)
 
-            // Common cover image filenames to search for
+            // Step 1: Try to find cover via OPF metadata (most reliable)
+            if let coverPath = findCoverFromOPF(in: tempDir) {
+                if let imageData = try? Data(contentsOf: coverPath),
+                   let image = UIImage(data: imageData) {
+                    return resizeImageToThumbnail(image)
+                }
+            }
+
+            // Step 2: Fall back to common cover filenames
             let coverNames = [
                 "cover.jpg", "cover.jpeg", "cover.png",
                 "Cover.jpg", "Cover.jpeg", "Cover.png",
                 "cover-image.jpg", "cover-image.png"
             ]
 
-            // Search in common directories
             let searchPaths = [
                 tempDir,
                 tempDir.appendingPathComponent("OEBPS"),
@@ -430,28 +437,88 @@ final class DocumentProcessor {
                     if FileManager.default.fileExists(atPath: coverURL.path),
                        let imageData = try? Data(contentsOf: coverURL),
                        let image = UIImage(data: imageData) {
-                        // Resize to thumbnail
                         return resizeImageToThumbnail(image)
                     }
                 }
             }
 
-            // If no cover found by name, try to find first image in OEBPS/OPS
-            for searchPath in [tempDir.appendingPathComponent("OEBPS"), tempDir.appendingPathComponent("OPS")] {
-                if let enumerator = FileManager.default.enumerator(at: searchPath, includingPropertiesForKeys: nil) {
-                    for case let fileURL as URL in enumerator {
-                        let ext = fileURL.pathExtension.lowercased()
-                        if ["jpg", "jpeg", "png"].contains(ext),
-                           let imageData = try? Data(contentsOf: fileURL),
-                           let image = UIImage(data: imageData) {
-                            return resizeImageToThumbnail(image)
-                        }
-                    }
-                }
-            }
+            // Step 3: No random fallback - if we can't find a proper cover, return nil
+            // This prevents grabbing Twitter logos or other random images
 
         } catch {
             return nil
+        }
+
+        return nil
+    }
+
+    /// Parse OPF file to find the cover image path
+    private func findCoverFromOPF(in epubDir: URL) -> URL? {
+        // Find container.xml to locate content.opf
+        let containerURL = epubDir.appendingPathComponent("META-INF/container.xml")
+        guard let containerData = try? Data(contentsOf: containerURL),
+              let containerString = String(data: containerData, encoding: .utf8) else {
+            return nil
+        }
+
+        // Extract content.opf path from container.xml
+        guard let opfPathMatch = containerString.range(of: "full-path=\"([^\"]+)\"", options: .regularExpression),
+              let opfPath = containerString[opfPathMatch].split(separator: "\"").dropFirst().first else {
+            return nil
+        }
+
+        let opfURL = epubDir.appendingPathComponent(String(opfPath))
+        let opfBaseURL = opfURL.deletingLastPathComponent()
+
+        guard let opfData = try? Data(contentsOf: opfURL),
+              let opfString = String(data: opfData, encoding: .utf8) else {
+            return nil
+        }
+
+        // Build manifest dictionary: id -> href
+        var manifest: [String: String] = [:]
+        let itemPattern = "<item[^>]+id=\"([^\"]+)\"[^>]+href=\"([^\"]+)\"|<item[^>]+href=\"([^\"]+)\"[^>]+id=\"([^\"]+)\""
+        if let regex = try? NSRegularExpression(pattern: itemPattern, options: []) {
+            let range = NSRange(opfString.startIndex..., in: opfString)
+            regex.enumerateMatches(in: opfString, options: [], range: range) { match, _, _ in
+                guard let match = match else { return }
+                // Handle both attribute orderings
+                if let idRange = Range(match.range(at: 1), in: opfString),
+                   let hrefRange = Range(match.range(at: 2), in: opfString) {
+                    manifest[String(opfString[idRange])] = String(opfString[hrefRange])
+                } else if let hrefRange = Range(match.range(at: 3), in: opfString),
+                          let idRange = Range(match.range(at: 4), in: opfString) {
+                    manifest[String(opfString[idRange])] = String(opfString[hrefRange])
+                }
+            }
+        }
+
+        // Method 1: EPUB 2 style - <meta name="cover" content="cover-id"/>
+        if let metaMatch = opfString.range(of: "<meta[^>]+name=\"cover\"[^>]+content=\"([^\"]+)\"", options: .regularExpression) {
+            let metaString = String(opfString[metaMatch])
+            if let contentMatch = metaString.range(of: "content=\"([^\"]+)\"", options: .regularExpression) {
+                let contentValue = metaString[contentMatch].replacingOccurrences(of: "content=\"", with: "").replacingOccurrences(of: "\"", with: "")
+                if let href = manifest[contentValue] {
+                    return opfBaseURL.appendingPathComponent(href)
+                }
+            }
+        }
+
+        // Method 2: EPUB 3 style - <item properties="cover-image" .../>
+        if let itemMatch = opfString.range(of: "<item[^>]+properties=\"[^\"]*cover-image[^\"]*\"[^>]+href=\"([^\"]+)\"", options: .regularExpression) {
+            let itemString = String(opfString[itemMatch])
+            if let hrefMatch = itemString.range(of: "href=\"([^\"]+)\"", options: .regularExpression) {
+                let href = itemString[hrefMatch].replacingOccurrences(of: "href=\"", with: "").replacingOccurrences(of: "\"", with: "")
+                return opfBaseURL.appendingPathComponent(href)
+            }
+        }
+
+        // Method 3: Look for item with id containing "cover" and image media-type
+        for (id, href) in manifest {
+            if id.lowercased().contains("cover") &&
+               (href.lowercased().hasSuffix(".jpg") || href.lowercased().hasSuffix(".jpeg") || href.lowercased().hasSuffix(".png")) {
+                return opfBaseURL.appendingPathComponent(href)
+            }
         }
 
         return nil
