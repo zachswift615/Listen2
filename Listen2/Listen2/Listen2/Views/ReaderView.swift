@@ -9,12 +9,13 @@ import UIKit
 
 struct ReaderView: View {
     @EnvironmentObject var ttsService: TTSService
+    @EnvironmentObject private var purchaseManager: PurchaseManager
     let document: Document
     let modelContext: ModelContext
     var autoPlay: Bool = false
 
     var body: some View {
-        ReaderViewContent(document: document, modelContext: modelContext, ttsService: ttsService, autoPlay: autoPlay)
+        ReaderViewContent(document: document, modelContext: modelContext, ttsService: ttsService, autoPlay: autoPlay, purchaseManager: purchaseManager)
     }
 }
 
@@ -26,14 +27,16 @@ private struct ReaderViewContent: View {
     @State private var showingVoicePicker = false
     @State private var hasAutoPlayed = false
     let autoPlay: Bool
+    let purchaseManager: PurchaseManager
 
-    init(document: Document, modelContext: ModelContext, ttsService: TTSService, autoPlay: Bool = false) {
+    init(document: Document, modelContext: ModelContext, ttsService: TTSService, autoPlay: Bool = false, purchaseManager: PurchaseManager) {
         _viewModel = StateObject(wrappedValue: ReaderViewModel(
             document: document,
             modelContext: modelContext,
             ttsService: ttsService
         ))
         self.autoPlay = autoPlay
+        self.purchaseManager = purchaseManager
     }
 
     var body: some View {
@@ -172,6 +175,7 @@ private struct ReaderViewContent: View {
             }
             .sheet(isPresented: $viewModel.showUpgradePrompt) {
                 UpgradePromptView()
+                    .environmentObject(purchaseManager)
             }
             .onAppear {
                 viewModel.loadTOC()
