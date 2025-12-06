@@ -64,7 +64,9 @@ final class LibraryViewModel: ObservableObject {
         isProcessing = true
         errorMessage = nil
 
-        let paragraphs = documentProcessor.processClipboardText(text)
+        // Strip markdown syntax if present (same as markdown file imports)
+        let cleanedText = stripMarkdownSyntax(text)
+        let paragraphs = documentProcessor.processClipboardText(cleanedText)
 
         guard !paragraphs.isEmpty else {
             errorMessage = "No text found in clipboard"
