@@ -6,46 +6,6 @@
 //
 
 import Foundation
-import SWCompression
-
-// MARK: - Download Progress Delegate
-
-/// URLSession delegate for tracking download progress
-private class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let progressHandler: (Double) -> Void
-    private let completionHandler: (Result<URL, Error>) -> Void
-
-    init(progress: @escaping (Double) -> Void, completion: @escaping (Result<URL, Error>) -> Void) {
-        self.progressHandler = progress
-        self.completionHandler = completion
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // Copy to a temp location we control (the original will be deleted)
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".download")
-        do {
-            try FileManager.default.copyItem(at: location, to: tempURL)
-            completionHandler(.success(tempURL))
-        } catch {
-            completionHandler(.failure(error))
-        }
-        session.invalidateAndCancel()
-    }
-
-    func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
-        if totalBytesExpectedToWrite > 0 {
-            let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-            progressHandler(progress)
-        }
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            completionHandler(.failure(error))
-            session.invalidateAndCancel()
-        }
-    }
-}
 
 /// Manages Piper TTS voices (catalog, downloads, storage)
 final class VoiceManager {
@@ -384,8 +344,6 @@ final class VoiceManager {
     /// Delete a downloaded voice
     func delete(voiceID: String) throws {
         let selectedVoiceID = UserDefaults.standard.string(forKey: "selectedVoiceID")
-
-        // Cannot delete active voice
         guard voiceID != selectedVoiceID else {
             throw VoiceError.cannotDeleteActiveVoice
         }
