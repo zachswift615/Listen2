@@ -347,28 +347,14 @@ final class VoiceManager {
 
     /// Download a file with progress tracking
     private func downloadFile(from url: URL, progress: @escaping (Double) -> Void) async throws -> Data {
-        let (asyncBytes, response) = try await URLSession.shared.bytes(from: url)
+        let (data, response) = try await URLSession.shared.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse,
               httpResponse.statusCode == 200 else {
             throw VoiceError.downloadFailed(reason: "HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
         }
 
-        let expectedLength = httpResponse.expectedContentLength
-        var data = Data()
-        data.reserveCapacity(expectedLength > 0 ? Int(expectedLength) : 50_000_000)
-
-        var downloadedBytes: Int64 = 0
-        for try await byte in asyncBytes {
-            data.append(byte)
-            downloadedBytes += 1
-
-            if expectedLength > 0 && downloadedBytes % 100_000 == 0 {
-                let progressValue = Double(downloadedBytes) / Double(expectedLength)
-                progress(progressValue)
-            }
-        }
-
+        progress(1.0)  // Complete when done
         return data
     }
 
