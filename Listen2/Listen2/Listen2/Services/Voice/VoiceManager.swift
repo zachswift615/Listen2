@@ -53,7 +53,7 @@ final class VoiceManager {
     // MARK: - Properties
 
     private let fileManager = FileManager.default
-    private var catalog: VoiceCatalog?
+    private var catalog: [Voice]?
     private let bundle: Bundle
 
     // MARK: - Initialization
@@ -62,6 +62,87 @@ final class VoiceManager {
     /// - Parameter bundle: Bundle to use for resource lookup (defaults to .main)
     init(bundle: Bundle = .main) {
         self.bundle = bundle
+    }
+
+    // MARK: - Remote Catalog
+
+    private let catalogURL = URL(string: "https://huggingface.co/rhasspy/piper-voices/raw/main/voices.json")!
+    private let cacheFileName = "voice-catalog-cache.json"
+
+    /// Path to cached catalog
+    private var catalogCachePath: URL {
+        fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(cacheFileName)
+    }
+
+    /// Load catalog - tries cache first, then fetches remote
+    func loadCatalogAsync() async -> [Voice] {
+        // Try cached first
+        if let cached = loadCachedCatalog(), !cached.isStale {
+            print("[VoiceManager] Using cached catalog (\(cached.voices.count) voices)")
+            return cached.voices
+        }
+
+        // Fetch remote
+        do {
+            let voices = try await fetchRemoteCatalog()
+            print("[VoiceManager] Fetched remote catalog (\(voices.count) voices)")
+            return voices
+        } catch {
+            print("[VoiceManager] Failed to fetch remote catalog: \(error)")
+            // Fall back to stale cache
+            if let cached = loadCachedCatalog() {
+                print("[VoiceManager] Using stale cached catalog")
+                return cached.voices
+            }
+            // Fall back to bundled
+            print("[VoiceManager] Using bundled fallback catalog")
+            return loadBundledCatalog()
+        }
+    }
+
+    /// Fetch catalog from Hugging Face
+    private func fetchRemoteCatalog() async throws -> [Voice] {
+        let (data, response) = try await URLSession.shared.data(from: catalogURL)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw VoiceError.downloadFailed(reason: "HTTP error fetching catalog")
+        }
+
+        let catalog = try RemoteVoiceCatalog.parse(from: data)
+
+        // Cache it
+        saveCatalogToCache(CachedVoiceCatalog(voices: catalog.voices, fetchedAt: catalog.fetchedAt))
+
+        return catalog.voices
+    }
+
+    /// Load cached catalog from disk
+    private func loadCachedCatalog() -> CachedVoiceCatalog? {
+        guard fileManager.fileExists(atPath: catalogCachePath.path),
+              let data = try? Data(contentsOf: catalogCachePath),
+              let cached = try? JSONDecoder().decode(CachedVoiceCatalog.self, from: data) else {
+            return nil
+        }
+        return cached
+    }
+
+    /// Save catalog to cache
+    private func saveCatalogToCache(_ catalog: CachedVoiceCatalog) {
+        do {
+            let data = try JSONEncoder().encode(catalog)
+            try data.write(to: catalogCachePath)
+        } catch {
+            print("[VoiceManager] Failed to cache catalog: \(error)")
+        }
+    }
+
+    /// Load bundled fallback catalog (minimal English voices)
+    private func loadBundledCatalog() -> [Voice] {
+        // Return empty for now - bundled catalog uses old format
+        // TODO: Create minimal bundled catalog in new format
+        return []
     }
 
     // MARK: - Storage Paths
@@ -74,48 +155,42 @@ final class VoiceManager {
 
     // MARK: - Catalog
 
-    /// Load voice catalog from bundle
-    func loadCatalog() -> VoiceCatalog {
+    /// Load voice catalog (sync version - uses cache only)
+    /// For async loading with network, use loadCatalogAsync()
+    func loadCatalog() -> [Voice] {
         if let cached = catalog {
             return cached
         }
 
-        guard let url = bundle.url(forResource: "voice-catalog", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode(VoiceCatalog.self, from: data) else {
-            fatalError("Failed to load voice-catalog.json from bundle")
+        // Try cached catalog first
+        if let cached = loadCachedCatalog() {
+            self.catalog = cached.voices
+            return cached.voices
         }
 
-        catalog = decoded
-        return decoded
+        // Fall back to bundled
+        let voices = loadBundledCatalog()
+        self.catalog = voices
+        return voices
     }
 
     /// All voices in catalog
     func availableVoices() -> [Voice] {
-        loadCatalog().voices
+        loadCatalog()
     }
 
     /// Voices that have been downloaded
     func downloadedVoices() -> [Voice] {
         let allVoices = availableVoices()
 
-        let downloaded = allVoices.filter { voice in
-            if voice.isBundled {
-                return true  // Bundled voices always "downloaded"
-            }
-            let hasModel = modelPath(for: voice.id) != nil
-            return hasModel
+        return allVoices.filter { voice in
+            modelPath(for: voice.id) != nil
         }
-
-        return downloaded
     }
 
-    /// The bundled voice (en_US-lessac-medium)
-    func bundledVoice() -> Voice {
-        guard let bundled = availableVoices().first(where: { $0.isBundled }) else {
-            fatalError("No bundled voice found in catalog")
-        }
-        return bundled
+    /// Check if a specific voice is downloaded
+    func isVoiceDownloaded(_ voiceID: String) -> Bool {
+        modelPath(for: voiceID) != nil
     }
 
     // MARK: - Path Resolution
@@ -355,12 +430,11 @@ final class VoiceManager {
             throw VoiceError.cannotDeleteActiveVoice
         }
 
-        // Cannot delete bundled voice
-        if availableVoices().first(where: { $0.id == voiceID })?.isBundled == true {
-            throw VoiceError.cannotDeleteBundledVoice
+        let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
+        guard fileManager.fileExists(atPath: voiceDir.path) else {
+            throw VoiceError.voiceNotFound
         }
 
-        let voiceDir = voicesDirectory.appendingPathComponent(voiceID)
         try fileManager.removeItem(at: voiceDir)
     }
 
@@ -378,7 +452,6 @@ final class VoiceManager {
         case extractionFailed(reason: String)
         case checksumMismatch
         case cannotDeleteActiveVoice
-        case cannotDeleteBundledVoice
 
         var errorDescription: String? {
             switch self {
@@ -396,8 +469,6 @@ final class VoiceManager {
                 return "Downloaded file is corrupted (checksum mismatch)"
             case .cannotDeleteActiveVoice:
                 return "Cannot delete currently selected voice"
-            case .cannotDeleteBundledVoice:
-                return "Cannot delete bundled voice"
             }
         }
     }
