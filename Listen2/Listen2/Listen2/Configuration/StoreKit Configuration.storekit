@@ -1,0 +1,30 @@
+{
+  "identifier" : "7A3E8F4C-2D1B-4E9A-B7C6-5F8D3A9E1C4B",
+  "nonRenewingSubscriptions" : [],
+  "products" : [
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "9B2C7E5A-4F1D-3B8E-A6C9-2D7F5E3A8C1B",
+      "localizations" : [
+        {
+          "description" : "Unlock TTS playback and all voices",
+          "displayName" : "Listen2 Full Access",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "com.listen2.fullaccess",
+      "referenceName" : "Listen2 Full Access",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "12345678",
+    "_developerTeamID" : "XXXXXXXXXX"
+  },
+  "subscriptionGroups" : [],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}
